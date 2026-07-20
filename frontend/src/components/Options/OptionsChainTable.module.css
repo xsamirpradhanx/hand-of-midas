@@ -1,0 +1,161 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-main);
+  position: relative;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-main);
+  gap: var(--space-md);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.expiryTab {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.expiryTab:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+}
+
+.expiryTabActive {
+  background: var(--accent-teal-dim);
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.tableWrapper {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elevated);
+  padding: var(--space-sm);
+  color: var(--text-tertiary);
+  font-weight: 600;
+  z-index: 10;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.table th.strikeCol {
+  text-align: center;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  z-index: 11;
+}
+
+.table td {
+  padding: var(--space-sm);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary);
+  position: relative;
+}
+
+.table tr {
+  transition: background var(--transition-fast);
+}
+
+.table tr:hover td {
+  background: var(--bg-hover);
+}
+
+.callItm {
+  background: rgba(0, 230, 118, 0.03);
+}
+
+.putItm {
+  background: rgba(255, 23, 68, 0.03);
+}
+
+.strikeCell {
+  text-align: center;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.addBtn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--accent-teal);
+  color: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  cursor: pointer;
+  z-index: 2;
+  font-size: 14px;
+}
+
+.callAdd {
+  left: 4px;
+}
+
+.putAdd {
+  right: 4px;
+}
+
+.table tr:hover .addBtn {
+  opacity: 1;
+}
+
+.table tr:hover .addBtn:hover {
+  background: var(--accent-cyan);
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* IV colors */
+.ivLow { color: var(--accent-cyan); }
+.ivMed { color: var(--gold-mid); }
+.ivHigh { color: var(--color-down); }
+
+.skeletonRow {
+  height: 32px;
+  margin-bottom: 2px;
+}

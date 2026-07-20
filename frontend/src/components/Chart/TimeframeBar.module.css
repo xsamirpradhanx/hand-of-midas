@@ -1,0 +1,31 @@
+.bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--surface-main);
+  border-bottom: 1px solid var(--border-color);
+  align-items: center;
+}
+
+.btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn.active {
+  background: rgba(0, 212, 170, 0.1);
+  color: var(--accent-main);
+  border-color: rgba(0, 212, 170, 0.2);
+}

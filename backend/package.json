@@ -1,0 +1,24 @@
+{
+  "name": "handofmidas-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outdir=dist --format=esm --external:@aws-sdk/*",
+    "dev": "tsx src/local.ts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1090.0",
+    "@aws-sdk/client-ssm": "^3.1090.0",
+    "@aws-sdk/lib-dynamodb": "^3.1090.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "tsx": "^4.23.1"
+  },
+  "dependencies": {
+    "yahoo-finance2": "^4.0.0"
+  }
+}

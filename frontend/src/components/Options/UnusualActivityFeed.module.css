@@ -1,0 +1,197 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-main);
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-main);
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.filterLabel {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.filterInput {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  width: 80px;
+}
+
+.filterSelect {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+.refreshGroup {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.tableWrapper {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-family: var(--font-family);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elevated);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--text-tertiary);
+  font-weight: 600;
+  z-index: 10;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  user-select: none;
+}
+
+.table th:hover {
+  color: var(--text-primary);
+}
+
+.table th.leftAlign {
+  text-align: left;
+}
+
+.table td {
+  padding: var(--space-md);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary);
+}
+
+.table td.leftAlign {
+  text-align: left;
+}
+
+.table tr {
+  transition: background var(--transition-fast);
+}
+
+.table tr:hover td {
+  background: var(--bg-hover);
+}
+
+.symbol {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sideBadge {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.sideCall {
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--color-up);
+}
+
+.sidePut {
+  background: rgba(255, 23, 68, 0.15);
+  color: var(--color-down);
+}
+
+.sigmaBadge {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.75rem;
+  display: inline-block;
+  cursor: help;
+  position: relative;
+}
+
+.sigmaGreen {
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--color-up);
+}
+
+.sigmaAmber {
+  background: rgba(255, 213, 79, 0.15);
+  color: var(--gold-mid);
+}
+
+.sigmaRed {
+  background: rgba(255, 23, 68, 0.15);
+  color: var(--color-down);
+}
+
+.tooltip {
+  visibility: hidden;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  text-align: center;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+  position: absolute;
+  z-index: 20;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  width: max-content;
+  max-width: 200px;
+  white-space: normal;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.sigmaBadge:hover .tooltip {
+  visibility: visible;
+}
+
+.sweepIcon {
+  color: var(--gold-mid);
+  margin-right: 4px;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}

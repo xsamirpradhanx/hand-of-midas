@@ -1,0 +1,25 @@
+{
+  "name": "handofmidas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hand of Midas — Personal Stock Watchlist & Charting App",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "infra"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build": "npm run build:frontend && npm run build:backend",
+    "test": "npm run test --workspace=frontend",
+    "test:indicators": "npx vitest run src/lib/indicators/ --workspace=frontend",
+    "deploy": "cd infra && npx cdk deploy",
+    "destroy": "cd infra && npx cdk destroy",
+    "synth": "cd infra && npx cdk synth"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

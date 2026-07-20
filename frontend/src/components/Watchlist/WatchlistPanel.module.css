@@ -1,0 +1,149 @@
+.panel {
+  width: 300px;
+  background: rgba(18, 22, 45, 0.4);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  backdrop-filter: blur(10px);
+}
+
+.header {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.addBtn {
+  background: rgba(0, 212, 170, 0.1);
+  color: var(--accent-main);
+  border: 1px solid rgba(0, 212, 170, 0.2);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.addBtn:hover {
+  background: var(--accent-main);
+  color: #fff;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.emptyState {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Item Styles */
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  border-left: 3px solid transparent;
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.item.selected {
+  background: rgba(255, 255, 255, 0.05);
+  border-left-color: var(--accent-main);
+}
+
+.itemInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.symbol {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.name {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.itemData {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.price {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.change {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.positive {
+  color: var(--up-color);
+}
+
+.negative {
+  color: var(--down-color);
+}
+
+.removeBtn {
+  position: absolute;
+  right: 12px;
+  background: rgba(255, 23, 68, 0.1);
+  color: var(--down-color);
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.item:hover .removeBtn {
+  opacity: 1;
+}
+
+.item:hover .itemData {
+  opacity: 0; /* Hide data on hover to show remove btn */
+}
