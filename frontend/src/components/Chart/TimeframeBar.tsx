@@ -7,6 +7,10 @@ interface TimeframeBarProps {
 }
 
 const timeframes = [
+  { label: '1m', value: '1min' },
+  { label: '5m', value: '5min' },
+  { label: '15m', value: '15min' },
+  { label: '1H', value: '1h' },
   { label: '1D', value: '1day' },
   { label: '1W', value: '1week' },
   { label: '1M', value: '1month' }

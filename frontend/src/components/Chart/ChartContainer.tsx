@@ -19,6 +19,7 @@ import { calculateBollingerBands } from '../../lib/indicators/bollingerBands';
 import { calculateHeikinAshi } from '../../lib/indicators/heikinAshi';
 import { OHLCTooltip } from './OHLCTooltip';
 import type { ChartType } from './ChartTypeBar';
+import { useLivePricing } from '../../hooks/useLivePricing';
 import styles from './ChartContainer.module.css';
 
 interface ChartContainerProps {
@@ -52,6 +53,11 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+
+  // Live Pricing Hook
+  // We prefer polygon if key is found, otherwise finnhub
+  const provider = localStorage.getItem('POLYGON_API_KEY') || import.meta.env.VITE_POLYGON_API_KEY ? 'polygon' : 'finnhub';
+  const { latestTick } = useLivePricing(symbol, provider);
 
   // Fetch data when symbol or interval changes
   useEffect(() => {
@@ -155,6 +161,44 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       chart.unsubscribeCrosshairMove(handler);
     };
   }, [data]);
+
+  // Handle live tick updates
+  useEffect(() => {
+    if (!latestTick) return;
+    const mainSeries = seriesMapRef.current.get('main');
+    if (!mainSeries || rawDataRef.current.length === 0) return;
+
+    const lastBar = rawDataRef.current[rawDataRef.current.length - 1];
+    const newPrice = latestTick.price;
+    
+    // Check if the tick timestamp belongs to a NEW bar based on interval (simplified logic here just updates current bar)
+    // For intraday, you'd ideally check if (latestTick.timestamp * 1000) > lastBar.time + intervalMs
+    
+    lastBar.close = newPrice;
+    if (newPrice > lastBar.high) lastBar.high = newPrice;
+    if (newPrice < lastBar.low) lastBar.low = newPrice;
+    if (latestTick.volume) lastBar.volume = (lastBar.volume || 0) + latestTick.volume;
+
+    try {
+      if (chartType === 'candlestick' || chartType === 'heikinashi') {
+        // For Heikin Ashi this is slightly inaccurate intraday without full recalc, but acceptable for tick
+        mainSeries.update({
+          time: lastBar.datetime,
+          open: lastBar.open,
+          high: lastBar.high,
+          low: lastBar.low,
+          close: lastBar.close,
+        } as any);
+      } else {
+        mainSeries.update({
+          time: lastBar.datetime,
+          value: lastBar.close,
+        } as any);
+      }
+    } catch (err) {
+      console.error("Failed to update chart tick", err);
+    }
+  }, [latestTick, chartType]);
 
   // Render series whenever data, chartType, or indicators change
   useEffect(() => {

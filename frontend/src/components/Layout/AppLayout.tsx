@@ -13,9 +13,19 @@ export const AppLayout: React.FC = () => {
     <div className={styles.layout}>
       <header className={styles.topbar}>
         <div className={styles.logo}>
-          <h1>Hand of Midas</h1>
+          <div className={styles.logoGlow}>
+            <img src="/logo.png" alt="Hand of Midas Logo" className={styles.logoImg} />
+          </div>
+          <div className={styles.logoText}>
+            <h1>Hand of Midas</h1>
+            <span className={styles.tagline}>Whale Flow Intelligence</span>
+          </div>
         </div>
         <div className={styles.userMenu}>
+          <span className={styles.liveBadge}>
+            <span className={styles.liveDot} />
+            Live
+          </span>
           <button onClick={handleSignOut} className={styles.signOutBtn}>
             Sign Out
           </button>

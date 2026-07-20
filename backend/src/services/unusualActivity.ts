@@ -213,8 +213,13 @@ export async function getUnusualActivity(filters: {
       
       const bid = c.last_quote.bid || 0;
       const ask = c.last_quote.ask || 0;
-      const mid = (bid + ask) / 2;
-      const premium = vol * mid * 100;
+      let referencePrice = 0;
+      if (bid > 0 && ask > 0) {
+        referencePrice = (bid + ask) / 2;
+      } else {
+        referencePrice = c.last_quote.last > 0 ? c.last_quote.last : (bid || ask);
+      }
+      const premium = vol * referencePrice * 100;
       
       if (premium < (filters.minPremium || 100000)) continue; // Must be over $100k notional
 

@@ -83,6 +83,9 @@ export const api = {
   getOptionsChain: (symbol: string, expiry?: string): Promise<OptionsChainResponse> => 
     fetchWithAuth(`/options/chain/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
     
+  getOptionsMetrics: (symbol: string): Promise<any> => 
+    fetchWithAuth(`/options/metrics/${symbol}`),
+    
   getUnusualActivity: async (filters?: { symbol?: string; minSigma?: number; side?: string; dteMax?: number }): Promise<UnusualActivityItem[]> => {
     const params = new URLSearchParams();
     if (filters?.symbol) params.append('symbol', filters.symbol);

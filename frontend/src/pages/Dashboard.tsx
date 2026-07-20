@@ -4,7 +4,7 @@ import { ChartContainer } from '../components/Chart/ChartContainer';
 import { TimeframeBar } from '../components/Chart/TimeframeBar';
 import { ChartTypeBar, type ChartType } from '../components/Chart/ChartTypeBar';
 import { IndicatorPanel } from '../components/Indicators/IndicatorPanel';
-import { OptionsChainTable } from '../components/Options/OptionsChainTable';
+import { OptionsDashboard } from '../components/Options/OptionsDashboard';
 import { UnusualActivityFeed } from '../components/Options/UnusualActivityFeed';
 import { PortfolioDashboard } from './PortfolioDashboard';
 import { api } from '../lib/api';
@@ -62,17 +62,19 @@ export const Dashboard: React.FC = () => {
             <div className={styles.symbolTitle}>
               <h2>{selectedSymbol}</h2>
             </div>
-            <div className={styles.headerControls}>
-              <ChartTypeBar chartType={chartType} onChange={setChartType} />
-              <TimeframeBar interval={interval} onChange={setInterval} />
-            </div>
+            {activeTab === 'chart' && (
+              <div className={styles.headerControls}>
+                <ChartTypeBar chartType={chartType} onChange={setChartType} />
+                <TimeframeBar interval={interval} onChange={setInterval} />
+              </div>
+            )}
           </div>
         )}
 
         <div className={styles.tabBar}>
           <button className={`${styles.tab} ${activeTab === 'chart' ? styles.active : ''}`} onClick={() => setActiveTab('chart')}>Chart</button>
           <button className={`${styles.tab} ${activeTab === 'options' ? styles.active : ''}`} onClick={() => setActiveTab('options')}>Options Chain</button>
-          <button className={`${styles.tab} ${activeTab === 'unusual' ? styles.active : ''}`} onClick={() => setActiveTab('unusual')}>Unusual Activity</button>
+          <button className={`${styles.tab} ${activeTab === 'unusual' ? styles.active : ''}`} onClick={() => setActiveTab('unusual')}>🐋 Whale Flow</button>
           <button className={`${styles.tab} ${activeTab === 'portfolio' ? styles.active : ''}`} onClick={() => setActiveTab('portfolio')}>Portfolio</button>
         </div>
 
@@ -96,7 +98,7 @@ export const Dashboard: React.FC = () => {
                 </div>
               )}
               {activeTab === 'options' && selectedSymbol && (
-                <OptionsChainTable symbol={selectedSymbol} underlyingPrice={0} />
+                <OptionsDashboard symbol={selectedSymbol} />
               )}
               {activeTab === 'unusual' && (
                 <UnusualActivityFeed initialSymbol={selectedSymbol || undefined} />

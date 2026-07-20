@@ -4,6 +4,7 @@ import * as watchlist from './routes/watchlist.js';
 import * as marketdata from './routes/marketdata.js';
 import * as quote from './routes/quote.js';
 import * as chartConfig from './routes/chartConfig.js';
+import * as optionsMetrics from './routes/optionsMetrics.js';
 
 // Re-export so it's available from the package root for convenience.
 export { jsonResponse } from './utils/response.js';
@@ -177,6 +178,15 @@ const routes: readonly Route[] = [
     pattern: '/api/options/unusual',
     handler: async (event, params) => {
       return options.getUnusualActivityFeed(event, params);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/options/metrics/:symbol',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return optionsMetrics.getOptionsMetrics(event, params);
     },
   },
   {

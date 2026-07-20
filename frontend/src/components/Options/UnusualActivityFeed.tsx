@@ -21,18 +21,40 @@ const formatNumber = (num: number) => {
 
 type SortKey = keyof UnusualActivityItem;
 
+const METRIC_DEFINITIONS = [
+  {
+    name: 'Whale Score',
+    formula: '(Vol ÷ OI) × log₁₀(Premium) × (30 ÷ DTE)',
+    description: 'Composite conviction score weighting volume-to-OI ratio, notional premium size, and urgency (shorter DTE = higher score). Scores above 250 indicate significant institutional positioning.',
+  },
+  {
+    name: 'Vol/OI Ratio',
+    formula: 'Daily Volume ÷ Open Interest',
+    description: 'When volume exceeds open interest (≥3×), it signals new positions being opened rather than existing holders closing — a hallmark of fresh whale entries.',
+  },
+  {
+    name: 'Premium Notional',
+    formula: 'Volume × Mid-Price × 100',
+    description: 'Total dollar value of the trade flow. Only contracts with ≥$100K notional and ≥500 contracts traded are surfaced to filter retail noise.',
+  },
+  {
+    name: 'DTE (Days to Expiry)',
+    formula: 'Calendar days until expiration',
+    description: 'Short-dated options (≤14 DTE) carry higher urgency and are flagged as aggressive positioning. Scans the nearest 4 expiration cycles.',
+  },
+];
+
 export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initialSymbol = '' }) => {
   const [data, setData] = useState<UnusualActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
+  const [showMethodology, setShowMethodology] = useState(true);
 
-  // Filters
   const [symbolFilter, setSymbolFilter] = useState(initialSymbol);
   const [minSigma, setMinSigma] = useState(50);
   const [sideFilter, setSideFilter] = useState('all');
   const [dteMax, setDteMax] = useState(30);
 
-  // Sorting
   const [sortKey, setSortKey] = useState<SortKey>('compositeSigma');
   const [sortDesc, setSortDesc] = useState(true);
 
@@ -96,8 +118,63 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
     return styles.sigmaGreen;
   };
 
+  const getSigmaLabel = (score: number) => {
+    if (score >= 1000) return 'Extreme';
+    if (score >= 250) return 'High';
+    return 'Elevated';
+  };
+
   return (
     <div className={styles.container}>
+      <div className={styles.pageHeader}>
+        <div className={styles.pageHeaderLeft}>
+          <h2 className={styles.pageTitle}>Whale Flow Scanner</h2>
+          <p className={styles.pageSubtitle}>
+            Detects institutional-sized options activity using volume, open interest, and premium analysis
+          </p>
+        </div>
+        <button
+          className={styles.methodologyToggle}
+          onClick={() => setShowMethodology(!showMethodology)}
+        >
+          {showMethodology ? 'Hide Methodology' : 'Show Methodology'}
+        </button>
+      </div>
+
+      {showMethodology && (
+        <div className={styles.methodologyPanel}>
+          <div className={styles.methodologyGrid}>
+            {METRIC_DEFINITIONS.map((m) => (
+              <div key={m.name} className={styles.metricCard}>
+                <div className={styles.metricCardHeader}>
+                  <span className={styles.metricName}>{m.name}</span>
+                  <code className={styles.metricFormula}>{m.formula}</code>
+                </div>
+                <p className={styles.metricDesc}>{m.description}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className={styles.sourcesBar}>
+            <span className={styles.sourcesLabel}>Data Sources</span>
+            <div className={styles.sourcesList}>
+              <a
+                href="https://finance.yahoo.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.sourceLink}
+              >
+                Yahoo Finance
+              </a>
+              <span className={styles.sourceSep}>·</span>
+              <span className={styles.sourceDetail}>Options chains, volume, OI, IV, bid/ask quotes</span>
+              <span className={styles.sourceSep}>·</span>
+              <span className={styles.sourceDetail}>Refreshed every 60s · Nearest 4 expirations scanned</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={styles.filters}>
         <div className={styles.filterGroup}>
           <span className={styles.filterLabel}>Symbol</span>
@@ -110,7 +187,7 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
         </div>
 
         <div className={styles.filterGroup}>
-          <span className={styles.filterLabel}>Min Score</span>
+          <span className={styles.filterLabel}>Min Whale Score</span>
           <input
             type="range"
             min="10"
@@ -118,8 +195,9 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
             step="10"
             value={minSigma}
             onChange={(e) => setMinSigma(parseFloat(e.target.value))}
+            className={styles.rangeInput}
           />
-          <span className={styles.filterLabel}>{minSigma.toFixed(1)}</span>
+          <span className={styles.filterValue}>{minSigma.toFixed(0)}</span>
         </div>
 
         <div className={styles.filterGroup}>
@@ -142,13 +220,18 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
         </div>
 
         <div className={styles.refreshGroup}>
-          {loading ? 'Refreshing...' : `Refreshes in ${countdown}s`}
+          <span className={styles.refreshDot} />
+          {loading ? 'Scanning...' : `Next scan in ${countdown}s`}
         </div>
       </div>
 
       <div className={styles.tableWrapper}>
         {data.length === 0 && !loading ? (
-          <div className={styles.emptyState}>No unusual activity detected matching your filters</div>
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>🐋</div>
+            <p>No whale activity detected matching your filters</p>
+            <span className={styles.emptyHint}>Enter a symbol above to scan for institutional options flow</span>
+          </div>
         ) : (
           <table className={styles.table}>
             <thead>
@@ -163,31 +246,32 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
                 <th onClick={() => handleSort('openInterest')}>OI</th>
                 <th onClick={() => handleSort('volumeOIRatio')}>Vol/OI</th>
                 <th onClick={() => handleSort('compositeSigma')}>Whale Score</th>
-                <th className={styles.leftAlign}>Flags</th>
+                <th className={styles.leftAlign}>Signals</th>
               </tr>
             </thead>
             <tbody>
               {sortedData.map((item, i) => (
                 <tr key={i}>
                   <td className={`${styles.leftAlign} ${styles.symbol}`}>
-                    {item.isSweep && <span className={styles.sweepIcon}>⚡</span>}
+                    {item.isSweep && <span className={styles.sweepIcon} title="Sweep order detected">⚡</span>}
                     {item.symbol}
                   </td>
-                  <td>{item.strike}</td>
+                  <td className={styles.mono}>${item.strike}</td>
                   <td>{item.expiry}</td>
-                  <td>{item.dte}</td>
+                  <td className={item.dte <= 14 ? styles.dteUrgent : ''}>{item.dte}d</td>
                   <td>
                     <span className={`${styles.sideBadge} ${item.side === 'call' ? styles.sideCall : styles.sidePut}`}>
                       {item.side.toUpperCase()}
                     </span>
                   </td>
-                  <td>{formatPremium(item.premium)}</td>
-                  <td>{formatNumber(item.volume)}</td>
-                  <td>{formatNumber(item.openInterest)}</td>
-                  <td>{item.volumeOIRatio.toFixed(2)}x</td>
+                  <td className={styles.mono}>{formatPremium(item.premium)}</td>
+                  <td className={styles.mono}>{formatNumber(item.volume)}</td>
+                  <td className={styles.mono}>{formatNumber(item.openInterest)}</td>
+                  <td className={styles.mono}>{item.volumeOIRatio.toFixed(1)}×</td>
                   <td>
                     <div className={`${styles.sigmaBadge} ${getSigmaClass(item.compositeSigma)}`}>
-                      {item.compositeSigma.toFixed(2)}
+                      <span className={styles.sigmaValue}>{item.compositeSigma.toFixed(0)}</span>
+                      <span className={styles.sigmaLabel}>{getSigmaLabel(item.compositeSigma)}</span>
                       {item.flagReasons.length > 0 && (
                         <div className={styles.tooltip}>
                           {item.flagReasons.map((reason, idx) => (
@@ -197,7 +281,16 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
                       )}
                     </div>
                   </td>
-                  <td className={styles.leftAlign}>{item.flagReasons.length} Flags</td>
+                  <td className={styles.leftAlign}>
+                    <div className={styles.flagList}>
+                      {item.flagReasons.slice(0, 2).map((reason, idx) => (
+                        <span key={idx} className={styles.flagChip}>{reason}</span>
+                      ))}
+                      {item.flagReasons.length > 2 && (
+                        <span className={styles.flagMore}>+{item.flagReasons.length - 2} more</span>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
