@@ -11,6 +11,8 @@ export { jsonResponse } from './utils/response.js';
 
 import * as options from './routes/options.js';
 import * as portfolio from './routes/portfolio.js';
+import * as insights from './routes/insights.js';
+import * as alerts from './routes/alerts.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -187,6 +189,42 @@ const routes: readonly Route[] = [
       const userId = getUserId(event);
       if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
       return optionsMetrics.getOptionsMetrics(event, params);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/options/insights/:symbol',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return insights.getOptionsInsights(event, params);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/alerts',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return alerts.getAlerts(event);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/api/alerts',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return alerts.createAlert(event);
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/api/alerts/:id',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return alerts.deleteAlert(event, params);
     },
   },
   {

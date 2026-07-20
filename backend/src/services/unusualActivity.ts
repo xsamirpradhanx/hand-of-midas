@@ -46,6 +46,50 @@ interface SnapshotItem extends DynamoDBBaseItem {
 }
 
 // ---------------------------------------------------------------------------
+// Whale scoring (shared by scanner + options chain)
+// ---------------------------------------------------------------------------
+
+export const WHALE_MIN_VOLUME = 500;
+export const WHALE_MIN_PREMIUM = 100_000;
+export const WHALE_MIN_VOL_OI_RATIO = 3;
+
+export function computeWhaleScore(input: {
+  volume: number;
+  openInterest: number;
+  price: number;
+  dte: number;
+}): number | null {
+  const { volume, openInterest, price, dte } = input;
+
+  if (volume < WHALE_MIN_VOLUME) return null;
+
+  const premium = volume * price * 100;
+  if (premium < WHALE_MIN_PREMIUM) return null;
+
+  const volumeOIRatio = openInterest > 0 ? volume / openInterest : volume;
+  if (volumeOIRatio < WHALE_MIN_VOL_OI_RATIO) return null;
+
+  const dteFactor = Math.max(1, dte);
+  const oiFactor = Math.max(1, openInterest);
+
+  return (volume / oiFactor) * Math.log10(Math.max(premium, 10)) * (30 / dteFactor);
+}
+
+export function buildWhaleFlagReasons(
+  volume: number,
+  openInterest: number,
+  premium: number,
+  dte: number,
+  volumeOIRatio: number,
+): string[] {
+  const flagReasons: string[] = [];
+  flagReasons.push(`Volume (${volume}) exceeds Open Interest (${openInterest}) by ${volumeOIRatio.toFixed(1)}x`);
+  flagReasons.push(`Massive notional premium: $${Math.floor(premium).toLocaleString()}`);
+  if (dte <= 14) flagReasons.push(`Aggressive short-dated positioning (${dte} DTE)`);
+  return flagReasons;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -207,10 +251,7 @@ export async function getUnusualActivity(filters: {
     for (const c of contracts) {
       const vol = c.day.volume || 0;
       const oi = c.day.open_interest || 0;
-      
-      // Basic filters to avoid noise
-      if (vol < 500) continue; // Needs to be size
-      
+
       const bid = c.last_quote.bid || 0;
       const ask = c.last_quote.ask || 0;
       let referencePrice = 0;
@@ -219,25 +260,19 @@ export async function getUnusualActivity(filters: {
       } else {
         referencePrice = c.last_quote.last > 0 ? c.last_quote.last : (bid || ask);
       }
+
+      const whaleScore = computeWhaleScore({
+        volume: vol,
+        openInterest: oi,
+        price: referencePrice,
+        dte,
+      });
+      if (whaleScore == null) continue;
+
       const premium = vol * referencePrice * 100;
-      
-      if (premium < (filters.minPremium || 100000)) continue; // Must be over $100k notional
-
       const volumeOIRatio = oi > 0 ? vol / oi : vol;
-      if (volumeOIRatio < 3.0) continue; // Volume must be at least 3x Open Interest
 
-      // Calculate Whale Score
-      // Formula: (Vol / max(OI, 1)) * log10(Premium) * (1 / max(DTE, 1))
-      // Adding moneyness factor (optional but good for out-of-the-money conviction)
-      const dteFactor = Math.max(1, dte);
-      const oiFactor = Math.max(1, oi);
-      
-      let whaleScore = (vol / oiFactor) * Math.log10(Math.max(premium, 10)) * (30 / dteFactor);
-
-      const flagReasons: string[] = [];
-      flagReasons.push(`Volume (${vol}) exceeds Open Interest (${oi}) by ${volumeOIRatio.toFixed(1)}x`);
-      flagReasons.push(`Massive notional premium: $${Math.floor(premium).toLocaleString()}`);
-      if (dte <= 14) flagReasons.push(`Aggressive short-dated positioning (${dte} DTE)`);
+      const flagReasons = buildWhaleFlagReasons(vol, oi, premium, dte, volumeOIRatio);
 
       anomalies.push({
         symbol: filters.symbol,
@@ -249,10 +284,10 @@ export async function getUnusualActivity(filters: {
         volume: vol,
         openInterest: oi,
         volumeOIRatio,
-        volumeZScore: volumeOIRatio, // Reuse field for simplicity
+        volumeZScore: volumeOIRatio,
         premiumZScore: Math.log10(premium),
-        ivZScore: c.implied_volatility, 
-        isSweep: false, // We can't know this from snapshot
+        ivZScore: c.implied_volatility,
+        isSweep: false,
         compositeSigma: whaleScore,
         flagReasons,
         contractTicker: c.ticker
@@ -261,7 +296,12 @@ export async function getUnusualActivity(filters: {
   }
 
   // Filter by user params
+  const minSigma = filters.minSigma ?? 50;
+  const minPremium = filters.minPremium ?? WHALE_MIN_PREMIUM;
+
   const filtered = anomalies.filter(a => {
+    if (a.compositeSigma < minSigma) return false;
+    if (a.premium < minPremium) return false;
     if (filters.side && a.side !== filters.side) return false;
     if (filters.dteMax !== undefined && a.dte > filters.dteMax) return false;
     return true;

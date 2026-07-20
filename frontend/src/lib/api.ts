@@ -1,18 +1,24 @@
 // API Client
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-import type { 
-  WatchlistEntry, 
-  QuoteResponse, 
-  OHLCVDataPoint, 
+import { config } from '../config';
+import type {
+  WatchlistEntry,
+  QuoteResponse,
+  OHLCVDataPoint,
   ChartConfigResponse,
   IndicatorConfig,
   OptionsChainResponse,
   UnusualActivityItem,
   PortfolioSummary,
   Position,
-} from '../types'; // Import types
+  Alert,
+} from '../types';
 
 import { userPool } from '../contexts/AuthContext';
+
+// API_BASE_URL already contains the /api prefix (e.g. '/api' in dev, the full API Gateway URL in prod).
+// All fetchWithAuth paths must start with '/' and must NOT include /api themselves.
+// Example: fetchWithAuth('/watchlist') → `${API_BASE_URL}/watchlist` → /api/watchlist ✓
+const API_BASE_URL = config.apiUrl.replace(/\/+$/, '');
 
 async function getCognitoToken(): Promise<string | null> {
   const cognitoUser = userPool.getCurrentUser();
@@ -83,9 +89,21 @@ export const api = {
   getOptionsChain: (symbol: string, expiry?: string): Promise<OptionsChainResponse> => 
     fetchWithAuth(`/options/chain/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
     
-  getOptionsMetrics: (symbol: string): Promise<any> => 
-    fetchWithAuth(`/options/metrics/${symbol}`),
+  getOptionsMetrics: (symbol: string, expiry?: string): Promise<any> => 
+    fetchWithAuth(`/options/metrics/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
     
+  getAiInsights: (symbol: string, expiry?: string): Promise<{ insight: string }> => 
+    fetchWithAuth(`/options/insights/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
+    
+  getAlerts: (): Promise<Alert[]> =>
+    fetchWithAuth('/alerts'),
+
+  createAlert: (alert: Pick<Alert, 'symbol' | 'message' | 'severity'>): Promise<Alert> =>
+    fetchWithAuth('/alerts', { method: 'POST', body: JSON.stringify(alert) }),
+
+  deleteAlert: (id: string): Promise<void> =>
+    fetchWithAuth(`/alerts/${id}`, { method: 'DELETE' }),
+
   getUnusualActivity: async (filters?: { symbol?: string; minSigma?: number; side?: string; dteMax?: number }): Promise<UnusualActivityItem[]> => {
     const params = new URLSearchParams();
     if (filters?.symbol) params.append('symbol', filters.symbol);
@@ -97,16 +115,18 @@ export const api = {
   },
 
   getIVHistory: (symbol: string): Promise<{ date: string; iv: number; atm_iv: number; iv_rank: number; iv_percentile: number }[]> => 
-    fetchWithAuth(`/options/${symbol}/iv-history`),
+    fetchWithAuth(`/options/ivhistory/${symbol}`),
 
-  getPortfolioPositions: (): Promise<Position[]> => 
-    fetchWithAuth('/portfolio/positions'),
+  getPortfolioPositions: async (): Promise<Position[]> => {
+    const res = await fetchWithAuth('/portfolio/positions');
+    return res?.positions || [];
+  },
 
   addPosition: (position: Omit<Position, 'id' | 'status'>): Promise<Position> => 
     fetchWithAuth('/portfolio/positions', { method: 'POST', body: JSON.stringify(position) }),
 
   updatePosition: (id: string, position: Partial<Position>): Promise<Position> => 
-    fetchWithAuth(`/portfolio/positions/${id}`, { method: 'PATCH', body: JSON.stringify(position) }),
+    fetchWithAuth(`/portfolio/positions/${id}`, { method: 'PUT', body: JSON.stringify(position) }),
 
   deletePosition: (id: string): Promise<void> => 
     fetchWithAuth(`/portfolio/positions/${id}`, { method: 'DELETE' }),
@@ -114,6 +134,6 @@ export const api = {
   getPortfolioSummary: (): Promise<PortfolioSummary> => 
     fetchWithAuth('/portfolio/summary'),
 
-  runScenario: (deltaSpot: number, deltaIV: number): Promise<PortfolioSummary> => 
+  runScenario: (deltaSpot: number, deltaIV: number): Promise<{ scenarioPL: number }> =>
     fetchWithAuth('/portfolio/scenario', { method: 'POST', body: JSON.stringify({ deltaSpot, deltaIV }) }),
 };

@@ -9,10 +9,38 @@ interface GexData {
   totalGex: number;
 }
 
+interface GexData {
+  strike: number;
+  callGex: number;
+  putGex: number;
+  totalGex: number;
+}
+
 interface TermStructureData {
   expiry: string;
   dte: number;
   averageIV: number;
+}
+
+interface VolumeOIByStrike {
+  strike: number;
+  callVol: number;
+  callOI: number;
+  putVol: number;
+  putOI: number;
+  callVolOI: number;
+  putVolOI: number;
+  totalVolOI: number;
+}
+
+interface OIChange {
+  strike: number;
+  expiry: string;
+  side: 'call' | 'put';
+  currentOI: number;
+  previousOI: number;
+  oiChange: number;
+  oiChangePct: number;
 }
 
 interface MetricsResponse {
@@ -30,10 +58,13 @@ interface MetricsResponse {
   };
   termStructure: TermStructureData[];
   gexProfile: GexData[];
+  volumeOIByStrike: VolumeOIByStrike[];
+  oiChanges: OIChange[];
 }
 
 interface Props {
   symbol: string;
+  activeExpiry: string | null;
 }
 
 const METRIC_INFO: Record<string, { title: string; description: string }> = {
@@ -68,7 +99,7 @@ function MetricTooltip({ metricKey }: { metricKey: keyof typeof METRIC_INFO }) {
   );
 }
 
-export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
+export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
   const [data, setData] = useState<MetricsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +111,7 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
     setLoading(true);
     setError(null);
 
-    api.getOptionsMetrics(symbol)
+    api.getOptionsMetrics(symbol, activeExpiry || undefined)
       .then(res => {
         if (!isMounted) return;
         setData(res);
@@ -93,7 +124,7 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
       });
 
     return () => { isMounted = false; };
-  }, [symbol]);
+  }, [symbol, activeExpiry]);
 
   if (loading) {
     return (
@@ -111,8 +142,16 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
   if (!data) return null;
 
   let maxAbsGex = 0;
+  let totalNetGex = 0;
+  let maxGexStrike = 0;
+  let maxGexValue = 0;
   data.gexProfile.forEach(d => {
     maxAbsGex = Math.max(maxAbsGex, Math.abs(d.callGex), Math.abs(d.putGex));
+    totalNetGex += d.totalGex;
+    if (Math.abs(d.totalGex) > Math.abs(maxGexValue)) {
+      maxGexValue = d.totalGex;
+      maxGexStrike = d.strike;
+    }
   });
 
   const spotVsMaxPain = data.spotPrice > data.maxPainStrike ? 'Above' : 'Below';
@@ -131,7 +170,7 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
       <div className={styles.grid}>
         <div className={styles.card}>
           <h3>
-            Max Pain (Nearest Expiry)
+            Max Pain {activeExpiry ? `(${activeExpiry})` : '(Nearest Expiry)'}
             <MetricTooltip metricKey="maxPain" />
           </h3>
           <div className={styles.largeValue}>${data.maxPainStrike.toFixed(2)}</div>
@@ -144,7 +183,7 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
 
         <div className={styles.card}>
           <h3>
-            Put/Call Volume Skew
+            Put/Call Volume Skew {activeExpiry && `(${activeExpiry})`}
             <MetricTooltip metricKey="volumeSkew" />
           </h3>
           <div className={`${styles.largeValue} ${data.putCallSkew.volumeRatio > 1 ? styles.bearish : styles.bullish}`}>
@@ -153,12 +192,22 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
           <div className={styles.subtext}>
             {data.putCallSkew.totalPutVol.toLocaleString()} Puts / {data.putCallSkew.totalCallVol.toLocaleString()} Calls
           </div>
+          {data.putCallSkew.volumeRatio > 1.2 && (
+            <div className={`${styles.trendIndicator} ${styles.trendBearish}`}>
+              <span className={styles.trendArrow}>↑</span> Rising Hedging/Fear
+            </div>
+          )}
+          {data.putCallSkew.volumeRatio < 0.8 && (
+            <div className={`${styles.trendIndicator} ${styles.trendBullish}`}>
+              <span className={styles.trendArrow}>↓</span> Complacency
+            </div>
+          )}
           <p className={styles.cardDesc}>{METRIC_INFO.volumeSkew.description}</p>
         </div>
 
         <div className={styles.card}>
           <h3>
-            Put/Call OI Skew
+            Put/Call OI Skew {activeExpiry && `(${activeExpiry})`}
             <MetricTooltip metricKey="oiSkew" />
           </h3>
           <div className={`${styles.largeValue} ${data.putCallSkew.oiRatio > 1 ? styles.bearish : styles.bullish}`}>
@@ -174,10 +223,29 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
       <div className={styles.chartsGrid}>
         <div className={styles.chartCard}>
           <h3>
-            Gamma Exposure (GEX) Profile
+            Gamma Exposure (GEX) Profile {activeExpiry && `(${activeExpiry})`}
             <MetricTooltip metricKey="gex" />
           </h3>
           <p className={styles.subtext}>Net dealer gamma by strike · Positive = call gamma · Negative = put gamma</p>
+
+          <div className={styles.gexSummary}>
+            <div className={styles.gexSummaryItem}>
+              <span className={styles.gexSummaryLabel}>Net GEX</span>
+              <span className={`${styles.gexSummaryValue} ${totalNetGex > 0 ? styles.gexPinning : styles.gexAmplified}`}>
+                ${(totalNetGex / 1000000).toFixed(1)}M
+              </span>
+            </div>
+            <div className={styles.gexSummaryItem}>
+              <span className={styles.gexSummaryLabel}>Regime</span>
+              <span className={`${styles.gexSummaryValue} ${totalNetGex > 0 ? styles.gexPinning : styles.gexAmplified}`}>
+                {totalNetGex > 0 ? 'Pinning' : 'Amplified'}
+              </span>
+            </div>
+            <div className={styles.gexSummaryItem}>
+              <span className={styles.gexSummaryLabel}>Peak GEX</span>
+              <span className={styles.gexSummaryValue}>${maxGexStrike}</span>
+            </div>
+          </div>
 
           <div className={styles.gexChartContainer}>
             {data.gexProfile.length > 0 && maxAbsGex > 0 ? (
@@ -220,23 +288,147 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol }) => {
           <p className={styles.subtext}>OI-weighted average implied volatility by expiration</p>
 
           <div className={styles.termStructureList}>
-            {data.termStructure.map(ts => (
-              <div key={ts.expiry} className={styles.tsRow}>
-                <div className={styles.tsLabel}>
-                  {ts.expiry}
-                  <span className={styles.tsDte}>({ts.dte}DTE)</span>
+            {data.termStructure.map((ts, idx) => {
+              const prevTs = idx > 0 ? data.termStructure[idx - 1] : null;
+              let regime = 'Flat';
+              if (prevTs) {
+                if (prevTs.averageIV > ts.averageIV + 0.05) regime = 'Backwardation';
+                else if (ts.averageIV > prevTs.averageIV + 0.05) regime = 'Contango';
+              } else if (data.termStructure.length > 1) {
+                const nextTs = data.termStructure[idx + 1];
+                if (ts.averageIV > nextTs.averageIV + 0.05) regime = 'Backwardation';
+                else if (nextTs.averageIV > ts.averageIV + 0.05) regime = 'Contango';
+              }
+
+              return (
+                <div key={ts.expiry} className={styles.tsRow}>
+                  <div className={styles.tsLabel}>
+                    {ts.expiry}
+                    <span className={styles.tsDte}>({ts.dte}DTE)</span>
+                  </div>
+                  <div className={styles.tsBarContainer}>
+                    <div
+                      className={styles.tsBar}
+                      style={{ width: `${Math.min(100, ts.averageIV * 100)}%` }}
+                    />
+                  </div>
+                  <div className={styles.tsValue}>{(ts.averageIV * 100).toFixed(1)}%</div>
+                  {regime === 'Backwardation' && (
+                    <span className={styles.eventRiskFlag}>Event Risk</span>
+                  )}
                 </div>
-                <div className={styles.tsBarContainer}>
-                  <div
-                    className={styles.tsBar}
-                    style={{ width: `${Math.min(100, ts.averageIV * 100)}%` }}
-                  />
+              );
+            })}
+          </div>
+          {data.termStructure.length > 1 && (
+            <div className={`${styles.regimeLabel} ${
+              data.termStructure[0].averageIV > data.termStructure[1].averageIV 
+                ? styles.regimeBackwardation 
+                : styles.regimeContango
+            }`}>
+              {data.termStructure[0].averageIV > data.termStructure[1].averageIV ? 'Backwardation' : 'Contango'}
+            </div>
+          )}
+          <p className={styles.cardDesc}>{METRIC_INFO.termStructure.description}</p>
+        </div>
+      </div>
+
+      <div className={styles.fullWidthChartsGrid}>
+        <div className={styles.chartCard}>
+          <h3>Volume / Open Interest Heatmap {activeExpiry && `(${activeExpiry})`}</h3>
+          <p className={styles.subtext}>Highlights strikes where today's volume significantly exceeds historical positioning</p>
+          
+          <div className={styles.heatmapLegend}>
+            <div className={styles.heatmapLegendItem}>
+              <div className={styles.heatmapLegendDot} style={{ background: 'var(--color-up)' }} /> Calls
+            </div>
+            <div className={styles.heatmapLegendItem}>
+              <div className={styles.heatmapLegendDot} style={{ background: 'var(--color-down)' }} /> Puts
+            </div>
+            <div className={styles.heatmapLegendItem}>
+              ⚡ Institutional Spike (&gt;3x)
+            </div>
+          </div>
+
+          <div className={styles.heatmapContainer}>
+            {data.volumeOIByStrike?.filter(d => d.totalVolOI > 0.5).slice(0, 15).map(d => (
+              <div key={d.strike} className={styles.heatmapRow}>
+                <div className={styles.heatmapStrike}>${d.strike}</div>
+                <div className={styles.heatmapBarContainer}>
+                  {d.callVolOI > 0 && (
+                    <div 
+                      className={styles.heatmapBarCall} 
+                      style={{ 
+                        width: `${Math.min(50, d.callVolOI * 10)}%`,
+                        background: d.callVolOI > 3 ? 'var(--color-up)' : 'var(--color-up-dim)' 
+                      }} 
+                    />
+                  )}
+                  {d.putVolOI > 0 && (
+                    <div 
+                      className={styles.heatmapBarPut} 
+                      style={{ 
+                        width: `${Math.min(50, d.putVolOI * 10)}%`,
+                        background: d.putVolOI > 3 ? 'var(--color-down)' : 'var(--color-down-dim)'
+                      }} 
+                    />
+                  )}
                 </div>
-                <div className={styles.tsValue}>{(ts.averageIV * 100).toFixed(1)}%</div>
+                <div className={`${styles.heatmapValue} ${
+                  Math.max(d.callVolOI, d.putVolOI) > 3 ? styles.heatmapHot : 
+                  Math.max(d.callVolOI, d.putVolOI) > 1.5 ? styles.heatmapWarm : styles.heatmapCool
+                }`}>
+                  {Math.max(d.callVolOI, d.putVolOI).toFixed(1)}x
+                  {Math.max(d.callVolOI, d.putVolOI) > 3 && <span className={styles.heatmapSpike}>⚡</span>}
+                </div>
               </div>
             ))}
           </div>
-          <p className={styles.cardDesc}>{METRIC_INFO.termStructure.description}</p>
+        </div>
+
+        <div className={styles.chartCard}>
+          <h3>OI Change Day-over-Day</h3>
+          <p className={styles.subtext}>Top positions opening and closing across all expirations</p>
+          
+          {(!data.oiChanges || data.oiChanges.length === 0) ? (
+            <div className={styles.oiChangeEmpty}>
+              Pending overnight snapshot. Check back tomorrow for Day-over-Day changes.
+            </div>
+          ) : (
+            <div className={styles.oiChangeGrid}>
+              <div className={styles.oiChangeColumn}>
+                <div className={`${styles.oiChangeColumnTitle} ${styles.oiChangeOpening}`}>Opening (New Conviction)</div>
+                {data.oiChanges.filter(d => d.oiChange > 0).slice(0, 5).map((d, i) => (
+                  <div key={i} className={styles.oiChangeRow}>
+                    <div className={styles.oiChangeStrike}>${d.strike}</div>
+                    <div className={`${styles.oiChangeSide} ${d.side === 'call' ? styles.oiChangeSideCall : styles.oiChangeSidePut}`}>
+                      {d.side.charAt(0)}
+                    </div>
+                    <div className={styles.tsLabel} style={{ width: 'auto' }}>{d.expiry}</div>
+                    <div className={`${styles.oiChangeDelta} ${styles.oiChangeDeltaUp}`}>
+                      +{d.oiChange.toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className={styles.oiChangeColumn}>
+                <div className={`${styles.oiChangeColumnTitle} ${styles.oiChangeClosing}`}>Closing (Unwinds)</div>
+                {data.oiChanges.filter(d => d.oiChange < 0).slice(0, 5).map((d, i) => (
+                  <div key={i} className={styles.oiChangeRow}>
+                    <div className={styles.oiChangeStrike}>${d.strike}</div>
+                    <div className={`${styles.oiChangeSide} ${d.side === 'call' ? styles.oiChangeSideCall : styles.oiChangeSidePut}`}>
+                      {d.side.charAt(0)}
+                    </div>
+                    <div className={styles.tsLabel} style={{ width: 'auto' }}>{d.expiry}</div>
+                    <div className={`${styles.oiChangeDelta} ${styles.oiChangeDeltaDown}`}>
+                      {d.oiChange.toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

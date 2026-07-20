@@ -1,0 +1,123 @@
+.container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bellBtn {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  position: relative;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.bellBtn:hover {
+  background: var(--bg-hover);
+}
+
+.badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--color-down);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: bold;
+  border-radius: 10px;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  width: 320px;
+  background: var(--surface-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.header h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.alertList {
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty {
+  padding: var(--space-md);
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.alertItem {
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.alertItem:last-child {
+  border-bottom: none;
+}
+
+.alertItem.high {
+  border-left: 4px solid var(--color-down);
+}
+
+.alertItem.medium {
+  border-left: 4px solid var(--gold-mid);
+}
+
+.alertHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.symbol {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.message {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}

@@ -1,6 +1,8 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../utils/response.js';
 import { queryItems, putItem, deleteItem } from '../services/dynamodb.js';
+import { blackScholes, impliedVolatility } from '../services/greeks.js';
+import { getQuote } from '../services/polygon.js';
 import crypto from 'crypto';
 
 interface PositionLeg {
@@ -165,26 +167,100 @@ export async function getPortfolioSummary(
 
   try {
     const items = await queryItems<Position>(positionPK(userId), 'POSITION#');
-    
-    let netUnrealizedPL = 0;
+    const openPositions = items.filter(pos => pos.status === 'open');
+
+    const symbols = Array.from(new Set(openPositions.map(p => p.symbol)));
+    const quoteMap: Record<string, number> = {};
+    await Promise.all(
+      symbols.map(async sym => {
+        try {
+          const q = await getQuote(sym);
+          quoteMap[sym] = q.price;
+        } catch {
+          quoteMap[sym] = 0;
+        }
+      }),
+    );
+
     let netDelta = 0;
-    let netTheta = 0;
+    let netGamma = 0;
+    let netThetaPerDay = 0;
     let netVega = 0;
-    
-    for (const pos of items) {
-      // Mocked calculation
-      // Here you would compute Greek summaries per position
-      if (pos.status === 'open') {
-         // netUnrealizedPL += ...
+    let totalValue = 0;
+    let totalCost = 0;
+
+    const positionsWithGreeks = openPositions.map(pos => {
+      const S = quoteMap[pos.symbol] ?? 0;
+      let posDelta = 0, posGamma = 0, posTheta = 0, posVega = 0;
+      let posValue = 0, posCost = 0;
+
+      for (const leg of pos.legs) {
+        const qty = leg.quantity;
+
+        if (!leg.optionDetails) {
+          // Stock leg: delta normalised to option-contract scale (1 share = 1 delta unit × 100)
+          posDelta += qty * 100;
+          const price = leg.currentPrice ?? leg.costBasis;
+          posValue += price * qty;
+          posCost += leg.costBasis * qty;
+        } else {
+          const { strike, expiry, type, multiplier } = leg.optionDetails;
+          const daysToExpiry = Math.max(0, (new Date(expiry).getTime() - Date.now()) / 86400000);
+          const T = Math.max(0.0027, daysToExpiry / 365);
+          const r = 0.05;
+
+          let sigma = 0.3;
+          if (S > 0) {
+            const optionPrice = leg.currentPrice ?? leg.costBasis;
+            const computedIV = impliedVolatility(optionPrice, S, strike, T, r, type);
+            if (computedIV !== null && computedIV > 0.01) sigma = computedIV;
+          }
+
+          const g = S > 0
+            ? blackScholes(S, strike, T, r, sigma, type)
+            : { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0, price: 0 };
+
+          posDelta += g.delta * qty * multiplier;
+          posGamma += g.gamma * qty * multiplier;
+          posTheta += g.theta * qty * multiplier;
+          posVega += g.vega * qty * multiplier;
+
+          const currentOptionPrice = leg.currentPrice ?? leg.costBasis;
+          posValue += currentOptionPrice * qty * multiplier;
+          posCost += leg.costBasis * qty * multiplier;
+        }
       }
-    }
+
+      netDelta += posDelta;
+      netGamma += posGamma;
+      netThetaPerDay += posTheta;
+      netVega += posVega;
+      totalValue += posValue;
+      totalCost += posCost;
+
+      return {
+        ...pos,
+        currentValue: posValue,
+        unrealizedPnL: posValue - posCost,
+        delta: posDelta,
+        theta: posTheta,
+        vega: posVega,
+      };
+    });
+
+    const unrealizedPnL = totalValue - totalCost;
+    const unrealizedPnLPercent = totalCost !== 0 ? (unrealizedPnL / totalCost) * 100 : 0;
 
     return jsonResponse(200, {
-      netUnrealizedPL,
+      totalValue,
+      totalCost,
+      unrealizedPnL,
+      unrealizedPnLPercent,
       netDelta,
-      netTheta,
+      netGamma,
+      netThetaPerDay,
       netVega,
-      positionCount: items.length
+      positions: positionsWithGreeks,
     });
   } catch (err: any) {
     return jsonResponse(500, { error: err.message });
@@ -207,24 +283,65 @@ export async function runScenario(
     if (event.isBase64Encoded) {
       bodyText = Buffer.from(bodyText, 'base64').toString('utf-8');
     }
-    
-    const { deltaSpot, deltaIV } = JSON.parse(bodyText) as { deltaSpot: number, deltaIV: number };
-    
+
+    const { deltaSpot, deltaIV } = JSON.parse(bodyText) as { deltaSpot: number; deltaIV: number };
+
     const items = await queryItems<Position>(positionPK(userId), 'POSITION#');
-    
+    const openPositions = items.filter(pos => pos.status === 'open');
+
+    const symbols = Array.from(new Set(openPositions.map(p => p.symbol)));
+    const quoteMap: Record<string, number> = {};
+    await Promise.all(
+      symbols.map(async sym => {
+        try {
+          const q = await getQuote(sym);
+          quoteMap[sym] = q.price;
+        } catch {
+          quoteMap[sym] = 0;
+        }
+      }),
+    );
+
     let scenarioPL = 0;
-    for (const pos of items) {
-      if (pos.status === 'open') {
-         // dP/L ≈ delta*deltaSpot + 0.5*gamma*deltaSpot^2 + vega*deltaIV
-         // Mock Greek values for legs
-         const posDelta = 0; 
-         const posGamma = 0;
-         const posVega = 0;
-         const pl = (posDelta * deltaSpot) + (0.5 * posGamma * Math.pow(deltaSpot, 2)) + (posVega * deltaIV);
-         scenarioPL += pl;
+    for (const pos of openPositions) {
+      const S = quoteMap[pos.symbol] ?? 0;
+
+      for (const leg of pos.legs) {
+        const qty = leg.quantity;
+        let legDelta = 0, legGamma = 0, legVega = 0;
+
+        if (!leg.optionDetails) {
+          legDelta = qty * 100;
+        } else {
+          const { strike, expiry, type, multiplier } = leg.optionDetails;
+          const daysToExpiry = Math.max(0, (new Date(expiry).getTime() - Date.now()) / 86400000);
+          const T = Math.max(0.0027, daysToExpiry / 365);
+          const r = 0.05;
+
+          let sigma = 0.3;
+          if (S > 0) {
+            const optionPrice = leg.currentPrice ?? leg.costBasis;
+            const computedIV = impliedVolatility(optionPrice, S, strike, T, r, type);
+            if (computedIV !== null && computedIV > 0.01) sigma = computedIV;
+          }
+
+          const g = S > 0
+            ? blackScholes(S, strike, T, r, sigma, type)
+            : { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0, price: 0 };
+
+          legDelta = g.delta * qty * multiplier;
+          legGamma = g.gamma * qty * multiplier;
+          legVega = g.vega * qty * multiplier;
+        }
+
+        // dP/L ≈ delta·ΔS + 0.5·gamma·ΔS² + vega·ΔIV - theta (theta omitted for scenario)
+        scenarioPL +=
+          legDelta * deltaSpot +
+          0.5 * legGamma * deltaSpot * deltaSpot +
+          legVega * deltaIV;
       }
     }
-    
+
     return jsonResponse(200, { scenarioPL });
   } catch (err: any) {
     return jsonResponse(400, { error: err.message });

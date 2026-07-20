@@ -7,7 +7,7 @@
  */
 export const config = {
   /** Base URL for the REST API */
-  apiUrl: import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
+  apiUrl: import.meta.env.VITE_API_URL || '/api',
   /** AWS Cognito User Pool ID */
   cognitoUserPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID || '',
   /** AWS Cognito App Client ID */

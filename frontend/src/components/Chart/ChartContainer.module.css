@@ -53,3 +53,21 @@
   z-index: 10;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
+
+.saveStatus {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.saveStatusOk {
+  color: #00d4aa;
+}
+
+.saveStatusErr {
+  color: #ff4d4d;
+}

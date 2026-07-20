@@ -47,11 +47,17 @@ const METRIC_DEFINITIONS = [
 export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initialSymbol = '' }) => {
   const [data, setData] = useState<UnusualActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
   const [showMethodology, setShowMethodology] = useState(true);
 
   const [symbolFilter, setSymbolFilter] = useState(initialSymbol);
-  const [minSigma, setMinSigma] = useState(50);
+
+  useEffect(() => {
+    setSymbolFilter(initialSymbol);
+  }, [initialSymbol]);
+
+  const [minSigma, setMinSigma] = useState(250);
   const [sideFilter, setSideFilter] = useState('all');
   const [dteMax, setDteMax] = useState(30);
 
@@ -59,10 +65,17 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
   const [sortDesc, setSortDesc] = useState(true);
 
   const fetchData = async () => {
+    if (!symbolFilter.trim()) {
+      setData([]);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
+    setError(null);
     try {
       const res = await api.getUnusualActivity({
-        symbol: symbolFilter || undefined,
+        symbol: symbolFilter.trim(),
         minSigma,
         side: sideFilter,
         dteMax
@@ -70,6 +83,8 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
       setData(res || []);
     } catch (err) {
       console.error('Failed to load unusual activity:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load whale flow data');
+      setData([]);
     } finally {
       setLoading(false);
       setCountdown(60);
@@ -226,7 +241,13 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
       </div>
 
       <div className={styles.tableWrapper}>
-        {data.length === 0 && !loading ? (
+        {error ? (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>⚠️</div>
+            <p>{error}</p>
+            <span className={styles.emptyHint}>Check that the backend is running and VITE_API_URL includes /api</span>
+          </div>
+        ) : data.length === 0 && !loading ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>🐋</div>
             <p>No whale activity detected matching your filters</p>

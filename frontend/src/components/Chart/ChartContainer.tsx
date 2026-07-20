@@ -48,11 +48,38 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesMapRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
   const rawDataRef = useRef<OHLCVDataPoint[]>([]);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstIndicatorsRender = useRef(true);
 
   const [data, setData] = useState<OHLCVDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Auto-save indicator config with 500 ms debounce whenever indicators or symbol change.
+  // Skip the first render to avoid saving state loaded from the API back immediately.
+  useEffect(() => {
+    if (isFirstIndicatorsRender.current) {
+      isFirstIndicatorsRender.current = false;
+      return;
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus('saving');
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await api.saveChartConfig(symbol, { indicators });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch {
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      }
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [indicators, symbol]);
 
   // Live Pricing Hook
   // We prefer polygon if key is found, otherwise finnhub
@@ -223,11 +250,11 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
 
       if (chartType === 'candlestick') {
         mainSeries = chart.addSeries(CandlestickSeries, {
-          upColor: '#00e676',
-          downColor: '#ff1744',
+          upColor: '#26a69a',
+          downColor: '#ef5350',
           borderVisible: false,
-          wickUpColor: '#00e676',
-          wickDownColor: '#ff1744',
+          wickUpColor: '#26a69a',
+          wickDownColor: '#ef5350',
         });
         mainSeries.setData(baseChartData);
       } else if (chartType === 'heikinashi') {
@@ -241,25 +268,25 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
            haData[haData.length - 1] = lastHa;
         }
         mainSeries = chart.addSeries(CandlestickSeries, {
-          upColor: '#00b4d8',
-          downColor: '#9d4edd',
+          upColor: '#00bcd4',
+          downColor: '#e91e63',
           borderVisible: false,
-          wickUpColor: '#00b4d8',
-          wickDownColor: '#9d4edd',
+          wickUpColor: '#00bcd4',
+          wickDownColor: '#e91e63',
         });
         mainSeries.setData(haData);
       } else if (chartType === 'line') {
         mainSeries = chart.addSeries(LineSeries, {
-          color: '#00d4aa',
+          color: '#ffffff',
           lineWidth: 2,
         });
         mainSeries.setData(baseChartData.map(d => ({ time: d.time, value: d.close })));
       } else {
         // mountain / area
         mainSeries = chart.addSeries(AreaSeries, {
-          lineColor: '#00d4aa',
-          topColor: 'rgba(0, 212, 170, 0.3)',
-          bottomColor: 'rgba(0, 212, 170, 0.0)',
+          lineColor: '#ffffff',
+          topColor: 'rgba(255, 255, 255, 0.4)',
+          bottomColor: 'rgba(255, 255, 255, 0.0)',
           lineWidth: 2,
         });
         mainSeries.setData(baseChartData.map(d => ({ time: d.time, value: d.close })));
@@ -278,8 +305,8 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       }));
 
       const activeIndicators = indicators.filter(i => i.enabled);
-      let nextPaneIndex = 1;
 
+      // Track series by semantic key (type+period) so cleanup is deterministic across re-renders.
       activeIndicators.forEach((ind, i) => {
         if (ind.type === 'SMA' || ind.type === 'EMA') {
           const period = Number(ind.params.period) || 14;
@@ -288,17 +315,17 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
               ? calculateSMA(indicatorData, period)
               : calculateEMA(indicatorData, period);
 
+          const key = `${ind.type}_${period}`;
           const series = chart.addSeries(LineSeries, {
             color: ind.color || getSeriesColor(ind.type, i),
             lineWidth: 2,
           });
           series.setData(calcData);
-          seriesMapRef.current.set(`ind_${i}`, series);
+          seriesMapRef.current.set(key, series);
         } else if (ind.type === 'BOLLINGER') {
           const period = Number(ind.params.period) || 20;
           const stdDev = Number(ind.params.stdDev) || 2;
           const bbData = calculateBollingerBands(indicatorData, period, stdDev);
-
           const color = ind.color || '#2962FF';
 
           const upper = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
@@ -309,9 +336,9 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           middle.setData(bbData.map(d => ({ time: d.time, value: d.middle })));
           lower.setData(bbData.map(d => ({ time: d.time, value: d.lower })));
 
-          seriesMapRef.current.set(`ind_${i}_u`, upper);
-          seriesMapRef.current.set(`ind_${i}_m`, middle);
-          seriesMapRef.current.set(`ind_${i}_l`, lower);
+          seriesMapRef.current.set(`BOLLINGER_${period}_upper`, upper);
+          seriesMapRef.current.set(`BOLLINGER_${period}_middle`, middle);
+          seriesMapRef.current.set(`BOLLINGER_${period}_lower`, lower);
         } else if (ind.type === 'RSI') {
           const period = Number(ind.params.period) || 14;
           const rsiData = calculateRSI(indicatorData, period);
@@ -321,35 +348,28 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
             lineWidth: 2,
           });
           series.setData(rsiData);
-          seriesMapRef.current.set(`ind_${i}`, series);
+          seriesMapRef.current.set(`RSI_${period}`, series);
         } else if (ind.type === 'VOLUME') {
           const series = chart.addSeries(HistogramSeries, {
             color: '#26a69a',
-            priceFormat: {
-              type: 'volume',
-            },
+            priceFormat: { type: 'volume' },
             priceScaleId: 'volume',
           });
           chart.priceScale('volume').applyOptions({
-            scaleMargins: {
-              top: 0.8,
-              bottom: 0,
-            },
+            scaleMargins: { top: 0.8, bottom: 0 },
           });
           const volData = indicatorData.map(d => ({
             time: d.time,
             value: d.volume,
-            color: d.close >= d.open ? '#00e676' : '#ff1744'
+            color: d.close >= d.open ? '#00e676' : '#ff1744',
           }));
           series.setData(volData);
-          seriesMapRef.current.set(`ind_${i}`, series);
+          seriesMapRef.current.set('VOLUME', series);
         } else if (ind.type === 'MACD') {
           const fast = Number(ind.params.fastPeriod) || 12;
           const slow = Number(ind.params.slowPeriod) || 26;
           const sig = Number(ind.params.signalPeriod) || 9;
-
           const macdData = calculateMACD(indicatorData, fast, slow, sig);
-          nextPaneIndex++;
 
           const macdLine = chart.addSeries(LineSeries, { color: '#00b4d8', lineWidth: 2 });
           const sigLine = chart.addSeries(LineSeries, { color: '#fca311', lineWidth: 1 });
@@ -362,12 +382,12 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
               time: d.time,
               value: d.histogram,
               color: d.histogram >= 0 ? '#00e676' : '#ff1744',
-            }))
+            })),
           );
 
-          seriesMapRef.current.set(`ind_${i}_m`, macdLine);
-          seriesMapRef.current.set(`ind_${i}_s`, sigLine);
-          seriesMapRef.current.set(`ind_${i}_h`, histLine);
+          seriesMapRef.current.set('MACD_macd', macdLine);
+          seriesMapRef.current.set('MACD_signal', sigLine);
+          seriesMapRef.current.set('MACD_histogram', histLine);
         }
       });
 
@@ -382,6 +402,9 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     <div className={styles.wrapper}>
       {loading && <div className={styles.loader}>Loading...</div>}
       {error && <div className={styles.error}>{error}</div>}
+      {saveStatus === 'saving' && <div className={styles.saveStatus}>Saving…</div>}
+      {saveStatus === 'saved' && <div className={`${styles.saveStatus} ${styles.saveStatusOk}`}>Saved ✓</div>}
+      {saveStatus === 'error' && <div className={`${styles.saveStatus} ${styles.saveStatusErr}`}>Save failed</div>}
       <OHLCTooltip data={tooltip} />
       <div ref={chartContainerRef} className={styles.chart} />
     </div>

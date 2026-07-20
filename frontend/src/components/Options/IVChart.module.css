@@ -73,3 +73,32 @@
   color: var(--text-muted);
   z-index: 10;
 }
+
+.badgeValueContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signalBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.signalSell {
+  background: var(--color-down-dim);
+  color: var(--color-down);
+  border: 1px solid rgba(255, 23, 68, 0.25);
+}
+
+.signalBuy {
+  background: var(--color-up-dim);
+  color: var(--color-up);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+}

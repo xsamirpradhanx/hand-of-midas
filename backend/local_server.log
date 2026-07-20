@@ -1,6 +1,0 @@
-
-> handofmidas-backend@1.0.0 dev
-> tsx src/local.ts
-
-Local backend running at http://localhost:3000
-Mocking requests as user: 117b8500-e081-70a5-3881-9511d3bd4c24

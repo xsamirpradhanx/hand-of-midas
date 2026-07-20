@@ -159,3 +159,72 @@
   height: 32px;
   margin-bottom: 2px;
 }
+
+.controlsBar {
+  display: flex;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-main);
+  align-items: center;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.toggleLabel input {
+  cursor: pointer;
+}
+
+.whaleFlowCall {
+  background: rgba(0, 230, 118, 0.25) !important;
+  color: var(--text-primary);
+}
+
+.whaleFlowPut {
+  background: rgba(255, 23, 68, 0.25) !important;
+  color: var(--text-primary);
+}
+
+.whaleFlowCallElevated,
+.whaleFlowPutElevated {
+  box-shadow: inset 0 0 0 1px rgba(255, 193, 7, 0.45);
+}
+
+.whaleFlowCallHigh {
+  background: rgba(0, 230, 118, 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 230, 118, 0.55);
+  color: var(--text-primary);
+}
+
+.whaleFlowPutHigh {
+  background: rgba(255, 23, 68, 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 23, 68, 0.55);
+  color: var(--text-primary);
+}
+
+.whaleFlowCallExtreme {
+  background: rgba(0, 230, 118, 0.38) !important;
+  box-shadow: inset 0 0 0 2px rgba(0, 230, 118, 0.85);
+  color: #fff;
+  font-weight: 700;
+}
+
+.whaleFlowPutExtreme {
+  background: rgba(255, 23, 68, 0.38) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 23, 68, 0.85);
+  color: #fff;
+  font-weight: 700;
+}
+
+.whaleCount {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--accent-teal);
+  font-weight: 600;
+}

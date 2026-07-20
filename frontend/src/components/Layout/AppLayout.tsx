@@ -1,5 +1,6 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
+import { AlertsMenu } from './AlertsMenu';
 import styles from './AppLayout.module.css';
 
 export const AppLayout: React.FC = () => {
@@ -18,10 +19,11 @@ export const AppLayout: React.FC = () => {
           </div>
           <div className={styles.logoText}>
             <h1>Hand of Midas</h1>
-            <span className={styles.tagline}>Whale Flow Intelligence</span>
+            <span className={styles.tagline}>The Golden Touch</span>
           </div>
         </div>
         <div className={styles.userMenu}>
+          <AlertsMenu />
           <span className={styles.liveBadge}>
             <span className={styles.liveDot} />
             Live

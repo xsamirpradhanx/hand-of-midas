@@ -284,3 +284,384 @@
   color: var(--text-muted);
   font-size: 0.85rem;
 }
+
+/* ─── Signal Badges ─── */
+
+.signalBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 0.4rem;
+}
+
+.signalSell {
+  background: var(--color-down-dim);
+  color: var(--color-down);
+  border: 1px solid rgba(255, 23, 68, 0.25);
+}
+
+.signalBuy {
+  background: var(--color-up-dim);
+  color: var(--color-up);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+}
+
+.signalNeutral {
+  background: rgba(158, 158, 184, 0.12);
+  color: var(--text-tertiary);
+  border: 1px solid rgba(158, 158, 184, 0.2);
+}
+
+.signalIcon {
+  font-size: 0.8rem;
+}
+
+/* ─── Trend Arrows ─── */
+
+.trendIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
+}
+
+.trendBearish {
+  color: var(--color-down);
+}
+
+.trendBullish {
+  color: var(--color-up);
+}
+
+.trendNeutral {
+  color: var(--text-muted);
+}
+
+.trendArrow {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ─── Regime Labels ─── */
+
+.regimeLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 0.5rem;
+}
+
+.regimeContango {
+  background: var(--color-up-dim);
+  color: var(--color-up);
+  border: 1px solid rgba(0, 230, 118, 0.2);
+}
+
+.regimeBackwardation {
+  background: rgba(255, 183, 77, 0.12);
+  color: #ffb74d;
+  border: 1px solid rgba(255, 183, 77, 0.25);
+}
+
+.regimeFlat {
+  background: rgba(158, 158, 184, 0.1);
+  color: var(--text-tertiary);
+  border: 1px solid rgba(158, 158, 184, 0.15);
+}
+
+.eventRiskFlag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(255, 23, 68, 0.1);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 23, 68, 0.2);
+  margin-left: 6px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ─── Net GEX Summary ─── */
+
+.gexSummary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.gexSummaryItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.gexSummaryLabel {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.gexSummaryValue {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gexPinning {
+  color: var(--accent-teal);
+}
+
+.gexAmplified {
+  color: #ffb74d;
+}
+
+/* ─── Vol/OI Heatmap ─── */
+
+.heatmapContainer {
+  margin-top: 1rem;
+  width: 100%;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.heatmapRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.heatmapStrike {
+  width: 55px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.heatmapBarContainer {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  height: 14px;
+}
+
+.heatmapBarCall {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  min-width: 0;
+}
+
+.heatmapBarPut {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  min-width: 0;
+}
+
+.heatmapValue {
+  width: 36px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.heatmapHot {
+  color: var(--color-down);
+}
+
+.heatmapWarm {
+  color: #ffb74d;
+}
+
+.heatmapCool {
+  color: var(--text-tertiary);
+}
+
+.heatmapSpike {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.6rem;
+  color: #ffb74d;
+  margin-left: 4px;
+}
+
+.heatmapLegend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.heatmapLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.heatmapLegendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* ─── OI Change Table ─── */
+
+.oiChangeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 768px) {
+  .oiChangeGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.oiChangeColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.oiChangeColumnTitle {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.oiChangeOpening {
+  color: var(--color-up);
+}
+
+.oiChangeClosing {
+  color: var(--color-down);
+}
+
+.oiChangeRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.72rem;
+}
+
+.oiChangeRow:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.oiChangeStrike {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 55px;
+}
+
+.oiChangeSide {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+}
+
+.oiChangeSideCall {
+  background: var(--color-up-dim);
+  color: var(--color-up);
+}
+
+.oiChangeSidePut {
+  background: var(--color-down-dim);
+  color: var(--color-down);
+}
+
+.oiChangeDelta {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.oiChangeDeltaUp {
+  color: var(--color-up);
+}
+
+.oiChangeDeltaDown {
+  color: var(--color-down);
+}
+
+.oiChangePct {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  width: 40px;
+  text-align: right;
+}
+
+.oiChangeEmpty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+/* ─── Full-width chart cards ─── */
+
+.fullWidthChartsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: 0 var(--space-xl);
+}
+
+@media (max-width: 1024px) {
+  .fullWidthChartsGrid {
+    grid-template-columns: 1fr;
+  }
+}

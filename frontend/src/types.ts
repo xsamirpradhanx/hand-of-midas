@@ -1,12 +1,12 @@
 // ─── Frontend Types ───
 
 export interface OHLCVDataPoint {
-  readonly datetime: string;
-  readonly open: number;
-  readonly high: number;
-  readonly low: number;
-  readonly close: number;
-  readonly volume: number;
+  datetime: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 export interface QuoteResponse {
@@ -59,6 +59,7 @@ export interface OptionsContract {
   intrinsicValue: number;
   timeValue: number;
   itm: boolean;
+  whaleScore: number | null;
 }
 
 export interface OptionsChainResponse {
@@ -131,4 +132,14 @@ export interface PositionWithGreeks extends Position {
   delta: number;
   theta: number;
   vega: number;
+}
+
+export interface Alert {
+  pk: string;
+  sk: string;
+  id?: string;
+  symbol: string;
+  message: string;
+  timestamp: string;
+  severity: 'high' | 'medium';
 }

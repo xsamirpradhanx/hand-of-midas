@@ -4,7 +4,7 @@ import { getHistoricalIV as fetchHistoricalIV } from '../services/polygon.js';
 import { getOptionsChainYahoo as fetchOptionsChain } from '../services/yahoo.js';
 import { blackScholes, bjerksundStensland, impliedVolatility } from '../services/greeks.js';
 import { getDTE, getCalendarDTE } from '../services/tradingCalendar.js';
-import { getUnusualActivity, scoreContract, getBaseline } from '../services/unusualActivity.js';
+import { getUnusualActivity, scoreContract, getBaseline, computeWhaleScore } from '../services/unusualActivity.js';
 import { getCachedData, setCachedData } from '../services/cache.js';
 
 export interface OptionsContract {
@@ -31,6 +31,7 @@ export interface OptionsContract {
   intrinsicValue: number;
   timeValue: number;
   itm: boolean;
+  whaleScore: number | null;
 }
 
 export async function getOptionsChain(
@@ -43,7 +44,7 @@ export async function getOptionsChain(
   }
 
   const expiryParam = event.queryStringParameters?.['expiry'];
-  const cacheKey = `OPTIONS_CHAIN_V2#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
+  const cacheKey = `OPTIONS_CHAIN_V3#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
   
   const cached = await getCachedData<any>(cacheKey);
   if (cached) {
@@ -79,8 +80,8 @@ export async function getOptionsChain(
       const strike = contract.details?.strike_price || 0;
       const bid = contract.last_quote?.bid || 0;
       const ask = contract.last_quote?.ask || 0;
-      const mid = (bid + ask) / 2;
       const last = contract.last_quote?.last || 0;
+      const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : (last > 0 ? last : (bid || ask));
       const volume = contract.day?.volume || 0;
       const openInterest = contract.day?.open_interest || 0;
       const volumeOIRatio = openInterest > 0 ? volume / openInterest : 0;
@@ -95,6 +96,13 @@ export async function getOptionsChain(
       if (calculatedGreeks.delta === 0 && iv > 0 && underlyingPrice > 0 && dte >= 0) {
         calculatedGreeks = blackScholes(underlyingPrice, strike, Math.max(0.0027, dte / 365), 0.05, iv, type);
       }
+
+      const whaleScore = computeWhaleScore({
+        volume,
+        openInterest,
+        price: mid,
+        dte,
+      });
       
       const contractData: OptionsContract = {
         ticker: contract.ticker || '',
@@ -120,6 +128,7 @@ export async function getOptionsChain(
         intrinsicValue,
         timeValue,
         itm,
+        whaleScore,
       };
       
       processedChain[expiry].push(contractData);
@@ -152,7 +161,7 @@ export async function getUnusualActivityFeed(
   try {
     const symbol = event.queryStringParameters?.['symbol'];
     const minSigma = parseFloat(event.queryStringParameters?.['minSigma'] || '2.0');
-    const minPremium = parseFloat(event.queryStringParameters?.['minPremium'] || '10000');
+    const minPremium = parseFloat(event.queryStringParameters?.['minPremium'] || '100000');
     const side = event.queryStringParameters?.['side'];
     const dteMax = event.queryStringParameters?.['dteMax'] ? parseInt(event.queryStringParameters?.['dteMax'], 10) : undefined;
     
@@ -173,23 +182,8 @@ export async function getIVHistory(
   }
 
   try {
-    const history = await fetchHistoricalIV(symbol);
-    // compute rank, percentile, term structure
-    // history is expected to be an array of IV objects
-    const currentIV = history.currentIV || 0;
-    const low52 = history.low52 || 0;
-    const high52 = history.high52 || 0;
-    
-    const ivRank = high52 > low52 ? ((currentIV - low52) / (high52 - low52)) * 100 : 0;
-    const ivPercentile = history.percentile || 0;
-    const termStructure = history.termStructure || {};
-    
-    return jsonResponse(200, {
-      symbol,
-      ivRank,
-      ivPercentile,
-      termStructure
-    });
+    const history = await fetchHistoricalIV(symbol, 365);
+    return jsonResponse(200, history);
   } catch (err: any) {
     return jsonResponse(500, { error: err.message });
   }

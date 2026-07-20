@@ -48,7 +48,7 @@ export const LoginPage: React.FC = () => {
             <img src="/logo.png" alt="Hand of Midas Logo" className={styles.logo} />
           </div>
           <h1 className={styles.title}>Hand of Midas</h1>
-          <p className={styles.tagline}>Whale Flow Intelligence</p>
+          <p className={styles.tagline}>The Golden Touch</p>
           <p className={styles.subtitle}>
             {isConfirming 
               ? 'Confirm your email' 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../lib/api';
 import type { WatchlistEntry, QuoteResponse } from '../../types';
 import { WatchlistItem } from './WatchlistItem';
@@ -15,6 +15,8 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
   const [quotes, setQuotes] = useState<Record<string, QuoteResponse>>({});
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [flashSymbols, setFlashSymbols] = useState<Record<string, 'up' | 'down'>>({});
+  const prevPricesRef = useRef<Record<string, number>>({});
 
   const fetchWatchlist = async () => {
     try {
@@ -27,16 +29,32 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
     }
   };
 
-  const fetchQuotes = async () => {
-    if (entries.length === 0) return;
+  const fetchQuotes = async (currentEntries: WatchlistEntry[]) => {
+    if (currentEntries.length === 0) return;
     try {
       const quotesData: Record<string, QuoteResponse> = {};
-      for (const entry of entries) {
-        // Run sequentially to avoid rate limits, or batch if backend supports it
+      for (const entry of currentEntries) {
         const q = await api.getQuote(entry.symbol);
         quotesData[entry.symbol] = q;
       }
+
+      // Detect price changes for flash animation
+      const changes: Record<string, 'up' | 'down'> = {};
+      for (const symbol in quotesData) {
+        const newPrice = quotesData[symbol].price;
+        const prevPrice = prevPricesRef.current[symbol];
+        if (prevPrice !== undefined && prevPrice !== newPrice) {
+          changes[symbol] = newPrice > prevPrice ? 'up' : 'down';
+        }
+        prevPricesRef.current[symbol] = newPrice;
+      }
+
       setQuotes(quotesData);
+
+      if (Object.keys(changes).length > 0) {
+        setFlashSymbols(changes);
+        setTimeout(() => setFlashSymbols({}), 600);
+      }
     } catch (err) {
       console.error('Failed to fetch quotes', err);
     }
@@ -47,9 +65,12 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
   }, []);
 
   useEffect(() => {
-    if (entries.length > 0) {
-      fetchQuotes();
-    }
+    if (entries.length === 0) return;
+
+    fetchQuotes(entries);
+
+    const interval = setInterval(() => fetchQuotes(entries), 30000);
+    return () => clearInterval(interval);
   }, [entries]);
 
   const handleAddTicker = async (symbol: string) => {
@@ -72,7 +93,7 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
         <h2>Watchlist</h2>
         <button onClick={() => setIsModalOpen(true)} className={styles.addBtn}>+</button>
       </div>
-      
+
       <div className={styles.list}>
         {loading ? (
           <div className={styles.emptyState}>Loading...</div>
@@ -85,6 +106,7 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
               symbol={entry.symbol}
               quote={quotes[entry.symbol]}
               isSelected={selectedSymbol === entry.symbol}
+              flashDirection={flashSymbols[entry.symbol]}
               onSelect={() => onSelectSymbol(entry.symbol)}
               onRemove={() => handleRemoveTicker(entry.symbol)}
             />
@@ -93,9 +115,9 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
       </div>
 
       {isModalOpen && (
-        <AddTickerModal 
-          onClose={() => setIsModalOpen(false)} 
-          onAdd={handleAddTicker} 
+        <AddTickerModal
+          onClose={() => setIsModalOpen(false)}
+          onAdd={handleAddTicker}
         />
       )}
     </div>

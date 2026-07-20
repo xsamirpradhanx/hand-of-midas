@@ -19,7 +19,7 @@ export function useLivePricing(symbol: string | null, provider: Provider = 'finn
     setStatus('connecting');
     setLatestTick(null);
 
-    let ws: WebSocket;
+    let ws: WebSocket | undefined;
 
     try {
       if (provider === 'finnhub') {
@@ -34,7 +34,7 @@ export function useLivePricing(symbol: string | null, provider: Provider = 'finn
         
         ws.onopen = () => {
           setStatus('connected');
-          ws.send(JSON.stringify({ type: 'subscribe', symbol: symbol.toUpperCase() }));
+          ws?.send(JSON.stringify({ type: 'subscribe', symbol: symbol.toUpperCase() }));
         };
 
         ws.onmessage = (event) => {
@@ -63,8 +63,8 @@ export function useLivePricing(symbol: string | null, provider: Provider = 'finn
         
         ws.onopen = () => {
           setStatus('connected');
-          ws.send(JSON.stringify({ action: 'auth', params: token }));
-          ws.send(JSON.stringify({ action: 'subscribe', params: `T.${symbol.toUpperCase()}` }));
+          ws?.send(JSON.stringify({ action: 'auth', params: token }));
+          ws?.send(JSON.stringify({ action: 'subscribe', params: `T.${symbol.toUpperCase()}` }));
         };
 
         ws.onmessage = (event) => {

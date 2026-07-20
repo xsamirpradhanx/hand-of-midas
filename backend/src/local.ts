@@ -13,6 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Simulate AWS API Gateway payload
 app.use(async (req, res) => {
+  console.log('Local request', req.method, req.path, 'url=', req.url, 'query=', req.query);
   try {
     const event: APIGatewayProxyEventV2 = {
       version: '2.0',

@@ -157,7 +157,19 @@ export const IVChart: React.FC<IVChartProps> = ({ symbol }) => {
       <div className={styles.header}>
         <div className={styles.badge}>
           <span className={styles.badgeLabel}>IV Rank</span>
-          <span className={styles.badgeValue}>{stats.ivRank.toFixed(1)}</span>
+          <div className={styles.badgeValueContainer}>
+            <span className={styles.badgeValue}>{stats.ivRank.toFixed(1)}</span>
+            {stats.ivRank > 70 && (
+              <span className={`${styles.signalBadge} ${styles.signalSell}`}>
+                Sell Premium
+              </span>
+            )}
+            {stats.ivRank < 30 && (
+              <span className={`${styles.signalBadge} ${styles.signalBuy}`}>
+                Buy Premium
+              </span>
+            )}
+          </div>
         </div>
         <div className={styles.badge}>
           <span className={styles.badgeLabel}>IV Percentile</span>

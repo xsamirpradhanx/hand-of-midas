@@ -355,18 +355,22 @@ async function generateMockOptionsChain(symbol: string): Promise<PolygonOptionsC
   return contracts;
 }
 
-/**
- * Get historical IV data for IV rank/percentile calculation.
- */
-export async function getHistoricalIV(symbol: string, days: number): Promise<{ date: string; iv: number }[]> {
-  // This requires computing IV historically. We mock this or implement according to instructions.
-  // Instruction: Maps to /v2/aggs/ticker/{symbol}/range/1/day/{from}/{to} for the underlying
-  // + /v3/snapshot/options/{symbol} filtered to ATM options.
-  // Wait, the instructions ask to get array of { date: string, iv: number } for the past N days.
-  // Polygon doesn't give historical IV directly like this, but we'll fetch aggs and then query option snapshots...
-  // The instruction specifically says "Returns array of { date: string, iv: number } for the past N days"
-  // Let's implement a best-effort historical IV or a placeholder that compiles and makes the specified calls.
+export interface IVHistoryPoint {
+  date: string;
+  iv: number;
+  atm_iv: number;
+  iv_rank: number;
+  iv_percentile: number;
+}
 
+/**
+ * Get historical IV estimates using the Parkinson high-low range estimator.
+ *
+ * σ_parkinson = √(252 / (4·ln2)) · |ln(H/L)|
+ *
+ * iv_rank and iv_percentile are computed across the full window of estimates.
+ */
+export async function getHistoricalIV(symbol: string, days: number = 365): Promise<IVHistoryPoint[]> {
   const sym = symbol.toUpperCase();
   const toDate = new Date();
   const fromDate = new Date();
@@ -375,27 +379,37 @@ export async function getHistoricalIV(symbol: string, days: number): Promise<{ d
   const toStr = toDate.toISOString().split('T')[0];
   const fromStr = fromDate.toISOString().split('T')[0];
 
-  const aggsUrl = `${BASE_URL}/v2/aggs/ticker/${sym}/range/1/day/${fromStr}/${toStr}?adjusted=true`;
+  const aggsUrl = `${BASE_URL}/v2/aggs/ticker/${sym}/range/1/day/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=500`;
   const aggsData = await fetchPolygon<PolygonAggsResponse>(aggsUrl);
-
   const results = aggsData.results || [];
-  const historicalIV: { date: string; iv: number }[] = [];
 
-  for (const bar of results) {
-    const dateStr = new Date(bar.t).toISOString().split('T')[0];
-    
-    // We would fetch snapshot data for each date, but Polygon options snapshot is point-in-time (now). 
-    // To get historical, one would need different endpoints. I will return a stubbed IV for each date based on the underlying price change for now, 
-    // or just make a call to snapshot for current IV to satisfy the signature.
-    // The instruction implies making a snapshot call.
-    
-    // NOTE: True historical IV computation is complex. We'll add the data structure as requested.
-    historicalIV.push({ date: dateStr, iv: 0.3 }); // Placeholder 30% IV
-  }
+  if (results.length === 0) return [];
 
-  // Also make the snapshot call to ATM options as instructed
-  const snapUrl = `${BASE_URL}/v3/snapshot/options/${sym}?limit=10`; // Simplified
-  await fetchPolygon<any>(snapUrl).catch(() => {}); // Just make the call to satisfy "Maps to ..."
+  const LN2 = Math.log(2);
+  const parkinsonFactor = Math.sqrt(252 / (4 * LN2));
 
-  return historicalIV;
+  const estimates = results.map(bar => {
+    const hlRatio = bar.h > 0 && bar.l > 0 ? Math.log(bar.h / bar.l) : 0;
+    const iv = parkinsonFactor * Math.abs(hlRatio);
+    return { date: new Date(bar.t).toISOString().split('T')[0], iv };
+  });
+
+  const ivValues = estimates.map(e => e.iv);
+  const minIV = Math.min(...ivValues);
+  const maxIV = Math.max(...ivValues);
+  const sortedIVs = [...ivValues].sort((a, b) => a - b);
+  const n = sortedIVs.length;
+
+  return estimates.map(entry => {
+    const ivRank = maxIV > minIV ? ((entry.iv - minIV) / (maxIV - minIV)) * 100 : 0;
+    const rankIdx = sortedIVs.findIndex(v => v >= entry.iv);
+    const ivPercentile = n > 0 ? ((rankIdx < 0 ? n : rankIdx) / n) * 100 : 0;
+    return {
+      date: entry.date,
+      iv: entry.iv,
+      atm_iv: entry.iv,
+      iv_rank: ivRank,
+      iv_percentile: ivPercentile,
+    };
+  });
 }
