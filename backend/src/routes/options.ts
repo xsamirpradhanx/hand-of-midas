@@ -91,11 +91,11 @@ export async function getOptionsChain(
       const timeValue = Math.max(0, mid - intrinsicValue);
       
       const iv = contract.implied_volatility || 0;
-      let calculatedGreeks = contract.greeks || { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
+      let calculatedGreeks: Record<string, number> = (contract.greeks as any) || { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
       
       if (calculatedGreeks.delta === 0 && iv > 0 && underlyingPrice > 0 && dte >= 0) {
         const bs = blackScholes(underlyingPrice, strike, Math.max(0.0027, dte / 365), 0.05, iv, type);
-        calculatedGreeks = { ...bs, rho: 0 };
+        calculatedGreeks = { ...bs, rho: bs.rho };
       }
 
       const whaleScore = computeWhaleScore({

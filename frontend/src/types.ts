@@ -15,6 +15,9 @@ export interface QuoteResponse {
   readonly price: number;
   readonly change: number;
   readonly changePercent: number;
+  readonly preMarketPrice?: number;
+  readonly preMarketChange?: number;
+  readonly preMarketChangePercent?: number;
 }
 
 export interface WatchlistEntry {

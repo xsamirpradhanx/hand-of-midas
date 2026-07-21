@@ -233,11 +233,11 @@ export async function getUnusualActivity(filters: {
     return [];
   }
 
-  const { getOptionsChainYahoo } = await import('./yahoo.js');
+  const { fetchOptionsChainWithFallback } = await import('./optionsFallback.js');
   const { getDTE } = await import('./tradingCalendar.js');
   
   // 1. Fetch available expirations
-  const { expirations } = await getOptionsChainYahoo(filters.symbol);
+  const { expirations } = await fetchOptionsChainWithFallback(filters.symbol);
   if (expirations.length === 0) return [];
 
   // 2. We only scan the nearest 4 expirations to save time and because whale flows are short-dated
@@ -245,7 +245,7 @@ export async function getUnusualActivity(filters: {
   let anomalies: AnomalyScore[] = [];
 
   for (const expiry of nearestExpirations) {
-    const { contracts } = await getOptionsChainYahoo(filters.symbol, expiry);
+    const { contracts } = await fetchOptionsChainWithFallback(filters.symbol, expiry);
     const dte = await getDTE(expiry);
 
     for (const c of contracts) {

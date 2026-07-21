@@ -8,9 +8,10 @@ import styles from './WatchlistPanel.module.css';
 interface WatchlistPanelProps {
   selectedSymbol: string | null;
   onSelectSymbol: (symbol: string) => void;
+  showExtendedHours: boolean;
 }
 
-export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, onSelectSymbol }) => {
+export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, onSelectSymbol, showExtendedHours }) => {
   const [entries, setEntries] = useState<WatchlistEntry[]>([]);
   const [quotes, setQuotes] = useState<Record<string, QuoteResponse>>({});
   const [loading, setLoading] = useState(true);
@@ -106,6 +107,7 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
               symbol={entry.symbol}
               quote={quotes[entry.symbol]}
               isSelected={selectedSymbol === entry.symbol}
+              showExtendedHours={showExtendedHours}
               flashDirection={flashSymbols[entry.symbol]}
               onSelect={() => onSelectSymbol(entry.symbol)}
               onRemove={() => handleRemoveTicker(entry.symbol)}

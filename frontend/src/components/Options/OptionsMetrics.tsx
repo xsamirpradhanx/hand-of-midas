@@ -47,6 +47,7 @@ interface MetricsResponse {
   symbol: string;
   spotPrice: number;
   maxPainStrike: number;
+  gammaFlipStrike: number;
   maxPainExpiry: string;
   straddleExpectedMove: number;
   straddleExpectedMovePct: number;
@@ -93,6 +94,10 @@ const METRIC_INFO: Record<string, { title: string; description: string }> = {
   termStructure: {
     title: 'IV Term Structure',
     description: 'OI-weighted average implied volatility across expirations. An upward slope (contango) is normal; inversion signals near-term event risk or fear.',
+  },
+  gammaFlip: {
+    title: 'Gamma Flip Level',
+    description: 'The spot price/strike where aggregate dealer Gamma exposure flips from positive to negative. Above this level, dealers suppress volatility (mean-reversion). Below, they amplify it (momentum breakout).',
   },
 };
 
@@ -268,6 +273,18 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
             GEX Value: ${(maxGexValue / 1000000).toFixed(1)}M
           </div>
           <p className={styles.cardDesc}>The strike with the largest dealer gamma exposure, often acting as a strong magnet or wall.</p>
+        </div>
+
+        <div className={styles.card}>
+          <h3>
+            Gamma Flip Level
+            <MetricTooltip metricKey="gammaFlip" />
+          </h3>
+          <div className={styles.largeValue}>${data.gammaFlipStrike.toFixed(2)}</div>
+          <div className={styles.subtext}>
+            Spot ${data.spotPrice.toFixed(2)}
+          </div>
+          <p className={styles.cardDesc}>{METRIC_INFO.gammaFlip.description}</p>
         </div>
       </div>
 

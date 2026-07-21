@@ -253,6 +253,9 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       seriesMapRef.current.forEach(series => chart.removeSeries(series));
       seriesMapRef.current.clear();
 
+      // Temporarily enable autoScale so the new data sizes correctly to the viewport
+      chart.priceScale('right').applyOptions({ autoScale: true });
+
       const parseTime = (dt: string) => {
         if (dt.length <= 10) return dt;
         if (dt.endsWith('Z')) return new Date(dt).getTime() / 1000;
@@ -414,6 +417,11 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       });
 
       chart.timeScale().fitContent();
+      
+      // Disable autoScale shortly after render to allow immediate vertical panning without having to drag the Y-axis
+      requestAnimationFrame(() => {
+        chart.priceScale('right').applyOptions({ autoScale: false });
+      });
     } catch (err: any) {
       console.error(err);
       setError('Chart Error: ' + err.message);

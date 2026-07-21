@@ -9,6 +9,11 @@ export interface Greeks {
   theta: number;
   vega: number;
   rho: number;
+  vanna?: number;
+  charm?: number;
+  vomma?: number;
+  speed?: number;
+  color?: number;
   iv?: number;
 }
 
@@ -74,7 +79,7 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
   if (T <= 0) {
     const isCall = type === 'call';
     const price = Math.max(0, isCall ? S - K : K - S);
-    return { price, delta: isCall && price > 0 ? 1 : (!isCall && price > 0 ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, iv: sigma };
+    return { price, delta: isCall && price > 0 ? 1 : (!isCall && price > 0 ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, vanna: 0, charm: 0, vomma: 0, speed: 0, color: 0, iv: sigma };
   }
 
   if (sigma <= 0) {
@@ -82,7 +87,7 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
     const pvK = K * Math.exp(-r * T);
     const isCall = type === 'call';
     const price = Math.max(0, isCall ? S - pvK : pvK - S);
-    return { price, delta: isCall && S > pvK ? 1 : (!isCall && S < pvK ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, iv: sigma };
+    return { price, delta: isCall && S > pvK ? 1 : (!isCall && S < pvK ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, vanna: 0, charm: 0, vomma: 0, speed: 0, color: 0, iv: sigma };
   }
 
   const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * Math.sqrt(T));
@@ -107,7 +112,22 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
   const theta2 = w * r * K * discount * N_d2;
   const theta = (theta1 - theta2) / 365.0; // Per day
 
-  return { price, delta, gamma, theta, vega, rho, iv: sigma };
+  // Higher-Order Greeks
+  const vanna = vega * 100.0 * (1 - d1 / (sigma * Math.sqrt(T))) / S;
+  
+  const q = 0; // dividend yield assumption
+  const charmRaw = -n_d1 * ((2 * (r - q) * T - d2 * sigma * Math.sqrt(T)) / (2 * T * sigma * Math.sqrt(T)));
+  const charm = (w === 1 ? q * discount * N_d1 : -q * discount * N_d1) + discount * charmRaw;
+  const charmPerDay = charm / 365.0;
+
+  const vomma = vega * 100.0 * (d1 * d2 / sigma) / 100.0;
+  const speed = -gamma / S * (d1 / (sigma * Math.sqrt(T)) + 1);
+
+  const colorRaw = -Math.exp(-q * T) * n_d1 / (2 * S * T * sigma * Math.sqrt(T)) * 
+    (2 * q * T + 1 + (2 * (r - q) * T - d2 * sigma * Math.sqrt(T)) * d1 / (sigma * Math.sqrt(T)));
+  const colorPerDay = colorRaw / 365.0;
+
+  return { price, delta, gamma, theta, vega, rho, vanna, charm: charmPerDay, vomma, speed, color: colorPerDay, iv: sigma };
 }
 
 /**

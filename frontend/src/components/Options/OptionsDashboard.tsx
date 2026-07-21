@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { OptionsChainTable } from './OptionsChainTable';
 import { OptionsMetrics } from './OptionsMetrics';
+import { OptionsOutcome } from './OptionsOutcome';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { api } from '../../lib/api';
 import styles from './OptionsDashboard.module.css';
@@ -10,7 +11,7 @@ interface Props {
   symbol: string;
 }
 
-type Tab = 'chain' | 'metrics';
+type Tab = 'chain' | 'metrics' | 'predictor';
 
 export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
   const [activeTab, setActiveTab] = useState<Tab>('chain');
@@ -46,6 +47,12 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
         >
           Institutional Metrics
         </button>
+        <button
+          className={`${styles.tab} ${activeTab === 'predictor' ? styles.active : ''}`}
+          onClick={() => setActiveTab('predictor')}
+        >
+          Outcome Predictor
+        </button>
       </div>
 
       {expirations.length > 0 && (
@@ -79,6 +86,15 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
             </div>
           }>
             <OptionsMetrics symbol={symbol} activeExpiry={activeExpiry} />
+          </ErrorBoundary>
+        )}
+        {activeTab === 'predictor' && (
+          <ErrorBoundary label="Outcome Predictor" fallback={
+            <div style={{ padding: '2rem', color: '#ff6b6b', textAlign: 'center' }}>
+              Outcome Predictor unavailable — API limit may have been reached.
+            </div>
+          }>
+            <OptionsOutcome symbol={symbol} activeExpiry={activeExpiry} />
           </ErrorBoundary>
         )}
       </div>

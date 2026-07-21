@@ -18,6 +18,7 @@ export const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('chart');
   const [interval, setInterval] = useState<string>('1day');
   const [chartType, setChartType] = useState<ChartType>('candlestick');
+  const [showExtendedHours, setShowExtendedHours] = useState(false);
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
 
   // Load chart config when symbol changes
@@ -54,6 +55,7 @@ export const Dashboard: React.FC = () => {
       <WatchlistPanel
         selectedSymbol={selectedSymbol}
         onSelectSymbol={setSelectedSymbol}
+        showExtendedHours={showExtendedHours}
       />
 
       <div className={styles.mainArea}>
@@ -63,9 +65,20 @@ export const Dashboard: React.FC = () => {
               <h2>{selectedSymbol}</h2>
             </div>
             {activeTab === 'chart' && (
-              <div className={styles.headerControls}>
-                <ChartTypeBar chartType={chartType} onChange={setChartType} />
-                <TimeframeBar interval={interval} onChange={setInterval} />
+              <div className={styles.headerControlsContainer}>
+                <div className={styles.headerControls}>
+                  <ChartTypeBar chartType={chartType} onChange={setChartType} />
+                  <TimeframeBar interval={interval} onChange={setInterval} />
+                </div>
+                <label className={styles.toggleLabel}>
+                  <input
+                    type="checkbox"
+                    className={styles.toggleCheckbox}
+                    checked={showExtendedHours}
+                    onChange={(e) => setShowExtendedHours(e.target.checked)}
+                  />
+                  Extended Hours
+                </label>
               </div>
             )}
           </div>
@@ -94,6 +107,7 @@ export const Dashboard: React.FC = () => {
                     interval={interval}
                     indicators={indicators}
                     chartType={chartType}
+                    showExtendedHours={showExtendedHours}
                   />
                 </div>
               )}

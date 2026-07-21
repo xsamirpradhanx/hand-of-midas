@@ -7,15 +7,24 @@ interface WatchlistItemProps {
   symbol: string;
   quote?: QuoteResponse;
   isSelected: boolean;
+  showExtendedHours?: boolean;
   flashDirection?: 'up' | 'down';
   onSelect: () => void;
   onRemove: () => void;
 }
 
 export const WatchlistItem: React.FC<WatchlistItemProps> = ({
-  symbol, quote, isSelected, flashDirection, onSelect, onRemove
+  symbol, quote, isSelected, showExtendedHours, flashDirection, onSelect, onRemove
 }) => {
-  const isPositive = quote && quote.change >= 0;
+  const displayPrice = showExtendedHours && quote?.preMarketPrice != null 
+    ? quote.preMarketPrice 
+    : quote?.price;
+    
+  const displayChangePercent = showExtendedHours && quote?.preMarketChangePercent != null
+    ? quote.preMarketChangePercent
+    : quote?.changePercent;
+
+  const isPositive = displayChangePercent != null && displayChangePercent >= 0;
 
   return (
     <div
@@ -27,10 +36,10 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
         {quote && <span className={styles.name}>{quote.name || symbol}</span>}
       </div>
 
-      {quote && (
+      {quote && displayPrice != null && (
         <div className={styles.itemData}>
           <span
-            key={`${symbol}_${quote.price}`}
+            key={`${symbol}_${displayPrice}`}
             className={`${styles.price} ${
               flashDirection === 'up'
                 ? styles.priceFlashUp
@@ -39,10 +48,10 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
                 : ''
             }`}
           >
-            {formatPrice(quote.price)}
+            {formatPrice(displayPrice)}
           </span>
           <span className={`${styles.change} ${isPositive ? styles.positive : styles.negative}`}>
-            {isPositive ? '▲' : '▼'} {Math.abs(quote.changePercent).toFixed(2)}%
+            {isPositive ? '▲' : '▼'} {Math.abs(displayChangePercent || 0).toFixed(2)}%
           </span>
         </div>
       )}

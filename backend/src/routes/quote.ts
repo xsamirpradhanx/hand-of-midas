@@ -3,7 +3,7 @@ import {
   setCachedData,
   quoteCacheKey,
 } from '../services/cache.js';
-import { getQuote as fetchQuote } from '../services/twelvedata.js';
+import { yf } from '../services/yahoo.js';
 import type { APIGatewayProxyResultV2, QuoteResponse } from '../types.js';
 import { jsonResponse } from '../index.js';
 
@@ -22,7 +22,7 @@ const QUOTE_TTL_SECONDS = 2 * 60;
  * GET /api/quote/:symbol
  *
  * Returns the current quote for a symbol. Checks the DynamoDB cache first
- * (2-minute TTL) and falls back to the Twelve Data `/quote` endpoint.
+ * (2-minute TTL) and falls back to Yahoo Finance.
  *
  * @param symbol - Ticker symbol extracted from the URL path.
  * @returns A JSON response containing the quote data.
@@ -44,20 +44,36 @@ export async function getQuote(
   }
 
   // --- Fetch from upstream -------------------------------------------------
-  const raw = await fetchQuote(upperSymbol);
-
-  if (!raw.close) {
+  let raw;
+  try {
+    raw = await yf.quote(upperSymbol);
+  } catch (err) {
+    console.error('Yahoo quote fetch error:', err);
     return jsonResponse(404, {
       error: `No quote data found for symbol "${upperSymbol}".`,
     });
   }
 
+  if (!raw || raw.regularMarketPrice === undefined) {
+    return jsonResponse(404, {
+      error: `No valid quote data found for symbol "${upperSymbol}".`,
+    });
+  }
+
+  // Determine extended hours data (prefer post-market if it's after hours, pre-market if before)
+  const extPrice = raw.postMarketPrice ?? raw.preMarketPrice;
+  const extChange = raw.postMarketChange ?? raw.preMarketChange;
+  const extChangePercent = raw.postMarketChangePercent ?? raw.preMarketChangePercent;
+
   const quoteResponse: QuoteResponse = {
     symbol: raw.symbol ?? upperSymbol,
-    name: raw.name ?? upperSymbol,
-    price: parseFloat(raw.close),
-    change: parseFloat(raw.change ?? '0'),
-    changePercent: parseFloat(raw.percent_change ?? '0'),
+    name: raw.longName ?? raw.shortName ?? upperSymbol,
+    price: raw.regularMarketPrice,
+    change: raw.regularMarketChange ?? 0,
+    changePercent: raw.regularMarketChangePercent ?? 0,
+    preMarketPrice: extPrice,
+    preMarketChange: extChange,
+    preMarketChangePercent: extChangePercent,
   };
 
   // --- Populate cache (fire-and-forget) ------------------------------------

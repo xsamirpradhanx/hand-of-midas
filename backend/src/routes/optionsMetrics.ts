@@ -231,6 +231,18 @@ export async function getOptionsMetrics(
       return { strike, callGex, putGex, totalGex: callGex + putGex };
     }).sort((a, b) => a.strike - b.strike);
 
+    let gammaFlipStrike = 0;
+    let cumulativeGex = 0;
+    const gexProfileDesc = [...gexProfile].sort((a, b) => b.strike - a.strike);
+    for (let i = 0; i < gexProfileDesc.length; i++) {
+      const prev = cumulativeGex;
+      cumulativeGex += gexProfileDesc[i].totalGex;
+      if (i > 0 && Math.sign(prev) !== Math.sign(cumulativeGex) && prev !== 0) {
+        gammaFlipStrike = gexProfileDesc[i].strike;
+        break;
+      }
+    }
+
     // Build Volume/OI profile
     const volumeOIProfile: VolumeOIByStrike[] = Object.keys(volOIByStrike).map(k => {
       const strike = parseFloat(k);
@@ -304,6 +316,7 @@ export async function getOptionsMetrics(
       symbol,
       spotPrice,
       maxPainStrike,
+      gammaFlipStrike,
       maxPainExpiry: activeMaxPainExpiry,
       receivedExpiry: event.queryStringParameters?.expiry ?? null,
       straddleExpectedMove,

@@ -1,0 +1,172 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+  color: #e0e0e0;
+}
+
+.header {
+  margin-bottom: 1rem;
+}
+
+.header h2 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem 0;
+  color: #fff;
+}
+
+.subtext {
+  color: #8a8a9a;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: rgba(30, 30, 45, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.card h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: #b0b0c0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.selector {
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.select {
+  background: rgba(20, 20, 30, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.greeksGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.greekItem {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 0.5rem;
+}
+
+.greekLabel {
+  color: #8a8a9a;
+  font-weight: 500;
+}
+
+.positive {
+  color: #00d4aa;
+}
+
+.negative {
+  color: #ff4d4d;
+}
+
+.neutral {
+  color: #fff;
+}
+
+.scenarioControl {
+  margin-bottom: 1.5rem;
+}
+
+.scenarioHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.slider {
+  width: 100%;
+  accent-color: #6366f1;
+}
+
+.narrativeText {
+  line-height: 1.6;
+  font-size: 1.05rem;
+  color: #d0d0e0;
+}
+
+.probItem {
+  margin-bottom: 1rem;
+}
+
+.probLabel {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.probBar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.probFill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #00d4aa);
+  transition: width 0.3s ease;
+}
+
+.refs {
+  margin-top: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #8a8a9a;
+}
+
+.refs summary {
+  cursor: pointer;
+  outline: none;
+  font-weight: 500;
+}
+
+.refs ul {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.2rem;
+  line-height: 1.5;
+}
+
+.refs li {
+  margin-bottom: 0.4rem;
+}
+
+.emptyState {
+  padding: 3rem;
+  text-align: center;
+  color: #8a8a9a;
+  background: rgba(30, 30, 45, 0.6);
+  border-radius: 12px;
+}

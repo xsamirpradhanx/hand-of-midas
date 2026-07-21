@@ -251,7 +251,7 @@ export async function getQuote(symbol: string): Promise<PolygonQuote> {
 /**
  * Get full options chain for an underlying.
  */
-export async function getOptionsChain(symbol: string): Promise<PolygonOptionsContract[]> {
+export async function getOptionsChain(symbol: string, expiryStr?: string): Promise<{ expirations: string[], contracts: PolygonOptionsContract[], quote?: any }> {
   let url = `${BASE_URL}/v3/snapshot/options/${symbol.toUpperCase()}?limit=250`;
   const allContracts: PolygonOptionsContract[] = [];
 
@@ -259,10 +259,14 @@ export async function getOptionsChain(symbol: string): Promise<PolygonOptionsCon
     while (true) {
       const data = await fetchPolygon<PolygonSnapshotResponse>(url);
     
-    if (data.results) {
-      for (const item of data.results) {
-        allContracts.push({
-          ticker: item.ticker,
+      if (data.results) {
+        for (const item of data.results) {
+          // If expiryStr is provided, filter
+          if (expiryStr && item.details?.expiration_date !== expiryStr) {
+            continue;
+          }
+          allContracts.push({
+            ticker: item.ticker,
           details: {
             strike_price: item.details?.strike_price ?? 0,
             expiration_date: item.details?.expiration_date ?? '',
@@ -296,64 +300,19 @@ export async function getOptionsChain(symbol: string): Promise<PolygonOptionsCon
     }
   }
 
-  return allContracts;
-  } catch (err: any) {
-    if (err.message && err.message.includes('403')) {
-      console.log(`[MOCK MODE] 403 Forbidden for options chain on ${symbol}. Free tier detected, generating mock chain.`);
-      return await generateMockOptionsChain(symbol);
+    const expirationsSet = new Set<string>();
+    for (const c of allContracts) {
+      if (c.details.expiration_date) {
+        expirationsSet.add(c.details.expiration_date);
+      }
     }
+    const expirations = Array.from(expirationsSet).sort();
+    return { expirations, contracts: allContracts };
+  } catch (err: any) {
     throw err;
   }
 }
 
-async function generateMockOptionsChain(symbol: string): Promise<PolygonOptionsContract[]> {
-  const quote = await getQuote(symbol).catch(() => ({ price: 150 } as PolygonQuote));
-  const spot = quote.price || 150;
-  
-  const contracts: PolygonOptionsContract[] = [];
-  const expirations = [
-    new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-    new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-    new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0]
-  ];
-
-  const startStrike = Math.floor(spot * 0.8 / 5) * 5;
-  const endStrike = Math.ceil(spot * 1.2 / 5) * 5;
-  
-  for (const exp of expirations) {
-    for (let strike = startStrike; strike <= endStrike; strike += 5) {
-      const dte = (new Date(exp).getTime() - Date.now()) / 86400000;
-      const iv = 0.3 + Math.abs(strike - spot) / spot;
-      
-      const callIntrinsic = Math.max(0, spot - strike);
-      const putIntrinsic = Math.max(0, strike - spot);
-      const timeVal = (spot * iv * Math.sqrt(Math.max(1, dte)/365)) / 2;
-      
-      const callMid = callIntrinsic + timeVal;
-      const putMid = putIntrinsic + timeVal;
-
-      contracts.push({
-        ticker: `O:${symbol}${exp.replace(/-/g, '').substring(2)}C00${(strike*1000).toString().padStart(5, '0')}`,
-        details: { strike_price: strike, expiration_date: exp, contract_type: 'call', shares_per_contract: 100 },
-        day: { volume: Math.floor(Math.random() * 1000), open_interest: Math.floor(Math.random() * 5000) },
-        greeks: { delta: strike < spot ? 0.8 : 0.2, gamma: 0.05, theta: -0.05, vega: 0.1 },
-        implied_volatility: iv,
-        last_quote: { bid: callMid * 0.95, ask: callMid * 1.05, last: callMid }
-      });
-
-      contracts.push({
-        ticker: `O:${symbol}${exp.replace(/-/g, '').substring(2)}P00${(strike*1000).toString().padStart(5, '0')}`,
-        details: { strike_price: strike, expiration_date: exp, contract_type: 'put', shares_per_contract: 100 },
-        day: { volume: Math.floor(Math.random() * 1000), open_interest: Math.floor(Math.random() * 5000) },
-        greeks: { delta: strike > spot ? -0.8 : -0.2, gamma: 0.05, theta: -0.05, vega: 0.1 },
-        implied_volatility: iv,
-        last_quote: { bid: putMid * 0.95, ask: putMid * 1.05, last: putMid }
-      });
-    }
-  }
-
-  return contracts;
-}
 
 export interface IVHistoryPoint {
   date: string;
