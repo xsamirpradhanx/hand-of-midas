@@ -28,6 +28,7 @@ export function jsonResponse(
     headers: {
       ...CORS_HEADERS,
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   };

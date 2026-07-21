@@ -74,8 +74,8 @@ export const api = {
   removeFromWatchlist: (symbol: string): Promise<void> => 
     fetchWithAuth(`/watchlist/${symbol}`, { method: 'DELETE' }),
 
-  getMarketData: (symbol: string, interval = '1day', outputsize = '200'): Promise<{ symbol: string, interval: string, data: OHLCVDataPoint[] }> => 
-    fetchWithAuth(`/market-data/${symbol}?interval=${interval}&outputsize=${outputsize}`),
+  getMarketData: (symbol: string, interval = '1day', outputsize = '200', extendedHours?: boolean): Promise<{ symbol: string, interval: string, data: OHLCVDataPoint[] }> => 
+    fetchWithAuth(`/market-data/${symbol}?interval=${interval}&outputsize=${outputsize}${extendedHours ? '&extendedHours=true' : ''}`),
 
   getQuote: (symbol: string): Promise<QuoteResponse> => 
     fetchWithAuth(`/quote/${symbol}`),
@@ -90,7 +90,7 @@ export const api = {
     fetchWithAuth(`/options/chain/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
     
   getOptionsMetrics: (symbol: string, expiry?: string): Promise<any> => 
-    fetchWithAuth(`/options/metrics/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
+    fetchWithAuth(`/options/metrics/${symbol}?_t=${Date.now()}${expiry ? `&expiry=${expiry}` : ''}`),
     
   getAiInsights: (symbol: string, expiry?: string): Promise<{ insight: string }> => 
     fetchWithAuth(`/options/insights/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),

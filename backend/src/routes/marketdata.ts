@@ -98,8 +98,11 @@ export async function getMarketData(
     outputsize = Math.floor(parsed);
   }
 
+  // --- Validate extendedHours ----------------------------------------------
+  const extendedHours = queryParams?.['extendedHours'] === 'true';
+
   // --- Check cache ---------------------------------------------------------
-  const cacheKey = timeSeriesCacheKey(upperSymbol, interval);
+  const cacheKey = timeSeriesCacheKey(upperSymbol, interval, extendedHours);
   const cached = await getCachedData<OHLCVDataPoint[]>(cacheKey);
 
   if (cached) {
@@ -112,7 +115,72 @@ export async function getMarketData(
   }
 
   // --- Fetch from upstream -------------------------------------------------
-  const raw = await getTimeSeries(upperSymbol, interval, outputsize);
+  let raw: { values?: any[] } = {};
+  
+  try {
+    if (extendedHours) {
+      throw new Error('Forcing Yahoo Finance for extended hours data');
+    }
+    raw = await getTimeSeries(upperSymbol, interval, outputsize);
+  } catch (err: any) {
+    if (!extendedHours) {
+      console.warn(`TwelveData failed for ${upperSymbol}, falling back to Yahoo Finance: ${err.message}`);
+    }
+    const { yf } = await import('../services/yahoo.js');
+    
+    // Map TwelveData intervals to Yahoo Finance intervals
+    const intervalMap: Record<string, string> = {
+      '1min': '1m',
+      '5min': '5m',
+      '15min': '15m',
+      '30min': '30m',
+      '1h': '60m',
+      '1day': '1d',
+      '1week': '1wk',
+      '1month': '1mo'
+    };
+    
+    const yfInterval = intervalMap[interval] || '1d';
+    
+    let period1Time = Date.now() - 2 * 365 * 24 * 60 * 60 * 1000; // 2 years default
+    if (yfInterval === '1m') {
+      period1Time = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days max for 1m
+    } else if (yfInterval.endsWith('m') || yfInterval.endsWith('h')) {
+      period1Time = Date.now() - 59 * 24 * 60 * 60 * 1000; // ~60 days max for other intraday
+    }
+    const period1 = new Date(period1Time);
+    
+    try {
+      const yfData = await yf.chart(upperSymbol, { 
+        interval: yfInterval as any, 
+        period1, 
+        includePrePost: extendedHours 
+      });
+      if (yfData && yfData.quotes && yfData.quotes.length > 0) {
+        raw = {
+          values: yfData.quotes.slice(-outputsize).map(q => {
+            // Yahoo returns JS Dates, convert to string
+            let dtStr = '';
+            if (yfInterval.endsWith('m')) {
+              dtStr = q.date.toISOString().replace('T', ' ').substring(0, 19);
+            } else {
+              dtStr = q.date.toISOString().split('T')[0];
+            }
+            return {
+              datetime: dtStr,
+              open: q.open?.toString() || '0',
+              high: q.high?.toString() || '0',
+              low: q.low?.toString() || '0',
+              close: q.close?.toString() || '0',
+              volume: q.volume?.toString() || '0'
+            };
+          }).filter(q => parseFloat(q.open) > 0)
+        };
+      }
+    } catch (yfErr) {
+      console.error('Yahoo Finance fallback also failed:', yfErr);
+    }
+  }
 
   if (!raw.values || raw.values.length === 0) {
     return jsonResponse(404, {
@@ -129,6 +197,14 @@ export async function getMarketData(
     close: parseFloat(v.close),
     volume: parseFloat(v.volume),
   }));
+
+  // Ensure data is consistently ascending (oldest first)
+  data.sort((a, b) => {
+    const tA = new Date(a.datetime.replace(' ', 'T') + 'Z').getTime();
+    const tB = new Date(b.datetime.replace(' ', 'T') + 'Z').getTime();
+    if (isNaN(tA) || isNaN(tB)) return a.datetime.localeCompare(b.datetime);
+    return tA - tB;
+  });
 
   // --- Populate cache ------------------------------------------------------
   const ttl = INTRADAY_INTERVALS.has(interval)

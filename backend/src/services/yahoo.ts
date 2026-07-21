@@ -3,7 +3,7 @@ import type { PolygonOptionsContract } from './polygon.js';
 
 export const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
-export async function getOptionsChainYahoo(symbol: string, expiryStr?: string): Promise<{ expirations: string[], contracts: PolygonOptionsContract[] }> {
+export async function getOptionsChainYahoo(symbol: string, expiryStr?: string): Promise<{ expirations: string[], contracts: PolygonOptionsContract[], quote?: any }> {
   try {
     const queryOpts = expiryStr ? { date: new Date(expiryStr) } : {};
     const result = await yf.options(symbol.toUpperCase(), queryOpts);
@@ -52,7 +52,7 @@ export async function getOptionsChainYahoo(symbol: string, expiryStr?: string): 
 
     const expirations = (result.expirationDates || []).map(d => d.toISOString().split('T')[0]);
 
-    return { expirations, contracts };
+    return { expirations, contracts, quote: result.quote };
   } catch (error) {
     console.error('Yahoo Finance options error:', error);
     throw new Error('Failed to fetch options chain from Yahoo Finance');

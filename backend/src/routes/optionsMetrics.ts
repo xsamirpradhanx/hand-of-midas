@@ -2,6 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { getOptionsChainYahoo } from '../services/yahoo.js';
 import { getDTE } from '../services/tradingCalendar.js';
 import { getItem, putItem, queryItems } from '../services/dynamodb.js';
+import { jsonResponse } from '../utils/response.js';
 
 interface VolumeOIByStrike {
   strike: number;
@@ -24,17 +25,6 @@ interface OIChange {
   oiChangePct: number;
 }
 
-function jsonResponse(statusCode: number, body: any): APIGatewayProxyResultV2 {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-    body: JSON.stringify(body),
-  };
-}
-
 export async function getOptionsMetrics(
   event: APIGatewayProxyEventV2,
   params: Record<string, string>,
@@ -45,10 +35,12 @@ export async function getOptionsMetrics(
 
   try {
     // Fetch all expirations
-    const { expirations } = await getOptionsChainYahoo(symbol);
+    const { expirations, quote } = await getOptionsChainYahoo(symbol);
     if (!expirations || expirations.length === 0) {
       return jsonResponse(404, { error: 'No options data found' });
     }
+
+    let spotPrice = quote?.regularMarketPrice || 0;
 
     // Term Structure Data
     const termStructure: { expiry: string; dte: number; averageIV: number }[] = [];
@@ -75,7 +67,8 @@ export async function getOptionsMetrics(
     let totalCallOI = 0;
     let totalPutOI = 0;
     
-    let spotPrice = 0;
+    let straddleExpectedMove = 0;
+    let straddleExpectedMovePct = 0;
 
     // Fetch the nearest 4 expirations to build a robust profile for Term Structure
     const tsExpirations = expirations.slice(0, 4);
@@ -96,7 +89,13 @@ export async function getOptionsMetrics(
       for (const c of contracts) {
         const iv = c.implied_volatility || 0;
         const oi = c.day.open_interest || 0;
-        if (iv > 0 && oi > 0) {
+        const volume = c.day.volume || 0;
+        const bid = c.last_quote?.bid || 0;
+        const ask = c.last_quote?.ask || 0;
+        const spread = ask > bid ? (ask - bid) / ask : 1;
+        
+        // Exclude completely illiquid or wildly wide-spread options
+        if (iv > 0 && oi > 0 && bid > 0 && spread < 0.5) {
           sumIV += iv * oi;
           countIV += oi;
         }
@@ -143,10 +142,6 @@ export async function getOptionsMetrics(
       }
     }
 
-    const { yf } = await import('../services/yahoo.js');
-    const underlyingQuote = await yf.quote(symbol);
-    spotPrice = underlyingQuote?.regularMarketPrice || 0;
-
     if (spotPrice > 0) {
       const { blackScholes } = await import('../services/greeks.js');
 
@@ -166,7 +161,8 @@ export async function getOptionsMetrics(
           const greeks = blackScholes(spotPrice, strike, t, 0.05, iv, type);
           const gamma = greeks.gamma;
 
-          const gex = gamma * oi * 100 * spotPrice;
+          // Dollar Gamma per 1% move: γ * OI * 100 * Spot² * 0.01
+          const gex = gamma * oi * 100 * spotPrice * spotPrice * 0.01;
 
           if (!gexByStrike[strike]) gexByStrike[strike] = { callGex: 0, putGex: 0 };
           
@@ -210,6 +206,22 @@ export async function getOptionsMetrics(
       if (maxPainData.length > 0) {
         maxPainData.sort((a, b) => a.intrinsicLoss - b.intrinsicLoss);
         maxPainStrike = maxPainData[0].strike;
+        
+        // Calculate Straddle Expected Move based on closest strike to Spot (ATM)
+        let atmStrike = strikes.reduce((prev, curr) => Math.abs(curr - spotPrice) < Math.abs(prev - spotPrice) ? curr : prev);
+        let callPrice = 0;
+        let putPrice = 0;
+        
+        for (const c of nearestContracts) {
+          if (c.details.strike_price === atmStrike) {
+            const price = c.last_quote?.last || c.last_quote?.ask || 0;
+            if (c.details.contract_type === 'call') callPrice = price;
+            if (c.details.contract_type === 'put') putPrice = price;
+          }
+        }
+        
+        straddleExpectedMove = callPrice + putPrice;
+        straddleExpectedMovePct = straddleExpectedMove / spotPrice;
       }
     }
 
@@ -294,6 +306,8 @@ export async function getOptionsMetrics(
       maxPainStrike,
       maxPainExpiry: activeMaxPainExpiry,
       receivedExpiry: event.queryStringParameters?.expiry ?? null,
+      straddleExpectedMove,
+      straddleExpectedMovePct,
       putCallSkew: {
         volumeRatio: totalCallVol > 0 ? totalPutVol / totalCallVol : 0,
         oiRatio: totalCallOI > 0 ? totalPutOI / totalCallOI : 0,

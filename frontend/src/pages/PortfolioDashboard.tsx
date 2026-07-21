@@ -16,7 +16,7 @@ export const PortfolioDashboard: React.FC = () => {
   // Scenario state
   const [spotShock, setSpotShock] = useState<number>(0);
   const [ivShock, setIvShock] = useState<number>(0);
-  const [scenarioSummary, setScenarioSummary] = useState<PortfolioSummary | null>(null);
+  const [scenarioPL, setScenarioPL] = useState<number | null>(null);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,13 +41,13 @@ export const PortfolioDashboard: React.FC = () => {
 
   useEffect(() => {
     if (spotShock === 0 && ivShock === 0) {
-      setScenarioSummary(null);
+      setScenarioPL(null);
       return;
     }
     const timer = setTimeout(async () => {
       try {
         const data = await api.runScenario(spotShock / 100, ivShock / 100);
-        setScenarioSummary(data);
+        setScenarioPL(data.scenarioPL);
       } catch (err) {
         console.error('Scenario error', err);
       }
@@ -55,7 +55,7 @@ export const PortfolioDashboard: React.FC = () => {
     return () => clearTimeout(timer);
   }, [spotShock, ivShock]);
 
-  const displaySummary = scenarioSummary || summary;
+  const displaySummary = summary;
 
   if (loading && !summary) {
     return <div className={styles.container}>Loading portfolio...</div>;
@@ -189,9 +189,9 @@ export const PortfolioDashboard: React.FC = () => {
           </div>
           <div className={styles.scenarioResult}>
             <span className={styles.scenarioResultLabel}>Projected P/L Change</span>
-            {scenarioSummary ? (
-              <span className={`${styles.scenarioResultValue} ${(scenarioSummary.unrealizedPnL - summary.unrealizedPnL) >= 0 ? styles.positive : styles.negative}`}>
-                {formatCurrency(scenarioSummary.unrealizedPnL - summary.unrealizedPnL)}
+            {scenarioPL !== null ? (
+              <span className={`${styles.scenarioResultValue} ${scenarioPL >= 0 ? styles.positive : styles.negative}`}>
+                {formatCurrency(scenarioPL)}
               </span>
             ) : (
               <span className={styles.scenarioResultValue}>$0.00</span>

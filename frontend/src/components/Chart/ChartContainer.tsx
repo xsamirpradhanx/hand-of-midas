@@ -27,6 +27,7 @@ interface ChartContainerProps {
   interval: string;
   indicators: IndicatorConfig[];
   chartType: ChartType;
+  showExtendedHours?: boolean;
 }
 
 interface TooltipData {
@@ -43,6 +44,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   interval,
   indicators,
   chartType,
+  showExtendedHours,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -96,11 +98,22 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       setTooltip(null);
       try {
         const [marketResult, quoteResult] = await Promise.all([
-          api.getMarketData(symbol, interval),
+          api.getMarketData(symbol, interval, '200', showExtendedHours),
           api.getQuote(symbol).catch(() => null)
         ]);
         if (isMounted) {
-          const ordered = [...marketResult.data].reverse(); // chronological order
+          // Ensure ascending order (oldest first). We don't blindly reverse anymore
+          // because backend guarantees ascending order, but old cached data might be descending.
+          const parseDt = (dt: string) => {
+            if (dt.endsWith('Z')) return new Date(dt).getTime();
+            return new Date(dt.replace(' ', 'T') + 'Z').getTime();
+          };
+          const ordered = [...marketResult.data].sort((a, b) => {
+            const tA = parseDt(a.datetime);
+            const tB = parseDt(b.datetime);
+            if (isNaN(tA) || isNaN(tB)) return a.datetime.localeCompare(b.datetime);
+            return tA - tB;
+          });
           if (quoteResult && ordered.length > 0) {
             const lastBar = { ...ordered[ordered.length - 1] };
             lastBar.close = quoteResult.price;
@@ -123,7 +136,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [symbol, interval]);
+  }, [symbol, interval, showExtendedHours]);
 
   // Initialize chart once on mount
   useEffect(() => {
@@ -171,7 +184,10 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       if (!barData) { setTooltip(null); return; }
 
       // Find corresponding raw bar to get volume
-      const rawBar = rawDataRef.current.find(d => d.datetime === param.time);
+      const rawBar = rawDataRef.current.find(d => {
+        const parsed = d.datetime.length <= 10 ? d.datetime : new Date(d.datetime.replace(' ', 'T') + 'Z').getTime() / 1000;
+        return parsed === param.time;
+      });
 
       setTooltip({
         time: String(param.time),
@@ -237,9 +253,15 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       seriesMapRef.current.forEach(series => chart.removeSeries(series));
       seriesMapRef.current.clear();
 
+      const parseTime = (dt: string) => {
+        if (dt.length <= 10) return dt;
+        if (dt.endsWith('Z')) return new Date(dt).getTime() / 1000;
+        return new Date(dt.replace(' ', 'T') + 'Z').getTime() / 1000;
+      };
+
       // ── Build main price series ──────────────────────────────────────────
       const baseChartData = data.map(d => ({
-        time: d.datetime,
+        time: parseTime(d.datetime) as any,
         open: d.open,
         high: d.high,
         low: d.low,
@@ -296,7 +318,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
 
       // ── Indicators ────────────────────────────────────────────────────────
       const indicatorData = data.map(d => ({
-        time: d.datetime,
+        time: parseTime(d.datetime) as any,
         open: d.open,
         high: d.high,
         low: d.low,

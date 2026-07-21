@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../utils/response.js';
 import { getHistoricalIV as fetchHistoricalIV } from '../services/polygon.js';
-import { getOptionsChainYahoo as fetchOptionsChain } from '../services/yahoo.js';
+import { fetchOptionsChainWithFallback as fetchOptionsChain } from '../services/optionsFallback.js';
 import { blackScholes, bjerksundStensland, impliedVolatility } from '../services/greeks.js';
 import { getDTE, getCalendarDTE } from '../services/tradingCalendar.js';
 import { getUnusualActivity, scoreContract, getBaseline, computeWhaleScore } from '../services/unusualActivity.js';
@@ -94,7 +94,8 @@ export async function getOptionsChain(
       let calculatedGreeks = contract.greeks || { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
       
       if (calculatedGreeks.delta === 0 && iv > 0 && underlyingPrice > 0 && dte >= 0) {
-        calculatedGreeks = blackScholes(underlyingPrice, strike, Math.max(0.0027, dte / 365), 0.05, iv, type);
+        const bs = blackScholes(underlyingPrice, strike, Math.max(0.0027, dte / 365), 0.05, iv, type);
+        calculatedGreeks = { ...bs, rho: 0 };
       }
 
       const whaleScore = computeWhaleScore({
@@ -124,7 +125,7 @@ export async function getOptionsChain(
         gamma: calculatedGreeks.gamma || 0,
         theta: calculatedGreeks.theta || 0,
         vega: calculatedGreeks.vega || 0,
-        rho: calculatedGreeks.rho || 0,
+        rho: (calculatedGreeks as any).rho || 0,
         intrinsicValue,
         timeValue,
         itm,
@@ -162,7 +163,7 @@ export async function getUnusualActivityFeed(
     const symbol = event.queryStringParameters?.['symbol'];
     const minSigma = parseFloat(event.queryStringParameters?.['minSigma'] || '2.0');
     const minPremium = parseFloat(event.queryStringParameters?.['minPremium'] || '100000');
-    const side = event.queryStringParameters?.['side'];
+    const side = event.queryStringParameters?.['side'] as 'call' | 'put' | undefined;
     const dteMax = event.queryStringParameters?.['dteMax'] ? parseInt(event.queryStringParameters?.['dteMax'], 10) : undefined;
     
     const feed = await getUnusualActivity({ symbol, minSigma, minPremium, side, dteMax });

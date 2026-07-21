@@ -322,7 +322,7 @@ export async function handler(
 
       const params = matchPath(path, route.pattern);
       if (params !== null) {
-        return await route.handler(event, params);
+        return await route.handler(apiEvent, params);
       }
     }
 

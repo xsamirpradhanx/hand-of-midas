@@ -48,6 +48,8 @@ interface MetricsResponse {
   spotPrice: number;
   maxPainStrike: number;
   maxPainExpiry: string;
+  straddleExpectedMove: number;
+  straddleExpectedMovePct: number;
   putCallSkew: {
     volumeRatio: number;
     oiRatio: number;
@@ -71,6 +73,10 @@ const METRIC_INFO: Record<string, { title: string; description: string }> = {
   maxPain: {
     title: 'Max Pain',
     description: 'The strike price where option holders would lose the most money at expiration. Market makers may gravitate price toward this level as expiry approaches.',
+  },
+  expectedMove: {
+    title: 'Expected Move',
+    description: 'The implied daily or weekly price move derived from ATM straddle pricing. Indicates the market\'s baseline expectation for volatility.',
   },
   volumeSkew: {
     title: 'Put/Call Volume Skew',
@@ -183,6 +189,18 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
 
         <div className={styles.card}>
           <h3>
+            Expected Move {activeExpiry ? `(${activeExpiry})` : ''}
+            <MetricTooltip metricKey="expectedMove" />
+          </h3>
+          <div className={styles.largeValue}>±${(data.straddleExpectedMove || 0).toFixed(2)}</div>
+          <div className={styles.subtext}>
+            Implied ±{(data.straddleExpectedMovePct * 100 || 0).toFixed(1)}% move
+          </div>
+          <p className={styles.cardDesc}>{METRIC_INFO.expectedMove.description}</p>
+        </div>
+
+        <div className={styles.card}>
+          <h3>
             Put/Call Volume Skew {activeExpiry && `(${activeExpiry})`}
             <MetricTooltip metricKey="volumeSkew" />
           </h3>
@@ -192,14 +210,22 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
           <div className={styles.subtext}>
             {data.putCallSkew.totalPutVol.toLocaleString()} Puts / {data.putCallSkew.totalCallVol.toLocaleString()} Calls
           </div>
-          {data.putCallSkew.volumeRatio > 1.2 && (
-            <div className={`${styles.trendIndicator} ${styles.trendBearish}`}>
-              <span className={styles.trendArrow}>↑</span> Rising Hedging/Fear
-            </div>
-          )}
-          {data.putCallSkew.volumeRatio < 0.8 && (
-            <div className={`${styles.trendIndicator} ${styles.trendBullish}`}>
-              <span className={styles.trendArrow}>↓</span> Complacency
+          {(data.putCallSkew.totalPutVol + data.putCallSkew.totalCallVol) > 1000 ? (
+            <>
+              {data.putCallSkew.volumeRatio > 1.2 && (
+                <div className={`${styles.trendIndicator} ${styles.trendBearish}`}>
+                  <span className={styles.trendArrow}>↑</span> Rising Hedging/Fear
+                </div>
+              )}
+              {data.putCallSkew.volumeRatio < 0.8 && (
+                <div className={`${styles.trendIndicator} ${styles.trendBullish}`}>
+                  <span className={styles.trendArrow}>↓</span> Complacency
+                </div>
+              )}
+            </>
+          ) : (
+            <div className={styles.trendIndicator} style={{ color: '#888' }}>
+              Low Liquidity (No Signal)
             </div>
           )}
           <p className={styles.cardDesc}>{METRIC_INFO.volumeSkew.description}</p>
@@ -220,32 +246,37 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
         </div>
       </div>
 
+      <div className={styles.grid}>
+        <div className={styles.card}>
+          <h3>
+            Net GEX Regime
+            <MetricTooltip metricKey="gex" />
+          </h3>
+          <div className={`${styles.largeValue} ${totalNetGex > 10000000 ? styles.gexPinning : totalNetGex < -10000000 ? styles.gexAmplified : ''}`}>
+            {totalNetGex > 10000000 ? 'Pinning' : totalNetGex < -10000000 ? 'Amplified' : 'Neutral'}
+          </div>
+          <div className={styles.subtext}>
+            Net GEX: ${(totalNetGex / 1000000).toFixed(1)}M
+          </div>
+          <p className={styles.cardDesc}>Dealers will buy dips (Pinning) or sell dips (Amplified)</p>
+        </div>
+
+        <div className={styles.card}>
+          <h3>Peak GEX Strike</h3>
+          <div className={styles.largeValue}>${maxGexStrike}</div>
+          <div className={styles.subtext}>
+            GEX Value: ${(maxGexValue / 1000000).toFixed(1)}M
+          </div>
+          <p className={styles.cardDesc}>The strike with the largest dealer gamma exposure, often acting as a strong magnet or wall.</p>
+        </div>
+      </div>
+
       <div className={styles.chartsGrid}>
         <div className={styles.chartCard}>
           <h3>
             Gamma Exposure (GEX) Profile {activeExpiry && `(${activeExpiry})`}
-            <MetricTooltip metricKey="gex" />
           </h3>
           <p className={styles.subtext}>Net dealer gamma by strike · Positive = call gamma · Negative = put gamma</p>
-
-          <div className={styles.gexSummary}>
-            <div className={styles.gexSummaryItem}>
-              <span className={styles.gexSummaryLabel}>Net GEX</span>
-              <span className={`${styles.gexSummaryValue} ${totalNetGex > 0 ? styles.gexPinning : styles.gexAmplified}`}>
-                ${(totalNetGex / 1000000).toFixed(1)}M
-              </span>
-            </div>
-            <div className={styles.gexSummaryItem}>
-              <span className={styles.gexSummaryLabel}>Regime</span>
-              <span className={`${styles.gexSummaryValue} ${totalNetGex > 0 ? styles.gexPinning : styles.gexAmplified}`}>
-                {totalNetGex > 0 ? 'Pinning' : 'Amplified'}
-              </span>
-            </div>
-            <div className={styles.gexSummaryItem}>
-              <span className={styles.gexSummaryLabel}>Peak GEX</span>
-              <span className={styles.gexSummaryValue}>${maxGexStrike}</span>
-            </div>
-          </div>
 
           <div className={styles.gexChartContainer}>
             {data.gexProfile.length > 0 && maxAbsGex > 0 ? (
@@ -255,17 +286,19 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
                   const x = i * 15;
                   const callHeight = (d.callGex / maxAbsGex) * 100;
                   const putHeight = (Math.abs(d.putGex) / maxAbsGex) * 100;
+                  // Dim low-liquidity strikes relative to peak
+                  const strikeOpacity = Math.max(0.3, Math.min(0.85, (Math.abs(d.callGex) + Math.abs(d.putGex)) / (Math.abs(maxGexValue) * 0.2)));
 
                   return (
                     <g key={d.strike}>
                       {callHeight > 0 && (
-                        <rect x={x + 2} y={125 - callHeight} width="10" height={callHeight} fill="#00d4aa" opacity="0.85" rx="1" />
+                        <rect x={x + 2} y={125 - callHeight} width="10" height={callHeight} fill="#00d4aa" opacity={strikeOpacity} rx="1" />
                       )}
                       {putHeight > 0 && (
-                        <rect x={x + 2} y={125} width="10" height={putHeight} fill="#ff4d4d" opacity="0.85" rx="1" />
+                        <rect x={x + 2} y={125} width="10" height={putHeight} fill="#ff4d4d" opacity={strikeOpacity} rx="1" />
                       )}
-                      {i % Math.ceil(data.gexProfile.length / 10) === 0 && (
-                        <text x={x + 7} y="240" fill="#6b6b8a" fontSize="10" textAnchor="middle">
+                      {i % Math.ceil(data.gexProfile.length / 15) === 0 && (
+                        <text x={x + 7} y="240" fill="#6b6b8a" fontSize="10" textAnchor="end" transform={`rotate(-45, ${x + 7}, 240)`}>
                           {d.strike}
                         </text>
                       )}

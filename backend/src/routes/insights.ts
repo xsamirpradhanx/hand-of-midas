@@ -1,4 +1,4 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { getOptionsMetrics } from './optionsMetrics.js';
 import { generateInsight, MarketMetrics } from '../services/aiInsights.js';
 
