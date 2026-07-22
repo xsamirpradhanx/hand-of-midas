@@ -17,6 +17,7 @@ import { calculateRSI } from '../../lib/indicators/rsi';
 import { calculateMACD } from '../../lib/indicators/macd';
 import { calculateBollingerBands } from '../../lib/indicators/bollingerBands';
 import { calculateHeikinAshi } from '../../lib/indicators/heikinAshi';
+import { ZonePlugin, PredictiveZone } from '../../lib/chartPlugins/ZonePlugin';
 import { OHLCTooltip } from './OHLCTooltip';
 import type { ChartType } from './ChartTypeBar';
 import { useLivePricing } from '../../hooks/useLivePricing';
@@ -28,6 +29,7 @@ interface ChartContainerProps {
   indicators: IndicatorConfig[];
   chartType: ChartType;
   showExtendedHours?: boolean;
+  showPredictiveZones?: boolean;
 }
 
 interface TooltipData {
@@ -44,7 +46,8 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   interval,
   indicators,
   chartType,
-  showExtendedHours,
+  showExtendedHours = false,
+  showPredictiveZones = false,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -263,13 +266,37 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       };
 
       // ── Build main price series ──────────────────────────────────────────
-      const baseChartData = data.map(d => ({
+      const baseChartData: any[] = data.map(d => ({
         time: parseTime(d.datetime) as any,
         open: d.open,
         high: d.high,
         low: d.low,
         close: d.close,
       }));
+      
+      // Inject WhitespaceData if we need to project predictive zones into the future
+      if (showPredictiveZones && baseChartData.length > 0) {
+        const lastTime = baseChartData[baseChartData.length - 1].time;
+        
+        if (typeof lastTime === 'string') {
+          // It's a YYYY-MM-DD string
+          let currentDate = new Date(lastTime);
+          for (let i = 0; i < 30; i++) {
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+            // Skip weekends
+            if (currentDate.getUTCDay() === 0 || currentDate.getUTCDay() === 6) continue;
+            const nextDateStr = currentDate.toISOString().split('T')[0];
+            baseChartData.push({ time: nextDateStr });
+          }
+        } else {
+          // It's a UNIX timestamp
+          let currentTime = lastTime as number;
+          for (let i = 0; i < 30; i++) {
+            currentTime += 86400; // 1 day jump
+            baseChartData.push({ time: currentTime });
+          }
+        }
+      }
 
       let mainSeries: ISeriesApi<any>;
 
@@ -415,6 +442,50 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           seriesMapRef.current.set('MACD_histogram', histLine);
         }
       });
+      
+      // ── Attach Zone Plugin if active ────────────────────────────────────────
+      if (showPredictiveZones) {
+        api.getPredictiveZones(symbol).then((res) => {
+          if (res && res.zones && res.zones.length > 0) {
+            const plugin = new ZonePlugin(chart);
+            // Start projecting from today to the end of the whitespace
+            const startTime = baseChartData[baseChartData.length - 31]?.time; // start where actual data ends
+            const endTime = baseChartData[baseChartData.length - 1]?.time; // end of whitespace
+            
+            plugin.updateZones(res.zones, startTime, endTime);
+            mainSeries.attachPrimitive(plugin);
+
+            // Add native price lines to guarantee visibility on the price axis
+            res.zones.forEach((zone: PredictiveZone) => {
+              const color = zone.type === 'buy' ? '#00e676' : '#ff1744';
+              const label = zone.type === 'buy' ? 'AI Buy Zone' : 'AI Sell Zone';
+              
+              mainSeries.createPriceLine({
+                price: zone.priceTop,
+                color,
+                lineWidth: 1,
+                lineStyle: 2, // Dotted
+                axisLabelVisible: true,
+                title: `${label} Top`,
+              });
+              mainSeries.createPriceLine({
+                price: zone.priceBottom,
+                color,
+                lineWidth: 1,
+                lineStyle: 2, // Dotted
+                axisLabelVisible: true,
+                title: `${label} Bottom`,
+              });
+            });
+
+            // Re-apply autoscale to fit the newly attached zones, then disable again
+            chart.priceScale('right').applyOptions({ autoScale: true });
+            setTimeout(() => {
+              chart.priceScale('right').applyOptions({ autoScale: false });
+            }, 50);
+          }
+        }).catch(err => console.error("Failed to fetch predictive zones", err));
+      }
 
       chart.timeScale().fitContent();
       

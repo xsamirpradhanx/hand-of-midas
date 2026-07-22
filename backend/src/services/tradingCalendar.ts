@@ -178,3 +178,11 @@ export function getCalendarDTE(expirationDateStr: string): number {
   
   return diffDays > 0 ? diffDays : 0;
 }
+
+/**
+ * Model time in years for option valuation.  Black-Scholes convention is
+ * calendar time / 365; trading DTE must not be divided by 365.
+ */
+export function getTimeToExpiryYears(expirationDateStr: string): number {
+  return Math.max(0, getCalendarDTE(expirationDateStr) / 365);
+}

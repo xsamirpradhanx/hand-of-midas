@@ -11,6 +11,7 @@ import type {
   PortfolioSummary,
   Position,
   Alert,
+  OptionsAnalyticsResponse,
 } from '../types';
 
 import { userPool } from '../contexts/AuthContext';
@@ -136,4 +137,15 @@ export const api = {
 
   runScenario: (deltaSpot: number, deltaIV: number): Promise<{ scenarioPL: number }> =>
     fetchWithAuth('/portfolio/scenario', { method: 'POST', body: JSON.stringify({ deltaSpot, deltaIV }) }),
+
+  getPredictiveZones: (symbol: string): Promise<any> =>
+    fetchWithAuth(`/predictive/zones/${symbol}`),
+
+  getOptionsAnalytics: (symbol: string, options?: { includeVix?: boolean; expiry?: string }): Promise<OptionsAnalyticsResponse> => {
+    const params = new URLSearchParams();
+    if (options?.includeVix === false) params.set('includeVix', 'false');
+    if (options?.expiry) params.set('expiry', options.expiry);
+    const qs = params.toString();
+    return fetchWithAuth(`/options-analytics/${symbol}${qs ? `?${qs}` : ''}`);
+  },
 };

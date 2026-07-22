@@ -215,37 +215,62 @@ export async function getTimeSeries(symbol: string, interval: string, limit: num
   }));
 }
 
+import { yf } from './yahoo.js';
+
 /**
  * Get current quote for a ticker.
  */
 export async function getQuote(symbol: string): Promise<PolygonQuote> {
   const sym = symbol.toUpperCase();
   
-  const [snapshotData, tickerData] = await Promise.all([
-    fetchPolygon<any>(`${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/${sym}`),
-    fetchPolygon<PolygonTickerDetailResponse>(`${BASE_URL}/v3/reference/tickers/${sym}`)
-  ]);
+  try {
+    const [snapshotData, tickerData] = await Promise.all([
+      fetchPolygon<any>(`${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/${sym}`),
+      fetchPolygon<PolygonTickerDetailResponse>(`${BASE_URL}/v3/reference/tickers/${sym}`)
+    ]);
 
-  if (!snapshotData.ticker) {
-    throw new Error(`Snapshot data not found for ${sym}`);
+    if (!snapshotData.ticker) {
+      throw new Error(`Snapshot data not found for ${sym}`);
+    }
+
+    const s = snapshotData.ticker;
+    const price = s.day?.c ?? s.lastTrade?.p ?? s.prevDay?.c ?? 0;
+    const prevClose = s.prevDay?.c ?? price;
+    const change = price - prevClose;
+    const changePercent = prevClose !== 0 ? (change / prevClose) * 100 : 0;
+
+    return {
+      symbol: sym,
+      name: tickerData.results?.name ?? sym,
+      price,
+      change,
+      changePercent,
+      bid: s.lastQuote?.p ?? 0,
+      ask: s.lastQuote?.P ?? 0, // uppercase P for ask price in some Polygon responses
+      volume: s.day?.v ?? 0,
+    };
+  } catch (err) {
+    console.warn(`Polygon snapshot failed for ${sym}, falling back to Yahoo Finance`, err instanceof Error ? err.message : String(err));
+    const raw = await yf.quote(sym);
+    if (!raw) {
+       throw new Error(`Fallback quote failed for ${sym}`);
+    }
+    const price = raw.regularMarketPrice ?? 0;
+    const prevClose = raw.regularMarketPreviousClose ?? price;
+    const change = raw.regularMarketChange ?? (price - prevClose);
+    const changePercent = raw.regularMarketChangePercent ?? (prevClose !== 0 ? (change / prevClose) * 100 : 0);
+
+    return {
+      symbol: sym,
+      name: raw.longName ?? raw.shortName ?? sym,
+      price,
+      change,
+      changePercent,
+      bid: raw.bid ?? 0,
+      ask: raw.ask ?? 0,
+      volume: raw.regularMarketVolume ?? 0,
+    };
   }
-
-  const s = snapshotData.ticker;
-  const price = s.day?.c ?? s.lastTrade?.p ?? s.prevDay?.c ?? 0;
-  const prevClose = s.prevDay?.c ?? price;
-  const change = price - prevClose;
-  const changePercent = prevClose !== 0 ? (change / prevClose) * 100 : 0;
-
-  return {
-    symbol: sym,
-    name: tickerData.results?.name ?? sym,
-    price,
-    change,
-    changePercent,
-    bid: s.lastQuote?.p ?? 0,
-    ask: s.lastQuote?.P ?? 0, // uppercase P for ask price in some Polygon responses
-    volume: s.day?.v ?? 0,
-  };
 }
 
 /**
@@ -255,62 +280,47 @@ export async function getOptionsChain(symbol: string, expiryStr?: string): Promi
   let url = `${BASE_URL}/v3/snapshot/options/${symbol.toUpperCase()}?limit=250`;
   const allContracts: PolygonOptionsContract[] = [];
 
-  try {
-    while (true) {
-      const data = await fetchPolygon<PolygonSnapshotResponse>(url);
-    
-      if (data.results) {
-        for (const item of data.results) {
-          // If expiryStr is provided, filter
-          if (expiryStr && item.details?.expiration_date !== expiryStr) {
-            continue;
-          }
-          allContracts.push({
-            ticker: item.ticker,
-          details: {
-            strike_price: item.details?.strike_price ?? 0,
-            expiration_date: item.details?.expiration_date ?? '',
-            contract_type: item.details?.contract_type ?? 'call',
-            shares_per_contract: item.details?.shares_per_contract ?? 100,
-          },
-          day: {
-            volume: item.day?.volume ?? 0,
-            open_interest: item.open_interest ?? 0,
-          },
-          greeks: {
-            delta: item.greeks?.delta ?? 0,
-            gamma: item.greeks?.gamma ?? 0,
-            theta: item.greeks?.theta ?? 0,
-            vega: item.greeks?.vega ?? 0,
-          },
-          implied_volatility: item.implied_volatility ?? 0,
-          last_quote: {
-            bid: item.last_quote?.bid ?? 0,
-            ask: item.last_quote?.ask ?? 0,
-            last: item.last_quote?.last ?? 0,
-          }
-        });
-      }
+  while (url) {
+    const data = await fetchPolygon<PolygonSnapshotResponse>(url);
+    for (const item of data.results ?? []) {
+      if (expiryStr && item.details?.expiration_date !== expiryStr) continue;
+      allContracts.push({
+        ticker: item.ticker,
+        details: {
+          strike_price: item.details?.strike_price ?? 0,
+          expiration_date: item.details?.expiration_date ?? '',
+          contract_type: item.details?.contract_type ?? 'call',
+          shares_per_contract: item.details?.shares_per_contract ?? 100,
+        },
+        day: {
+          volume: item.day?.volume ?? 0,
+          open_interest: item.open_interest ?? 0,
+        },
+        greeks: {
+          delta: item.greeks?.delta ?? 0,
+          gamma: item.greeks?.gamma ?? 0,
+          theta: item.greeks?.theta ?? 0,
+          vega: item.greeks?.vega ?? 0,
+        },
+        implied_volatility: item.implied_volatility ?? 0,
+        last_quote: {
+          bid: item.last_quote?.bid ?? 0,
+          ask: item.last_quote?.ask ?? 0,
+          last: item.last_quote?.last ?? 0,
+        },
+      });
     }
-
-    if (data.next_url) {
-      url = data.next_url;
-    } else {
-      break;
-    }
+    url = data.next_url ?? '';
   }
 
-    const expirationsSet = new Set<string>();
-    for (const c of allContracts) {
-      if (c.details.expiration_date) {
-        expirationsSet.add(c.details.expiration_date);
-      }
+  const expirationsSet = new Set<string>();
+  for (const c of allContracts) {
+    if (c.details.expiration_date) {
+      expirationsSet.add(c.details.expiration_date);
     }
-    const expirations = Array.from(expirationsSet).sort();
-    return { expirations, contracts: allContracts };
-  } catch (err: any) {
-    throw err;
   }
+  const expirations = Array.from(expirationsSet).sort();
+  return { expirations, contracts: allContracts };
 }
 
 
@@ -371,4 +381,21 @@ export async function getHistoricalIV(symbol: string, days: number = 365): Promi
       iv_percentile: ivPercentile,
     };
   });
+}
+
+export interface PolygonNewsArticle {
+  title: string;
+  author: string;
+  published_utc: string;
+  article_url: string;
+  tickers: string[];
+  description: string;
+  keywords: string[];
+}
+
+export async function getTickerNews(symbol: string, limit: number = 20): Promise<PolygonNewsArticle[]> {
+  const sym = symbol.toUpperCase();
+  const url = `${BASE_URL}/v2/reference/news?ticker=${sym}&limit=${limit}&sort=published_utc&order=desc`;
+  const data = await fetchPolygon<{ results: PolygonNewsArticle[] }>(url);
+  return data.results || [];
 }

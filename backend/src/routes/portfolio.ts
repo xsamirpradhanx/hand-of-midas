@@ -1,8 +1,9 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../utils/response.js';
-import { queryItems, putItem, deleteItem } from '../services/dynamodb.js';
+import { getItem, queryItems, putItem, deleteItem } from '../services/dynamodb.js';
 import { blackScholes, impliedVolatility } from '../services/greeks.js';
 import { getQuote } from '../services/polygon.js';
+import { getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import crypto from 'crypto';
 
 interface PositionLeg {
@@ -34,6 +35,21 @@ interface Position {
   tags?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+function isValidPositionInput(value: unknown): value is Omit<Position, 'pk' | 'sk' | 'id' | 'userId' | 'createdAt' | 'updatedAt'> {
+  if (!value || typeof value !== 'object') return false;
+  const position = value as Partial<Position>;
+  return typeof position.symbol === 'string' && /^[A-Za-z.\-]{1,16}$/.test(position.symbol)
+    && (position.type === 'stock' || position.type === 'option')
+    && Array.isArray(position.legs) && position.legs.length > 0
+    && position.legs.every(leg => typeof leg?.ticker === 'string'
+      && Number.isFinite(leg.quantity) && leg.quantity !== 0
+      && Number.isFinite(leg.costBasis) && leg.costBasis >= 0
+      && (!leg.optionDetails || (Number.isFinite(leg.optionDetails.strike) && leg.optionDetails.strike > 0
+        && /^\d{4}-\d{2}-\d{2}$/.test(leg.optionDetails.expiry)
+        && (leg.optionDetails.type === 'call' || leg.optionDetails.type === 'put')
+        && Number.isFinite(leg.optionDetails.multiplier) && leg.optionDetails.multiplier > 0)));
 }
 
 function getUserId(event: APIGatewayProxyEventV2): string | null {
@@ -81,11 +97,15 @@ export async function addPosition(
     }
     
     const parsed = JSON.parse(bodyText);
+    if (!isValidPositionInput(parsed)) {
+      return jsonResponse(400, { error: 'Invalid position payload' });
+    }
     const positionId = crypto.randomUUID();
     const now = new Date().toISOString();
     
     const newPosition: Position = {
       ...parsed,
+      symbol: parsed.symbol.toUpperCase(),
       pk: positionPK(userId),
       sk: positionSK(positionId),
       id: positionId,
@@ -122,14 +142,21 @@ export async function updatePosition(
     }
     
     const parsed = JSON.parse(bodyText);
+    if (!isValidPositionInput(parsed)) {
+      return jsonResponse(400, { error: 'Invalid position payload' });
+    }
     const now = new Date().toISOString();
+    const existing = await getItem<Position>(positionPK(userId), positionSK(positionId));
+    if (!existing) return jsonResponse(404, { error: 'Position not found' });
     
     const updatedPosition: Position = {
       ...parsed,
+      symbol: parsed.symbol.toUpperCase(),
       pk: positionPK(userId),
       sk: positionSK(positionId),
       id: positionId,
       userId,
+      createdAt: existing.createdAt,
       updatedAt: now,
     };
     
@@ -198,15 +225,15 @@ export async function getPortfolioSummary(
         const qty = leg.quantity;
 
         if (!leg.optionDetails) {
-          // Stock leg: delta normalised to option-contract scale (1 share = 1 delta unit × 100)
-          posDelta += qty * 100;
-          const price = leg.currentPrice ?? leg.costBasis;
+          // Delta is expressed in underlying share equivalents. Do not apply an
+          // option multiplier to stock quantities.
+          posDelta += qty;
+          const price = S > 0 ? S : (leg.currentPrice ?? leg.costBasis);
           posValue += price * qty;
           posCost += leg.costBasis * qty;
         } else {
           const { strike, expiry, type, multiplier } = leg.optionDetails;
-          const daysToExpiry = Math.max(0, (new Date(expiry).getTime() - Date.now()) / 86400000);
-          const T = Math.max(0.0027, daysToExpiry / 365);
+          const T = Math.max(1 / 365, getTimeToExpiryYears(expiry));
           const r = 0.05;
 
           let sigma = 0.3;
@@ -311,11 +338,10 @@ export async function runScenario(
         let legDelta = 0, legGamma = 0, legVega = 0;
 
         if (!leg.optionDetails) {
-          legDelta = qty * 100;
+          legDelta = qty;
         } else {
           const { strike, expiry, type, multiplier } = leg.optionDetails;
-          const daysToExpiry = Math.max(0, (new Date(expiry).getTime() - Date.now()) / 86400000);
-          const T = Math.max(0.0027, daysToExpiry / 365);
+          const T = Math.max(1 / 365, getTimeToExpiryYears(expiry));
           const r = 0.05;
 
           let sigma = 0.3;

@@ -1,0 +1,116 @@
+.panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--surface-main);
+  padding: 10px 16px 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.chartBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chartTitle {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
+}
+
+.chartCanvas {
+  width: 100%;
+  height: 140px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.narrative {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+.narrativeMuted {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  padding: 24px 0;
+  text-align: center;
+}
+
+.infoIcon {
+  cursor: help;
+  opacity: 0.55;
+  font-size: 0.75rem;
+}
+
+.infoIcon:hover {
+  opacity: 1;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.footerItem {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+}
+
+.footerItem strong {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.status {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: 12px;
+}
+
+.error {
+  font-size: 0.75rem;
+  color: #ff5252;
+  text-align: center;
+  padding: 12px;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { WatchlistPanel } from '../components/Watchlist/WatchlistPanel';
 import { ChartContainer } from '../components/Chart/ChartContainer';
+import { InstitutionalSubCharts } from '../components/Chart/InstitutionalSubCharts';
 import { TimeframeBar } from '../components/Chart/TimeframeBar';
 import { ChartTypeBar, type ChartType } from '../components/Chart/ChartTypeBar';
 import { IndicatorPanel } from '../components/Indicators/IndicatorPanel';
@@ -19,6 +20,8 @@ export const Dashboard: React.FC = () => {
   const [interval, setInterval] = useState<string>('1day');
   const [chartType, setChartType] = useState<ChartType>('candlestick');
   const [showExtendedHours, setShowExtendedHours] = useState(false);
+  const [showPredictiveZones, setShowPredictiveZones] = useState(false);
+  const [showInstitutionalSignals, setShowInstitutionalSignals] = useState(true);
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
 
   // Load chart config when symbol changes
@@ -79,6 +82,24 @@ export const Dashboard: React.FC = () => {
                   />
                   Extended Hours
                 </label>
+                <label className={styles.toggleLabel} style={{ color: '#00e676', marginLeft: '12px' }}>
+                  <input
+                    type="checkbox"
+                    className={styles.toggleCheckbox}
+                    checked={showPredictiveZones}
+                    onChange={(e) => setShowPredictiveZones(e.target.checked)}
+                  />
+                  AI Zones
+                </label>
+                <label className={styles.toggleLabel} style={{ color: '#ffd740', marginLeft: '12px' }}>
+                  <input
+                    type="checkbox"
+                    className={styles.toggleCheckbox}
+                    checked={showInstitutionalSignals}
+                    onChange={(e) => setShowInstitutionalSignals(e.target.checked)}
+                  />
+                  Vol Signals
+                </label>
               </div>
             )}
           </div>
@@ -108,7 +129,11 @@ export const Dashboard: React.FC = () => {
                     indicators={indicators}
                     chartType={chartType}
                     showExtendedHours={showExtendedHours}
+                    showPredictiveZones={showPredictiveZones}
                   />
+                  {showInstitutionalSignals && (
+                    <InstitutionalSubCharts symbol={selectedSymbol} />
+                  )}
                 </div>
               )}
               {activeTab === 'options' && selectedSymbol && (

@@ -1,17 +1,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { getOptionsMetrics } from './optionsMetrics.js';
 import { generateInsight, MarketMetrics } from '../services/aiInsights.js';
-
-function jsonResponse(statusCode: number, body: any): APIGatewayProxyResultV2 {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-    body: JSON.stringify(body),
-  };
-}
+import { jsonResponse } from '../utils/response.js';
 
 export async function getOptionsInsights(
   event: APIGatewayProxyEventV2,
@@ -25,7 +15,7 @@ export async function getOptionsInsights(
   }
 
   try {
-    const data = JSON.parse(metricsResult.body as string);
+    const data = JSON.parse(metricsResult.body ?? '{}');
     const metrics: MarketMetrics = {
       symbol: data.symbol,
       expiry: data.maxPainExpiry,

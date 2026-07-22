@@ -146,3 +146,36 @@ export interface Alert {
   timestamp: string;
   severity: 'high' | 'medium';
 }
+
+export interface OptionsAnalyticsResponse {
+  symbol: string;
+  spotPrice: number;
+  asOf: string;
+  riskReversal: {
+    expiry: string;
+    putStrike: number;
+    callStrike: number;
+    putDelta: number;
+    callDelta: number;
+    putIV: number;
+    callIV: number;
+    skew: number;
+    bias: 'bearish' | 'bullish' | 'neutral';
+    narrative: string;
+  } | null;
+  termStructure: {
+    points: { expiry: string; dte: number; averageIV: number }[];
+    nearIV: number;
+    farIV: number;
+    slopeRatio: number;
+    state: 'backwardation' | 'contango' | 'flat';
+    atrBoundMultiplier: number;
+    narrative: string;
+  } | null;
+  gex: {
+    netGamma: number;
+    gammaFlipStrike: number;
+    maxAbsGexStrike: number;
+  } | null;
+  vixTermStructure: OptionsAnalyticsResponse['termStructure'];
+}

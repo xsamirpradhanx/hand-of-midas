@@ -6,16 +6,15 @@ export async function fetchOptionsChainWithFallback(
   expiryStr?: string
 ): Promise<{ expirations: string[]; contracts: PolygonOptionsContract[]; quote?: any }> {
   try {
-    // Attempt 1: Yahoo Finance
-    return await getOptionsChainYahoo(symbol, expiryStr);
-  } catch (yahooErr: any) {
-    console.warn(`Yahoo Finance options fetch failed for ${symbol}: ${yahooErr.message}. Falling back to Polygon...`);
+    // Polygon is the licensed source of record. Yahoo is a degraded fallback only.
+    return await getOptionsChainPolygon(symbol, expiryStr);
+  } catch (polygonErr: any) {
+    console.warn(`Polygon options fetch failed for ${symbol}: ${polygonErr.message}. Falling back to Yahoo Finance...`);
     
     try {
-      // Attempt 2: Polygon
-      return await getOptionsChainPolygon(symbol, expiryStr);
-    } catch (polygonErr: any) {
-      console.error(`Polygon options fallback also failed for ${symbol}:`, polygonErr);
+      return await getOptionsChainYahoo(symbol, expiryStr);
+    } catch (yahooErr: any) {
+      console.error(`Yahoo Finance fallback also failed for ${symbol}:`, yahooErr);
       throw new Error(`Failed to fetch options chain for ${symbol} from all providers.`);
     }
   }

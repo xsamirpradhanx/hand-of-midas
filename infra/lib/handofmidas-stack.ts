@@ -113,7 +113,7 @@ export class HandOfMidasStack extends cdk.Stack {
         requireDigits: true,
         requireSymbols: false,
       },
-      mfa: cognito.Mfa.OFF,
+      mfa: cognito.Mfa.OPTIONAL,
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       deletionProtection: false,
@@ -333,7 +333,8 @@ export class HandOfMidasStack extends cdk.Stack {
     const httpApi = new apigwv2.HttpApi(this, 'HttpApi', {
       apiName: 'HandOfMidasApi',
       corsPreflight: {
-        allowOrigins: ['*'],
+        // Replace with the production CloudFront/custom-domain origin when deploying.
+        allowOrigins: ['https://' + distribution.distributionDomainName],
         allowHeaders: ['Authorization', 'Content-Type'],
         allowMethods: [
           apigwv2.CorsHttpMethod.GET,

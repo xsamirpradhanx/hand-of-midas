@@ -13,6 +13,8 @@ import * as options from './routes/options.js';
 import * as portfolio from './routes/portfolio.js';
 import * as insights from './routes/insights.js';
 import * as alerts from './routes/alerts.js';
+import * as predictive from './routes/predictive.js';
+import * as optionsAnalytics from './routes/optionsAnalytics.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -232,6 +234,24 @@ const routes: readonly Route[] = [
     pattern: '/api/options/ivhistory/:symbol',
     handler: async (event, params) => {
       return options.getIVHistory(event, params);
+    },
+  },
+
+  // ── Options Analytics (Institutional) ──────────────────────────────────
+  {
+    method: 'GET',
+    pattern: '/api/options-analytics/:symbol',
+    handler: async (event, params) => {
+      return optionsAnalytics.getOptionsAnalyticsRoute(event, params);
+    },
+  },
+
+  // ── Predictive Engine ──────────────────────────────────────────────────
+  {
+    method: 'GET',
+    pattern: '/api/predictive/zones/:symbol',
+    handler: async (event, params) => {
+      return predictive.getPredictionZonesRoute(event, params);
     },
   },
 

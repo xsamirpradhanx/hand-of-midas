@@ -1,6 +1,6 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { getOptionsChainYahoo } from '../services/yahoo.js';
-import { getDTE } from '../services/tradingCalendar.js';
+import { getDTE, getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import { getItem, putItem, queryItems } from '../services/dynamodb.js';
 import { jsonResponse } from '../utils/response.js';
 
@@ -148,7 +148,7 @@ export async function getOptionsMetrics(
       for (const expiry of metricsExpirations) {
         const { contracts } = await getOptionsChainYahoo(symbol, expiry);
         const dte = await getDTE(expiry);
-        const t = Math.max(0.0027, dte / 365);
+        const t = Math.max(1 / 365, getTimeToExpiryYears(expiry));
 
         for (const c of contracts) {
           const strike = c.details.strike_price;

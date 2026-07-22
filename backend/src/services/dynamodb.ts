@@ -56,6 +56,40 @@ export async function getItem<T extends DynamoDBBaseItem>(
 }
 
 /**
+ * Recursively sanitize objects before putting them into DynamoDB.
+ * Prevents "Number underflow" errors by converting extremely small numbers to 0.
+ * Also converts NaN and Infinity to null, as DynamoDB doesn't support them.
+ */
+function sanitizeItem<T>(item: T): T {
+  if (item === null || typeof item === 'undefined') {
+    return item;
+  }
+  if (typeof item === 'number') {
+    if (Number.isNaN(item) || !Number.isFinite(item)) {
+      return null as any;
+    }
+    if (item !== 0 && Math.abs(item) < 1e-100) {
+      return 0 as any;
+    }
+    return item;
+  }
+  if (Array.isArray(item)) {
+    return item.map(sanitizeItem) as any;
+  }
+  if (typeof item === 'object') {
+    if (Buffer.isBuffer(item) || item instanceof Uint8Array) {
+      return item;
+    }
+    const sanitized: any = {};
+    for (const [key, value] of Object.entries(item)) {
+      sanitized[key] = sanitizeItem(value);
+    }
+    return sanitized as T;
+  }
+  return item;
+}
+
+/**
  * Write (put) an item into the table.
  * This performs an unconditional overwrite if the key already exists.
  *
@@ -64,10 +98,11 @@ export async function getItem<T extends DynamoDBBaseItem>(
 export async function putItem<T extends DynamoDBBaseItem>(
   item: T,
 ): Promise<void> {
+  const sanitizedItem = sanitizeItem(item);
   await docClient.send(
     new PutCommand({
       TableName: TABLE_NAME,
-      Item: item,
+      Item: sanitizedItem,
     }),
   );
 }

@@ -258,8 +258,10 @@ export function computePortfolioGreeks(positions: PositionSummary[], spyPrice: n
     const multiplier = pos.multiplier;
     const q = pos.quantity;
     
-    const posDelta = pos.greeks.delta * q * multiplier * pos.underlyingPrice;
-    const posGamma = pos.greeks.gamma * q * multiplier * pos.underlyingPrice;
+    // Delta and gamma are reported as underlying share-equivalent exposures.
+    // Dollar exposures belong in a separately labelled report.
+    const posDelta = pos.greeks.delta * q * multiplier;
+    const posGamma = pos.greeks.gamma * q * multiplier;
     const posTheta = pos.greeks.theta * q * multiplier;
     const posVega = pos.greeks.vega * q * multiplier;
 

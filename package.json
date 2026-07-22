@@ -9,7 +9,9 @@
     "infra"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=frontend",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
     "build:frontend": "npm run build --workspace=frontend",
     "build:backend": "npm run build --workspace=backend",
     "build": "npm run build:frontend && npm run build:backend",
@@ -21,5 +23,8 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
   }
 }

@@ -49,14 +49,14 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
   if (T <= 0) {
     const isCall = type === 'call';
     const price = Math.max(0, isCall ? S - K : K - S);
-    return { price, delta: isCall && price > 0 ? 1 : (!isCall && price > 0 ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, iv: sigma };
+    return { price, delta: isCall && price > 0 ? 1 : (!isCall && price > 0 ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, vanna: 0, charm: 0, vomma: 0, speed: 0, color: 0, iv: sigma };
   }
 
   if (sigma <= 0) {
     const pvK = K * Math.exp(-r * T);
     const isCall = type === 'call';
     const price = Math.max(0, isCall ? S - pvK : pvK - S);
-    return { price, delta: isCall && S > pvK ? 1 : (!isCall && S < pvK ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, iv: sigma };
+    return { price, delta: isCall && S > pvK ? 1 : (!isCall && S < pvK ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, vanna: 0, charm: 0, vomma: 0, speed: 0, color: 0, iv: sigma };
   }
 
   const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * Math.sqrt(T));

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { blackScholes, probabilityOfTouch, expectedMove } from '../../lib/greeks';
-import type { OptionsChainResponse, OptionsContract } from '../../types';
+import type { OptionsChainResponse } from '../../types';
 import styles from './OptionsOutcome.module.css';
 
 interface Props {

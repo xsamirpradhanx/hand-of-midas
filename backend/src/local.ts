@@ -54,15 +54,17 @@ app.use(async (req, res) => {
       isBase64Encoded: false,
     };
 
-    const result = await handler(event, {} as any);
+    const result = await handler(event) as any;
 
-    if (result.headers) {
+    if (result && result.headers) {
       for (const [key, value] of Object.entries(result.headers)) {
-        res.setHeader(key, value.toString());
+        if (value !== undefined && value !== null) {
+          res.setHeader(key, value.toString());
+        }
       }
     }
 
-    res.status(result.statusCode).send(result.body);
+    res.status(result?.statusCode || 200).send(result?.body);
   } catch (error) {
     console.error('Local Server Error:', error);
     res.status(500).json({ error: 'Internal Server Error' });
