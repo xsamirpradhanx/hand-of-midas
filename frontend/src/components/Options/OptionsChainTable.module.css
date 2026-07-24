@@ -11,35 +11,46 @@
 .header {
   display: flex;
   align-items: center;
-  padding: var(--space-md);
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   background: var(--surface-main);
-  gap: var(--space-md);
+  gap: 8px;
   overflow-x: auto;
   flex-shrink: 0;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.header::-webkit-scrollbar {
+  display: none;
 }
 
 .expiryTab {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 14px;
+  border-radius: 20px;
   font-size: 0.8rem;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
 
 .expiryTab:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-medium);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
   color: var(--text-primary);
 }
 
 .expiryTabActive {
-  background: var(--accent-teal-dim);
-  border-color: var(--accent-teal);
-  color: var(--accent-teal);
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 160, 0, 0.25));
+  border-color: rgba(255, 193, 7, 0.5);
+  color: #ffc107;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.15);
 }
 
 .tableWrapper {
@@ -51,7 +62,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-family: var(--font-mono);
   text-align: right;
 }

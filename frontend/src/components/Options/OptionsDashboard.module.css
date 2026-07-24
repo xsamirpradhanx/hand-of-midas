@@ -6,31 +6,44 @@
 
 .subTabBar {
   display: flex;
-  background: var(--bg-secondary);
+  gap: 8px;
+  background: var(--surface-main);
   border-bottom: 1px solid var(--border-color);
-  padding: 0 1rem;
+  padding: 12px 16px;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.subTabBar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);
-  padding: 1rem 1.5rem;
-  font-size: 0.9rem;
+  padding: 8px 16px;
+  font-size: 0.85rem;
   font-weight: 500;
+  border-radius: 8px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
 
 .tab:hover {
   color: var(--text-primary);
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .tab.active {
-  color: var(--accent-color);
-  border-bottom-color: var(--accent-color);
+  color: var(--text-primary);
+  background: rgba(0, 212, 170, 0.15);
+  border-color: rgba(0, 212, 170, 0.3);
+  box-shadow: 0 0 10px rgba(0, 212, 170, 0.1);
 }
 
 .content {

@@ -14,14 +14,37 @@ import styles from './Dashboard.module.css';
 
 type Tab = 'chart' | 'options' | 'unusual' | 'portfolio';
 
+function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.warn(error);
+      return initialValue;
+    }
+  });
+
+  const setValue = (value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.warn(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
 export const Dashboard: React.FC = () => {
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('chart');
-  const [interval, setInterval] = useState<string>('1day');
-  const [chartType, setChartType] = useState<ChartType>('candlestick');
-  const [showExtendedHours, setShowExtendedHours] = useState(false);
-  const [showPredictiveZones, setShowPredictiveZones] = useState(false);
-  const [showInstitutionalSignals, setShowInstitutionalSignals] = useState(true);
+  const [selectedSymbol, setSelectedSymbol] = useLocalStorage<string | null>('dashboard_selectedSymbol', null);
+  const [activeTab, setActiveTab] = useLocalStorage<Tab>('dashboard_activeTab', 'chart');
+  const [interval, setInterval] = useLocalStorage<string>('dashboard_interval', '1day');
+  const [chartType, setChartType] = useLocalStorage<ChartType>('dashboard_chartType', 'candlestick');
+  const [showExtendedHours, setShowExtendedHours] = useLocalStorage<boolean>('dashboard_showExtendedHours', false);
+  const [showPredictiveZones, setShowPredictiveZones] = useLocalStorage<boolean>('dashboard_showPredictiveZones', false);
+  const [showInstitutionalSignals, setShowInstitutionalSignals] = useLocalStorage<boolean>('dashboard_showInstitutionalSignals', true);
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
 
   // Load chart config when symbol changes
