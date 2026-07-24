@@ -231,9 +231,9 @@ const routes: readonly Route[] = [
   },
   {
     method: 'GET',
-    pattern: '/api/options/ivhistory/:symbol',
+    pattern: '/api/options/realized-volatility/:symbol',
     handler: async (event, params) => {
-      return options.getIVHistory(event, params);
+      return options.getRealizedVolatilityHistory(event, params);
     },
   },
 

@@ -97,6 +97,13 @@ export class HandOfMidasStack extends cdk.Stack {
     // ──────────────────────────────────────────────
 
     /** Cognito User Pool for email-based authentication. */
+    // TODO (Institutional): 
+    // - Implement strict tenant/organization boundaries (Cognito Groups/Custom Attributes).
+    // - Enforce MFA (cognito.Mfa.REQUIRED) instead of OPTIONAL.
+    // - Disable selfSignUpEnabled in a true B2B environment.
+    // - Configure AWS WAF with rate/abuse controls on the API Gateway.
+    // - Enable Point-in-Time Recovery (PITR) on DynamoDB for disaster recovery.
+    // - Implement immutable audit trails (e.g. Kinesis Firehose to S3 or DynamoDB Streams).
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'HandOfMidasUserPool',
       selfSignUpEnabled: true,

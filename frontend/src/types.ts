@@ -168,7 +168,7 @@ export interface OptionsAnalyticsResponse {
     nearIV: number;
     farIV: number;
     slopeRatio: number;
-    state: 'backwardation' | 'contango' | 'flat';
+    state: 'backwardation' | 'contango' | 'flat' | 'kinked';
     atrBoundMultiplier: number;
     narrative: string;
   } | null;

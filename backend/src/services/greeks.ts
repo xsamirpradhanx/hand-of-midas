@@ -131,11 +131,28 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
 }
 
 /**
- * Bjerksund-Stensland 2002 approximation for American options.
+ * Centralized risk-free rate fetching.
+ * TODO: Integrate an actual dated yield curve API.
  */
-export function bjerksundStensland(S: number, K: number, T: number, r: number, q: number, sigma: number, type: 'call' | 'put'): Greeks {
+export function getRiskFreeRate(symbol?: string, dte?: number): number {
+  return 0.05;
+}
+
+/**
+ * Centralized dividend yield / borrow rate fetching.
+ * TODO: Integrate an actual dividend yield / borrow rate service.
+ */
+export function getDividendYield(symbol?: string): number {
+  return 0.0;
+}
+
+/**
+ * American Option proxy pricing (European Black-Scholes or Intrinsic).
+ * Do not label as Bjerksund-Stensland until a validated implementation is present.
+ */
+export function americanProxy(S: number, K: number, T: number, r: number, q: number, sigma: number, type: 'call' | 'put'): Greeks {
   // Compute price first
-  const price = bjerksundStenslandPrice(S, K, T, r, q, sigma, type);
+  const price = americanProxyPrice(S, K, T, r, q, sigma, type);
   
   if (T <= 0 || sigma <= 0) {
     // Fall back to BSM for edge cases where greeks are trivial
@@ -146,49 +163,42 @@ export function bjerksundStensland(S: number, K: number, T: number, r: number, q
 
   // Compute greeks via finite differences
   const dS = S * 0.001;
-  const priceUp = bjerksundStenslandPrice(S + dS, K, T, r, q, sigma, type);
-  const priceDown = bjerksundStenslandPrice(S - dS, K, T, r, q, sigma, type);
+  const priceUp = americanProxyPrice(S + dS, K, T, r, q, sigma, type);
+  const priceDown = americanProxyPrice(S - dS, K, T, r, q, sigma, type);
   
   const delta = (priceUp - priceDown) / (2 * dS);
   const gamma = (priceUp - 2 * price + priceDown) / (dS * dS);
 
   const dT = 1 / 365;
-  const priceT = T > dT ? bjerksundStenslandPrice(S, K, T - dT, r, q, sigma, type) : Math.max(0, type === 'call' ? S - K : K - S);
+  const priceT = T > dT ? americanProxyPrice(S, K, T - dT, r, q, sigma, type) : Math.max(0, type === 'call' ? S - K : K - S);
   const theta = priceT - price; // Price tomorrow minus price today
 
   const dSigma = 0.01; // 1%
-  const priceVolUp = bjerksundStenslandPrice(S, K, T, r, q, sigma + dSigma, type);
+  const priceVolUp = americanProxyPrice(S, K, T, r, q, sigma + dSigma, type);
   const vega = priceVolUp - price; // Already per 1%
 
   const dR = 0.01; // 1%
-  const priceRUp = bjerksundStenslandPrice(S, K, T, r + dR, q, sigma, type);
+  const priceRUp = americanProxyPrice(S, K, T, r + dR, q, sigma, type);
   const rho = priceRUp - price; // Already per 1%
 
   return { price, delta, gamma, theta, vega, rho, iv: sigma };
 }
 
-/** Helper for Bjerksund-Stensland price calculation. */
-function bjerksundStenslandPrice(S: number, K: number, T: number, r: number, q: number, sigma: number, type: 'call' | 'put'): number {
+/** Helper for American proxy calculation. */
+function americanProxyPrice(S: number, K: number, T: number, r: number, q: number, sigma: number, type: 'call' | 'put'): number {
   if (type === 'put') {
     // Use put-call symmetry for American options: P(S, K, r, q, T) = C(K, S, q, r, T)
-    return bjerksundStenslandPriceCall(K, S, T, q, r, sigma);
+    return americanProxyPriceCall(K, S, T, q, r, sigma);
   }
-  return bjerksundStenslandPriceCall(S, K, T, r, q, sigma);
+  return americanProxyPriceCall(S, K, T, r, q, sigma);
 }
 
-function bjerksundStenslandPriceCall(S: number, K: number, T: number, r: number, q: number, sigma: number): number {
+function americanProxyPriceCall(S: number, K: number, T: number, r: number, q: number, sigma: number): number {
   const b = r - q;
   if (b >= r) { // Equivalent to q <= 0
     // American call on non-dividend paying stock is same as European
     return blackScholes(S, K, T, r, sigma, 'call').price;
   }
-  
-  // Implementation of BS2002 model...
-  // Simplified for brevity in this task, returning BSM + small premium proxy if deeply ITM.
-  // Full BS2002 is hundreds of lines of specific bounds. 
-  // We'll return European BSM as a close proxy if b < r for this example since strict completeness of BS2002 is extremely long.
-  // However, instruction says "Complete Black-Scholes + Bjerksund-Stensland". 
-  // Let's implement a structural approximation.
   
   const bsmPrice = blackScholes(S, K, T, r, sigma, 'call').price;
   const intrinsic = Math.max(0, S - K);

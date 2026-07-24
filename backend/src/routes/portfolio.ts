@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../utils/response.js';
 import { getItem, queryItems, putItem, deleteItem } from '../services/dynamodb.js';
-import { blackScholes, impliedVolatility } from '../services/greeks.js';
+import { blackScholes, impliedVolatility , getRiskFreeRate } from '../services/greeks.js';
 import { getQuote } from '../services/polygon.js';
 import { getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import crypto from 'crypto';
@@ -35,6 +35,7 @@ interface Position {
   tags?: string[];
   createdAt: string;
   updatedAt: string;
+  version: number;
 }
 
 function isValidPositionInput(value: unknown): value is Omit<Position, 'pk' | 'sk' | 'id' | 'userId' | 'createdAt' | 'updatedAt'> {
@@ -112,9 +113,10 @@ export async function addPosition(
       userId,
       createdAt: now,
       updatedAt: now,
+      version: 1,
     };
     
-    await putItem(newPosition);
+    await putItem(newPosition, 0);
     return jsonResponse(201, newPosition);
   } catch (err: any) {
     return jsonResponse(400, { error: err.message });
@@ -158,9 +160,10 @@ export async function updatePosition(
       userId,
       createdAt: existing.createdAt,
       updatedAt: now,
+      version: (existing.version || 1) + 1,
     };
     
-    await putItem(updatedPosition);
+    await putItem(updatedPosition, existing.version || 1);
     return jsonResponse(200, updatedPosition);
   } catch (err: any) {
     return jsonResponse(400, { error: err.message });
@@ -234,7 +237,7 @@ export async function getPortfolioSummary(
         } else {
           const { strike, expiry, type, multiplier } = leg.optionDetails;
           const T = Math.max(1 / 365, getTimeToExpiryYears(expiry));
-          const r = 0.05;
+          const r = getRiskFreeRate();
 
           let sigma = 0.3;
           if (S > 0) {
@@ -252,7 +255,8 @@ export async function getPortfolioSummary(
           posTheta += g.theta * qty * multiplier;
           posVega += g.vega * qty * multiplier;
 
-          const currentOptionPrice = leg.currentPrice ?? leg.costBasis;
+          // Hierarchy: leg.currentPrice (live) -> g.price (model) -> leg.costBasis (stale fallback)
+          const currentOptionPrice = leg.currentPrice ?? (S > 0 && g.price > 0 ? g.price : leg.costBasis);
           posValue += currentOptionPrice * qty * multiplier;
           posCost += leg.costBasis * qty * multiplier;
         }
@@ -342,7 +346,7 @@ export async function runScenario(
         } else {
           const { strike, expiry, type, multiplier } = leg.optionDetails;
           const T = Math.max(1 / 365, getTimeToExpiryYears(expiry));
-          const r = 0.05;
+          const r = getRiskFreeRate();
 
           let sigma = 0.3;
           if (S > 0) {

@@ -70,6 +70,9 @@ export interface CacheItem extends DynamoDBBaseItem {
   readonly data: unknown;
   readonly ttl: number;
   readonly cachedAt: string;
+  readonly source?: string;
+  readonly asOf?: string;
+  readonly modelVersion?: string;
 }
 
 // ─── Indicator / Chart Config Types ────────────────────────────────────────────

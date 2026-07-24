@@ -324,10 +324,10 @@ export async function getOptionsChain(symbol: string, expiryStr?: string): Promi
 }
 
 
-export interface IVHistoryPoint {
+export interface RealizedVolHistoryPoint {
   date: string;
-  iv: number;
-  atm_iv: number;
+  realizedVol: number;
+  atm_realizedVol: number;
   iv_rank: number;
   iv_percentile: number;
 }
@@ -339,7 +339,7 @@ export interface IVHistoryPoint {
  *
  * iv_rank and iv_percentile are computed across the full window of estimates.
  */
-export async function getHistoricalIV(symbol: string, days: number = 365): Promise<IVHistoryPoint[]> {
+export async function getHistoricalRealizedVol(symbol: string, days: number = 365): Promise<RealizedVolHistoryPoint[]> {
   const sym = symbol.toUpperCase();
   const toDate = new Date();
   const fromDate = new Date();
@@ -375,8 +375,8 @@ export async function getHistoricalIV(symbol: string, days: number = 365): Promi
     const ivPercentile = n > 0 ? ((rankIdx < 0 ? n : rankIdx) / n) * 100 : 0;
     return {
       date: entry.date,
-      iv: entry.iv,
-      atm_iv: entry.iv,
+      realizedVol: entry.iv,
+      atm_realizedVol: entry.iv,
       iv_rank: ivRank,
       iv_percentile: ivPercentile,
     };

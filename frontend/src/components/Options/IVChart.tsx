@@ -88,7 +88,7 @@ export const IVChart: React.FC<IVChartProps> = ({ symbol }) => {
     setLoading(true);
     setError(null);
 
-    api.getIVHistory(symbol)
+    api.getRealizedVolHistory(symbol)
       .then(res => {
         if (!isMounted) return;
         

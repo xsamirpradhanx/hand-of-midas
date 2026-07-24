@@ -69,6 +69,7 @@ export async function setCachedData(
   cacheKey: string,
   data: unknown,
   ttlSeconds: number,
+  metadata?: { source?: string; asOf?: string; modelVersion?: string }
 ): Promise<void> {
   const nowEpoch = Math.floor(Date.now() / 1000);
 
@@ -78,6 +79,7 @@ export async function setCachedData(
     data,
     ttl: nowEpoch + ttlSeconds,
     cachedAt: new Date().toISOString(),
+    ...metadata,
   };
 
   await putItem(item);

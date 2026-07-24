@@ -115,8 +115,8 @@ export const api = {
     return res?.data || [];
   },
 
-  getIVHistory: (symbol: string): Promise<{ date: string; iv: number; atm_iv: number; iv_rank: number; iv_percentile: number }[]> => 
-    fetchWithAuth(`/options/ivhistory/${symbol}`),
+  getRealizedVolHistory: (symbol: string): Promise<{ date: string; realizedVol: number; atm_realizedVol: number; iv_rank: number; iv_percentile: number }[]> => 
+    fetchWithAuth(`/options/realized-volatility/${symbol}`),
 
   getPortfolioPositions: async (): Promise<Position[]> => {
     const res = await fetchWithAuth('/portfolio/positions');

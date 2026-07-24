@@ -1,3 +1,4 @@
+import { getRiskFreeRate } from '../services/greeks.js';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { getOptionsChainYahoo } from '../services/yahoo.js';
 import { getDTE, getTimeToExpiryYears } from '../services/tradingCalendar.js';
@@ -158,7 +159,7 @@ export async function getOptionsMetrics(
 
           if (oi === 0 || iv === 0) continue;
 
-          const greeks = blackScholes(spotPrice, strike, t, 0.05, iv, type);
+          const greeks = blackScholes(spotPrice, strike, t, getRiskFreeRate(), iv, type);
           const gamma = greeks.gamma;
 
           // Dollar Gamma per 1% move: γ * OI * 100 * Spot² * 0.01
@@ -231,14 +232,18 @@ export async function getOptionsMetrics(
       return { strike, callGex, putGex, totalGex: callGex + putGex };
     }).sort((a, b) => a.strike - b.strike);
 
+    const totalNetGex = gexProfile.reduce((sum, p) => sum + p.totalGex, 0);
+    const isNetPositive = totalNetGex >= 0;
+    const gexProfileSorted = [...gexProfile].sort((a, b) => isNetPositive ? a.strike - b.strike : b.strike - a.strike);
+
     let gammaFlipStrike = 0;
     let cumulativeGex = 0;
-    const gexProfileDesc = [...gexProfile].sort((a, b) => b.strike - a.strike);
-    for (let i = 0; i < gexProfileDesc.length; i++) {
+    for (let i = 0; i < gexProfileSorted.length; i++) {
       const prev = cumulativeGex;
-      cumulativeGex += gexProfileDesc[i].totalGex;
+      cumulativeGex += gexProfileSorted[i].totalGex;
+      
       if (i > 0 && Math.sign(prev) !== Math.sign(cumulativeGex) && prev !== 0) {
-        gammaFlipStrike = gexProfileDesc[i].strike;
+        gammaFlipStrike = gexProfileSorted[i].strike;
         break;
       }
     }

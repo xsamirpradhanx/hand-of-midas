@@ -1,3 +1,4 @@
+import { getRiskFreeRate } from '../greeks.js';
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 import { blackScholes } from '../greeks.js';
 import { getDTE, getTimeToExpiryYears } from '../tradingCalendar.js';
@@ -30,7 +31,7 @@ export class DealerHedgingFactor implements PredictiveFactor {
         const iv = c.implied_volatility || 0.5;
 
         if (oi > 0 && strike > 0) {
-          const greeks = blackScholes(currentPrice, strike, t, 0.05, iv, type);
+          const greeks = blackScholes(currentPrice, strike, t, getRiskFreeRate(), iv, type);
           const gex = greeks.gamma * oi * 100 * currentPrice * currentPrice * 0.01;
           gexByStrike[strike] = (gexByStrike[strike] || 0) + (type === 'call' ? gex : -gex);
 
@@ -42,14 +43,19 @@ export class DealerHedgingFactor implements PredictiveFactor {
         }
       }
 
-      const strikes = Object.keys(gexByStrike).map(Number).sort((a, b) => b - a);
+      const strikes = Object.keys(gexByStrike).map(Number);
       if (strikes.length === 0) return null;
+
+      const totalNetGex = strikes.reduce((sum, strike) => sum + gexByStrike[strike], 0);
+      const isNetPositive = totalNetGex >= 0;
+      strikes.sort((a, b) => isNetPositive ? a - b : b - a);
 
       let gammaFlipStrike = 0;
       let cumulativeGex = 0;
       for (let i = 0; i < strikes.length; i++) {
         const prev = cumulativeGex;
         cumulativeGex += gexByStrike[strikes[i]];
+        
         if (i > 0 && Math.sign(prev) !== Math.sign(cumulativeGex) && prev !== 0) {
           gammaFlipStrike = strikes[i];
           break;
@@ -59,7 +65,7 @@ export class DealerHedgingFactor implements PredictiveFactor {
       let vanna = 0;
       let charm = 0;
       if (atmContract) {
-        const atmGreeks = blackScholes(currentPrice, atmContract.strike, t, 0.05, atmContract.iv, atmContract.type);
+        const atmGreeks = blackScholes(currentPrice, atmContract.strike, t, getRiskFreeRate(), atmContract.iv, atmContract.type);
         vanna = atmGreeks.vanna || 0;
         charm = atmGreeks.charm || 0;
       }

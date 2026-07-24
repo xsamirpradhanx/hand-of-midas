@@ -1,7 +1,7 @@
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import { getQuote } from './polygon.js';
 import type { PolygonOptionsContract } from './polygon.js';
-import { blackScholes } from './greeks.js';
+import { blackScholes , getRiskFreeRate } from './greeks.js';
 import { getDTE, getTimeToExpiryYears } from './tradingCalendar.js';
 
 // ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ export interface TermStructureResult {
   nearIV: number;
   farIV: number;
   slopeRatio: number;
-  state: 'backwardation' | 'contango' | 'flat';
+  state: 'backwardation' | 'contango' | 'flat' | 'kinked';
   /** Multiplier applied to ATR bounds in the prediction engine (widens during panic). */
   atrBoundMultiplier: number;
   narrative: string;
@@ -79,7 +79,7 @@ function contractDelta(
   const iv = contract.implied_volatility || 0;
   if (strike <= 0 || iv <= 0 || timeToExpiryYears <= 0) return 0;
 
-  return blackScholes(spot, strike, timeToExpiryYears, 0.05, iv, type).delta;
+  return blackScholes(spot, strike, timeToExpiryYears, getRiskFreeRate(), iv, type).delta;
 }
 
 function isLiquid(contract: PolygonOptionsContract): boolean {
@@ -142,12 +142,32 @@ function oiWeightedAvgIV(contracts: PolygonOptionsContract[]): number {
   return weight > 0 ? sum / weight : 0;
 }
 
-function classifyTermStructure(nearIV: number, farIV: number): {
+function classifyTermStructure(points: TermStructurePoint[]): {
   state: TermStructureResult['state'];
   atrBoundMultiplier: number;
   narrative: string;
 } {
+  const nearIV = points[0]!.averageIV;
+  const farIV = points[points.length - 1]!.averageIV;
   const slopeRatio = nearIV / farIV;
+
+  if (points.length >= 3) {
+    let isIncreasing = false;
+    let isDecreasing = false;
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1].averageIV;
+      const curr = points[i].averageIV;
+      if (curr > prev * 1.01) isIncreasing = true;
+      if (curr < prev * 0.99) isDecreasing = true;
+    }
+    if (isIncreasing && isDecreasing) {
+      return {
+        state: 'kinked',
+        atrBoundMultiplier: 1.2,
+        narrative: `Term structure is kinked or inverted (near ${(nearIV * 100).toFixed(1)}%, far ${(farIV * 100).toFixed(1)}%), likely pricing in specific event risk in the near term.`,
+      };
+    }
+  }
 
   if (slopeRatio > BACKWARDATION_THRESHOLD) {
     return {
@@ -196,7 +216,7 @@ async function buildTermStructureFromChain(
   const nearIV = points[0]!.averageIV;
   const farIV = points[points.length - 1]!.averageIV;
   const slopeRatio = nearIV / farIV;
-  const classification = classifyTermStructure(nearIV, farIV);
+  const classification = classifyTermStructure(points);
 
   return {
     points,
@@ -299,6 +319,12 @@ function computeRiskReversal(
   };
 }
 
+/**
+ * Compute Gamma Exposure (GEX) profile across strikes.
+ * NOTE: This is an OI-based proxy. It assumes dealers are long calls and short puts.
+ * Open interest does not definitively reveal customer vs. dealer positioning, so 
+ * "net gamma" and "gamma flip" are assumptions, not measured facts.
+ */
 function computeGexProfile(
   contracts: PolygonOptionsContract[],
   spot: number,
@@ -313,7 +339,7 @@ function computeGexProfile(
     const iv = c.implied_volatility || 0;
     if (oi === 0 || iv === 0 || strike <= 0) continue;
 
-    const { gamma } = blackScholes(spot, strike, timeToExpiryYears, 0.05, iv, type);
+    const { gamma } = blackScholes(spot, strike, timeToExpiryYears, getRiskFreeRate(), iv, type);
     const gex = gamma * oi * 100 * spot * spot * 0.01;
     const signed = type === 'call' ? gex : -gex;
     gexByStrike[strike] = (gexByStrike[strike] || 0) + signed;
@@ -325,14 +351,17 @@ function computeGexProfile(
   const profile = strikes.map(strike => ({ strike, totalGex: gexByStrike[strike]! }));
   const netGamma = profile.reduce((sum, p) => sum + p.totalGex, 0);
 
-  let gammaFlipStrike = strikes[0]!;
+  const isNetPositive = netGamma >= 0;
+  const sortedProfile = [...profile].sort((a, b) => isNetPositive ? a.strike - b.strike : b.strike - a.strike);
+
+  let gammaFlipStrike = 0;
   let cumulative = 0;
-  const desc = [...profile].sort((a, b) => b.strike - a.strike);
-  for (let i = 0; i < desc.length; i++) {
+  for (let i = 0; i < sortedProfile.length; i++) {
     const prev = cumulative;
-    cumulative += desc[i]!.totalGex;
+    cumulative += sortedProfile[i]!.totalGex;
+    
     if (i > 0 && prev !== 0 && Math.sign(prev) !== Math.sign(cumulative)) {
-      gammaFlipStrike = desc[i]!.strike;
+      gammaFlipStrike = sortedProfile[i]!.strike;
       break;
     }
   }

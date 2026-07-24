@@ -91,20 +91,35 @@ function sanitizeItem<T>(item: T): T {
 
 /**
  * Write (put) an item into the table.
- * This performs an unconditional overwrite if the key already exists.
+ * Supports optimistic concurrency if expectedVersion is provided.
  *
  * @param item - The full item to store (must include PK and SK).
+ * @param expectedVersion - Optional version to assert for optimistic locking.
  */
 export async function putItem<T extends DynamoDBBaseItem>(
   item: T,
+  expectedVersion?: number,
 ): Promise<void> {
   const sanitizedItem = sanitizeItem(item);
-  await docClient.send(
-    new PutCommand({
-      TableName: TABLE_NAME,
-      Item: sanitizedItem,
-    }),
-  );
+  
+  const params: any = {
+    TableName: TABLE_NAME,
+    Item: sanitizedItem,
+  };
+
+  if (expectedVersion !== undefined) {
+    // Optimistic locking: update succeeds only if the existing item has the same version
+    // or if the item does not exist (expectedVersion = 0 could imply new item, but let's be strict:
+    // usually if expectedVersion is provided, we require it to match, or if 0, require it not to exist).
+    if (expectedVersion === 0) {
+      params.ConditionExpression = 'attribute_not_exists(pk)';
+    } else {
+      params.ConditionExpression = 'attribute_not_exists(pk) OR version = :expectedVersion';
+      params.ExpressionAttributeValues = { ':expectedVersion': expectedVersion };
+    }
+  }
+
+  await docClient.send(new PutCommand(params));
 }
 
 /**

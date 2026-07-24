@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { MaxPainModal } from './MaxPainModal';
 import styles from './OptionsMetrics.module.css';
 
 interface GexData {
@@ -179,18 +180,20 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
       </div>
 
       <div className={styles.grid}>
-        <div className={styles.card}>
-          <h3>
-            Max Pain {activeExpiry ? `(${activeExpiry})` : '(Nearest Expiry)'}
-            <MetricTooltip metricKey="maxPain" />
-          </h3>
-          <div className={styles.largeValue}>${data.maxPainStrike.toFixed(2)}</div>
-          <div className={styles.subValue}>Expiry: {data.maxPainExpiry}</div>
-          <div className={styles.subtext}>
-            Spot ${data.spotPrice.toFixed(2)} · {spotVsMaxPain} by {spotDiffPct}%
+        <MaxPainModal symbol={symbol} maxPainStrike={data.maxPainStrike} optionsData={data.volumeOIByStrike}>
+          <div className={styles.card} style={{ height: '100%', transition: 'all 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'none'}>
+            <h3>
+              Max Pain {activeExpiry ? `(${activeExpiry})` : '(Nearest Expiry)'}
+              <MetricTooltip metricKey="maxPain" />
+            </h3>
+            <div className={styles.largeValue}>${data.maxPainStrike.toFixed(2)}</div>
+            <div className={styles.subValue}>Expiry: {data.maxPainExpiry}</div>
+            <div className={styles.subtext}>
+              Spot ${data.spotPrice.toFixed(2)} · {spotVsMaxPain} by {spotDiffPct}%
+            </div>
+            <p className={styles.cardDesc}>{METRIC_INFO.maxPain.description}</p>
           </div>
-          <p className={styles.cardDesc}>{METRIC_INFO.maxPain.description}</p>
-        </div>
+        </MaxPainModal>
 
         <div className={styles.card}>
           <h3>
@@ -280,7 +283,9 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
             Gamma Flip Level
             <MetricTooltip metricKey="gammaFlip" />
           </h3>
-          <div className={styles.largeValue}>${data.gammaFlipStrike.toFixed(2)}</div>
+          <div className={styles.largeValue}>
+            {data.gammaFlipStrike > 0 ? `$${data.gammaFlipStrike.toFixed(2)}` : 'None'}
+          </div>
           <div className={styles.subtext}>
             Spot ${data.spotPrice.toFixed(2)}
           </div>
@@ -370,15 +375,30 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
               );
             })}
           </div>
-          {data.termStructure.length > 1 && (
-            <div className={`${styles.regimeLabel} ${
-              data.termStructure[0].averageIV > data.termStructure[1].averageIV 
-                ? styles.regimeBackwardation 
-                : styles.regimeContango
-            }`}>
-              {data.termStructure[0].averageIV > data.termStructure[1].averageIV ? 'Backwardation' : 'Contango'}
-            </div>
-          )}
+          {data.termStructure.length > 1 && (() => {
+            let isInc = false, isDec = false;
+            for(let i=1; i<data.termStructure.length; i++) {
+               if(data.termStructure[i].averageIV > data.termStructure[i-1].averageIV * 1.01) isInc = true;
+               if(data.termStructure[i].averageIV < data.termStructure[i-1].averageIV * 0.99) isDec = true;
+            }
+            let regimeName = 'Flat';
+            let regimeClass = styles.regimeFlat;
+            if (isInc && isDec) {
+              regimeName = 'Kinked / Event Risk';
+              regimeClass = styles.regimeKinked;
+            } else if (data.termStructure[0].averageIV > data.termStructure[data.termStructure.length - 1].averageIV * 1.02) {
+              regimeName = 'Backwardation';
+              regimeClass = styles.regimeBackwardation;
+            } else if (data.termStructure[data.termStructure.length - 1].averageIV > data.termStructure[0].averageIV * 1.02) {
+              regimeName = 'Contango';
+              regimeClass = styles.regimeContango;
+            }
+            return (
+              <div className={`${styles.regimeLabel} ${regimeClass}`}>
+                {regimeName}
+              </div>
+            );
+          })()}
           <p className={styles.cardDesc}>{METRIC_INFO.termStructure.description}</p>
         </div>
       </div>

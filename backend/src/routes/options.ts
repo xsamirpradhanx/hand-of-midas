@@ -1,8 +1,8 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../utils/response.js';
-import { getHistoricalIV as fetchHistoricalIV } from '../services/polygon.js';
+import { getHistoricalRealizedVol as fetchHistoricalIV } from '../services/polygon.js';
 import { fetchOptionsChainWithFallback as fetchOptionsChain } from '../services/optionsFallback.js';
-import { blackScholes, bjerksundStensland, impliedVolatility } from '../services/greeks.js';
+import { blackScholes, americanProxy, impliedVolatility , getRiskFreeRate } from '../services/greeks.js';
 import { getDTE, getCalendarDTE, getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import { getUnusualActivity, scoreContract, getBaseline, computeWhaleScore } from '../services/unusualActivity.js';
 import { getCachedData, setCachedData } from '../services/cache.js';
@@ -94,7 +94,7 @@ export async function getOptionsChain(
       let calculatedGreeks: Record<string, number> = (contract.greeks as any) || { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
       
       if (calculatedGreeks.delta === 0 && iv > 0 && underlyingPrice > 0 && dte >= 0) {
-        const bs = blackScholes(underlyingPrice, strike, Math.max(1 / 365, getTimeToExpiryYears(expiry)), 0.05, iv, type);
+        const bs = blackScholes(underlyingPrice, strike, Math.max(1 / 365, getTimeToExpiryYears(expiry)), getRiskFreeRate(), iv, type);
         calculatedGreeks = { ...bs, rho: bs.rho };
       }
 
@@ -173,7 +173,7 @@ export async function getUnusualActivityFeed(
   }
 }
 
-export async function getIVHistory(
+export async function getRealizedVolatilityHistory(
   event: APIGatewayProxyEventV2,
   params: Record<string, string>,
 ): Promise<APIGatewayProxyResultV2> {

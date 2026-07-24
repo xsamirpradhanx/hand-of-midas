@@ -1,13 +1,13 @@
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
-export class DarkPoolFactor implements PredictiveFactor {
-  name = 'Dark Pool Block Trade Density';
+export class HvlrSupportFactor implements PredictiveFactor {
+  name = 'High-Volume Low-Range (HVLR) Support Proxy';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
     if (!bars || bars.length < 20) return null;
 
-    // Detect High-Volume / Low-Range (HVLR) Stealth Dark Pool Accumulation
+    // Detect High-Volume / Low-Range (HVLR) Stealth HVLR Proxy Accumulation
     const volumeSorted = [...bars].sort((a, b) => (b.volume || 0) - (a.volume || 0));
     const highVolThreshold = volumeSorted[Math.floor(bars.length * 0.2)]?.volume || 0; // Top 20% volume
 
@@ -18,7 +18,7 @@ export class DarkPoolFactor implements PredictiveFactor {
       const range = b.high - b.low;
       const avgPrice = (b.high + b.low + b.close) / 3;
 
-      // High volume relative to small price range = Dark Pool block crossing
+      // High volume relative to small price range = HVLR Proxy block crossing
       if (vol >= highVolThreshold && range < (currentPrice * 0.015)) {
         darkPoolClusters.push({ price: avgPrice, volume: vol });
       }
@@ -41,7 +41,7 @@ export class DarkPoolFactor implements PredictiveFactor {
       sellTarget: darkPoolResistance,
       bias,
       weight: 0.20,
-      reasoning: `Identified ${darkPoolClusters.length} stealth Dark Pool block-cross clusters. Nearest off-exchange accumulation support at $${darkPoolSupport.toFixed(2)}.`,
+      reasoning: `Identified ${darkPoolClusters.length} stealth HVLR Proxy block-cross clusters. Nearest off-exchange accumulation support at $${darkPoolSupport.toFixed(2)}.`,
     };
   }
 }

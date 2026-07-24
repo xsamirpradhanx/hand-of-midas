@@ -371,6 +371,12 @@
   border: 1px solid rgba(0, 230, 118, 0.2);
 }
 
+.regimeKinked {
+  background: rgba(255, 152, 0, 0.12);
+  color: #ff9800;
+  border: 1px solid rgba(255, 152, 0, 0.25);
+}
+
 .regimeBackwardation {
   background: rgba(255, 183, 77, 0.12);
   color: #ffb74d;

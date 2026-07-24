@@ -9,7 +9,7 @@ export interface AISynthesisResult {
   keyFactors: FactorResult[];
 }
 
-export class AISynthesisAgent {
+export class CompositeScoreAgent {
   synthesize(symbol: string, currentPrice: number, factors: FactorResult[]): AISynthesisResult {
     if (!factors || factors.length === 0) {
       return {

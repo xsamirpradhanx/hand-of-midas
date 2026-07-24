@@ -1,6 +1,6 @@
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
-export class CvdImbalanceFactor implements PredictiveFactor {
+export class EstimatedCvdFactor implements PredictiveFactor {
   name = 'Cumulative Volume Delta (CVD)';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {

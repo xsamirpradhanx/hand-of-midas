@@ -31,6 +31,7 @@ function Explainer({ metricKey }: { metricKey: keyof typeof EXPLAINERS }) {
 function stateColor(state: string): string {
   if (state === 'backwardation') return '#ff5252';
   if (state === 'contango') return '#00e676';
+  if (state === 'kinked') return '#ff9800';
   return '#ffd740';
 }
 
@@ -222,11 +223,13 @@ export const InstitutionalSubCharts: React.FC<Props> = ({ symbol }) => {
             <span className={styles.footerItem}>
               VIX term structure: <strong style={{ color: stateColor(vix.state) }}>{vix.state}</strong>
               {vix.state === 'backwardation' && ' — macro panic elevated'}
+              {vix.state === 'kinked' && ' — event risk elevated'}
             </span>
           )}
           {data.gex && (
             <span className={styles.footerItem}>
-              GEX flip: <strong>${data.gex.gammaFlipStrike.toFixed(2)}</strong>
+              Dealer GEX (OI Proxy): 
+              Flip: <strong>{data.gex.gammaFlipStrike > 0 ? `$${data.gex.gammaFlipStrike.toFixed(2)}` : 'None'}</strong>
               {' · '}Pin: <strong>${data.gex.maxAbsGexStrike.toFixed(2)}</strong>
             </span>
           )}

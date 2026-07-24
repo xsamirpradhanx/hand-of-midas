@@ -35,18 +35,7 @@ const getContractWhaleScore = (contract?: OptionsContract): number | null => {
   });
 };
 
-const getWhaleClass = (contract?: OptionsContract, side: 'call' | 'put' = 'call') => {
-  const tier = getWhaleTier(getContractWhaleScore(contract));
-  if (!tier) return '';
-  if (side === 'call') {
-    if (tier === 'extreme') return styles.whaleFlowCallExtreme;
-    if (tier === 'high') return styles.whaleFlowCallHigh;
-    return styles.whaleFlowCallElevated;
-  }
-  if (tier === 'extreme') return styles.whaleFlowPutExtreme;
-  if (tier === 'high') return styles.whaleFlowPutHigh;
-  return styles.whaleFlowPutElevated;
-};
+// We removed getWhaleClass as we use inline styles for top 7 volume shading
 
 export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({ symbol, activeExpiry, underlyingPrice: _underlyingPrice }) => {
   const [data, setData] = useState<OptionsChainResponse | null>(null);
@@ -118,9 +107,21 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({ symbol, ac
     });
   }, [data, activeExpiry]);
 
-  const whaleCount = useMemo(() => {
-    if (!data || !activeExpiry || !data.chain[activeExpiry]) return 0;
-    return data.chain[activeExpiry].filter(c => isWhaleFlow(getContractWhaleScore(c))).length;
+  const topVolumes = useMemo(() => {
+    if (!data || !activeExpiry || !data.chain[activeExpiry]) return { call: new Map<number, number>(), put: new Map<number, number>() };
+    const contracts = data.chain[activeExpiry];
+    
+    // Sort calls and puts by volume descending
+    const calls = contracts.filter(c => c.type === 'call' && c.volume > 0).sort((a, b) => b.volume - a.volume);
+    const puts = contracts.filter(c => c.type === 'put' && c.volume > 0).sort((a, b) => b.volume - a.volume);
+    
+    const callMap = new Map<number, number>();
+    calls.slice(0, 7).forEach((c, index) => callMap.set(c.strike, index));
+    
+    const putMap = new Map<number, number>();
+    puts.slice(0, 7).forEach((c, index) => putMap.set(c.strike, index));
+    
+    return { call: callMap, put: putMap };
   }, [data, activeExpiry]);
 
   if (!symbol) {
@@ -153,9 +154,9 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({ symbol, ac
           />
           Highlight Whale Flow 🐋
         </label>
-        {whaleCount > 0 && (
+        {highlightWhaleFlow && (
           <span className={styles.whaleCount}>
-            {whaleCount} whale contract{whaleCount === 1 ? '' : 's'} detected
+            Showing Top Volume Concentration (Top 7)
           </span>
         )}
       </div>
@@ -192,39 +193,51 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({ symbol, ac
             </thead>
             <tbody>
               {rows.map(({ strike, call, put }) => {
-                const callWhaleClass = highlightWhaleFlow && isWhaleFlow(getContractWhaleScore(call)) ? getWhaleClass(call, 'call') : '';
-                const putWhaleClass = highlightWhaleFlow && isWhaleFlow(getContractWhaleScore(put)) ? getWhaleClass(put, 'put') : '';
+                const callRank = highlightWhaleFlow ? topVolumes.call.get(strike) : undefined;
+                const putRank = highlightWhaleFlow ? topVolumes.put.get(strike) : undefined;
+
+                const getOpacity = (rank?: number) => {
+                  if (rank === undefined) return 0;
+                  return 0.5 - (rank * 0.06); // 0.50 down to 0.14
+                };
+
+                const callOpacity = getOpacity(callRank);
+                const putOpacity = getOpacity(putRank);
+
+                const callStyle = callOpacity > 0 ? { background: `rgba(0, 230, 118, ${callOpacity})` } : {};
+                const putStyle = putOpacity > 0 ? { background: `rgba(255, 23, 68, ${putOpacity})` } : {};
+                
                 return (
                 <tr key={strike}>
                   {/* Call Side */}
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>
                     {call && <button className={`${styles.addBtn} ${styles.callAdd}`} onClick={() => handleAddPosition(call)}>+</button>}
                     {call ? formatNumber(call.volume) : '-'}
                   </td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>{call ? formatNumber(call.openInterest) : '-'}</td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass} ${call ? getIvColorClass(call.impliedVolatility) : ''}`}>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call ? formatNumber(call.openInterest) : '-'}</td>
+                  <td className={`${call?.itm ? styles.callItm : ''} ${call ? getIvColorClass(call.impliedVolatility) : ''}`} style={callStyle}>
                     {call ? (call.impliedVolatility * 100).toFixed(1) + '%' : '-'}
                   </td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>{call?.bid.toFixed(2) || '-'}</td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>{call?.ask.toFixed(2) || '-'}</td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>{call?.delta.toFixed(2) || '-'}</td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>{call?.gamma.toFixed(3) || '-'}</td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${callWhaleClass}`}>{call?.theta.toFixed(3) || '-'}</td>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.bid.toFixed(2) || '-'}</td>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.ask.toFixed(2) || '-'}</td>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.delta.toFixed(2) || '-'}</td>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.gamma.toFixed(3) || '-'}</td>
+                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.theta.toFixed(3) || '-'}</td>
                   
                   {/* Strike */}
                   <td className={styles.strikeCell}>{strike.toFixed(2)}</td>
 
                   {/* Put Side */}
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>{put?.theta.toFixed(3) || '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>{put?.gamma.toFixed(3) || '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>{put?.delta.toFixed(2) || '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>{put?.bid.toFixed(2) || '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>{put?.ask.toFixed(2) || '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass} ${put ? getIvColorClass(put.impliedVolatility) : ''}`}>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.theta.toFixed(3) || '-'}</td>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.gamma.toFixed(3) || '-'}</td>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.delta.toFixed(2) || '-'}</td>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.bid.toFixed(2) || '-'}</td>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.ask.toFixed(2) || '-'}</td>
+                  <td className={`${put?.itm ? styles.putItm : ''} ${put ? getIvColorClass(put.impliedVolatility) : ''}`} style={putStyle}>
                     {put ? (put.impliedVolatility * 100).toFixed(1) + '%' : '-'}
                   </td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>{put ? formatNumber(put.openInterest) : '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${putWhaleClass}`}>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put ? formatNumber(put.openInterest) : '-'}</td>
+                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>
                     {put ? formatNumber(put.volume) : '-'}
                     {put && <button className={`${styles.addBtn} ${styles.putAdd}`} onClick={() => handleAddPosition(put)}>+</button>}
                   </td>

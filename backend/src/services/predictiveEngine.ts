@@ -5,15 +5,15 @@ import { VolumeProfileFactor } from './factors/volumeProfile.js';
 import { AtrVolatilityFactor } from './factors/atrVolatility.js';
 import { DealerHedgingFactor } from './factors/dealerHedging.js';
 import { AnchoredVwapFactor } from './factors/anchoredVwap.js';
-import { CvdImbalanceFactor } from './factors/cvdImbalance.js';
-import { DarkPoolFactor } from './factors/darkPool.js';
+import { EstimatedCvdFactor } from './factors/estimatedCvd.js';
+import { HvlrSupportFactor } from './factors/hvlrSupport.js';
 import { OptionsSqueezeFactor } from './factors/squeezeScore.js';
 import { RiskReversalSkewFactor } from './factors/riskReversalSkew.js';
 import { TermStructureFactor } from './factors/termStructure.js';
 import { HurstExponentFactor } from './factors/hurstExponent.js';
 import { KamaZScoreFactor } from './factors/kamaZScore.js';
 import { InsiderCatalystFactor } from './factors/insiderCatalyst.js';
-import { AISynthesisAgent } from './aiSynthesisAgent.js';
+import { CompositeScoreAgent } from './compositeScore.js';
 
 export interface PredictiveZone {
   type: 'buy' | 'sell';
@@ -34,14 +34,14 @@ export interface PredictiveEngineResult {
   };
 }
 
-const aiAgent = new AISynthesisAgent();
+const aiAgent = new CompositeScoreAgent();
 
 // Complete Registry of 12 modular quantitative factor plugins
 const registeredFactors: PredictiveFactor[] = [
   new VolumeProfileFactor(),
   new AnchoredVwapFactor(),
-  new CvdImbalanceFactor(),
-  new DarkPoolFactor(),
+  new EstimatedCvdFactor(),
+  new HvlrSupportFactor(),
   new AtrVolatilityFactor(),
   new DealerHedgingFactor(),
   new OptionsSqueezeFactor(),
