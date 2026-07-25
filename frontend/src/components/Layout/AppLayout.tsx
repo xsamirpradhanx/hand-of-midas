@@ -22,12 +22,16 @@ export const AppLayout: React.FC = () => {
             <span className={styles.tagline}>The Golden Touch</span>
           </div>
         </div>
+
         <div className={styles.userMenu}>
           <AlertsMenu />
-          <span className={styles.liveBadge}>
-            <span className={styles.liveDot} />
-            Live
-          </span>
+          <div className={styles.liveBadge}>
+            <span className={styles.liveDotWrapper}>
+              <span className={styles.liveDotPing} />
+              <span className={styles.liveDot} />
+            </span>
+            <span className={styles.liveText}>LIVE</span>
+          </div>
           <button onClick={handleSignOut} className={styles.signOutBtn}>
             Sign Out
           </button>

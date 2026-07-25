@@ -108,15 +108,22 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           // Ensure ascending order (oldest first). We don't blindly reverse anymore
           // because backend guarantees ascending order, but old cached data might be descending.
           const parseDt = (dt: string) => {
+            if (dt.length <= 10) return new Date(dt + 'T00:00:00Z').getTime();
             if (dt.endsWith('Z')) return new Date(dt).getTime();
             return new Date(dt.replace(' ', 'T') + 'Z').getTime();
           };
-          const ordered = [...marketResult.data].sort((a, b) => {
-            const tA = parseDt(a.datetime);
-            const tB = parseDt(b.datetime);
-            if (isNaN(tA) || isNaN(tB)) return a.datetime.localeCompare(b.datetime);
-            return tA - tB;
-          });
+          const seenTimes = new Set<number>();
+          const ordered: OHLCVDataPoint[] = [];
+          for (const rawItem of marketResult.data) {
+            const t = parseDt(rawItem.datetime);
+            if (!isNaN(t) && !seenTimes.has(t)) {
+              seenTimes.add(t);
+              const vol = typeof rawItem.volume === 'number' && !isNaN(rawItem.volume) ? rawItem.volume : 0;
+              ordered.push({ ...rawItem, volume: vol });
+            }
+          }
+          ordered.sort((a, b) => parseDt(a.datetime) - parseDt(b.datetime));
+
           if (quoteResult && ordered.length > 0) {
             const lastBar = { ...ordered[ordered.length - 1] };
             lastBar.close = quoteResult.price;
@@ -152,10 +159,21 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     );
     chartRef.current = chart;
 
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (entries.length === 0 || entries[0].target !== chartContainerRef.current) return;
-      const newRect = entries[0].contentRect;
-      chart.applyOptions({ width: newRect.width, height: newRect.height });
+    const resizeObserver = new ResizeObserver(() => {
+      if (!chartContainerRef.current) return;
+      const rect = chartContainerRef.current.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        // Check visibility state BEFORE resize
+        const logicalRange = chart.timeScale().getVisibleLogicalRange();
+        const wasFitted = logicalRange !== null && logicalRange.from <= 0;
+
+        chart.applyOptions({ width: rect.width, height: rect.height });
+
+        // If we were fully zoomed out (hitting left edge), stay fully zoomed out during the resize
+        if (wasFitted) {
+          chart.timeScale().fitContent();
+        }
+      }
     });
 
     resizeObserver.observe(chartContainerRef.current);
@@ -226,10 +244,15 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     if (latestTick.volume) lastBar.volume = (lastBar.volume || 0) + latestTick.volume;
 
     try {
+      const parseTime = (dt: string) => {
+        if (dt.length <= 10) return dt;
+        if (dt.endsWith('Z')) return new Date(dt).getTime() / 1000;
+        return new Date(dt.replace(' ', 'T') + 'Z').getTime() / 1000;
+      };
+
       if (chartType === 'candlestick' || chartType === 'heikinashi') {
-        // For Heikin Ashi this is slightly inaccurate intraday without full recalc, but acceptable for tick
         mainSeries.update({
-          time: lastBar.datetime,
+          time: parseTime(lastBar.datetime) as any,
           open: lastBar.open,
           high: lastBar.high,
           low: lastBar.low,
@@ -237,9 +260,18 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
         } as any);
       } else {
         mainSeries.update({
-          time: lastBar.datetime,
+          time: parseTime(lastBar.datetime) as any,
           value: lastBar.close,
         } as any);
+      }
+
+      const volSeries = seriesMapRef.current.get('VOLUME');
+      if (volSeries) {
+        volSeries.update({
+          time: parseTime(lastBar.datetime) as any,
+          value: typeof lastBar.volume === 'number' && !isNaN(lastBar.volume) ? lastBar.volume : 0,
+          color: lastBar.close >= lastBar.open ? '#00e676' : '#ff1744',
+        });
       }
     } catch (err) {
       console.error("Failed to update chart tick", err);
@@ -410,11 +442,22 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           chart.priceScale('volume').applyOptions({
             scaleMargins: { top: 0.8, bottom: 0 },
           });
-          const volData = indicatorData.map(d => ({
-            time: d.time,
-            value: d.volume,
-            color: d.close >= d.open ? '#00e676' : '#ff1744',
-          }));
+
+          // Ensure volume values are clean numbers and timestamps are unique
+          const volSeen = new Set<number | string>();
+          const volData: any[] = [];
+          for (const d of indicatorData) {
+            if (!volSeen.has(d.time)) {
+              volSeen.add(d.time);
+              const val = typeof d.volume === 'number' && !isNaN(d.volume) ? d.volume : 0;
+              volData.push({
+                time: d.time,
+                value: val,
+                color: d.close >= d.open ? '#00e676' : '#ff1744',
+              });
+            }
+          }
+
           series.setData(volData);
           seriesMapRef.current.set('VOLUME', series);
         } else if (ind.type === 'MACD') {
@@ -497,7 +540,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       console.error(err);
       setError('Chart Error: ' + err.message);
     }
-  }, [data, chartType, indicators]);
+  }, [data, chartType, indicators, showPredictiveZones]);
 
   return (
     <div className={styles.wrapper}>

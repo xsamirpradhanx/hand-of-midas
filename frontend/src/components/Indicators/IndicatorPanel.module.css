@@ -1,69 +1,115 @@
 .panel {
-  width: 250px;
-  background: rgba(18, 22, 45, 0.4);
-  border-left: 1px solid var(--border-color);
+  width: 260px;
+  background: rgba(14, 18, 36, 0.65);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  user-select: none;
 }
 
 .header {
-  padding: 16px 20px;
+  padding: 14px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.headerTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionIcon {
+  font-size: 0.95rem;
+  opacity: 0.9;
 }
 
 .header h3 {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.badge {
+  background: rgba(0, 212, 170, 0.15);
+  color: var(--accent-main);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 212, 170, 0.3);
 }
 
 .addBtn {
-  background: rgba(0, 212, 170, 0.1);
+  background: rgba(0, 212, 170, 0.12);
   color: var(--accent-main);
-  border: 1px solid rgba(0, 212, 170, 0.2);
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  border: 1px solid rgba(0, 212, 170, 0.3);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .addBtn:hover {
   background: var(--accent-main);
-  color: #fff;
+  color: #0e1224;
+  box-shadow: 0 0 12px rgba(0, 212, 170, 0.5);
+  transform: scale(1.05);
 }
 
 .addMenu {
   display: flex;
   flex-direction: column;
-  background: var(--surface-main);
-  border-bottom: 1px solid var(--border-color);
+  background: rgba(20, 26, 50, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.addMenuHeader {
+  padding: 8px 16px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .addMenu button {
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  padding: 10px 20px;
+  padding: 9px 16px;
   text-align: left;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 500;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .addMenu button:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary);
+  background: rgba(0, 212, 170, 0.12);
+  color: #fff;
+  padding-left: 20px;
 }
 
 .list {
@@ -73,11 +119,201 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-width: thin;
 }
 
 .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  padding: 28px 12px;
   text-align: center;
+}
+
+.emptyIcon {
+  font-size: 1.5rem;
+  margin-bottom: 6px;
+  opacity: 0.4;
+}
+
+.empty p {
+  margin: 0;
+  font-weight: 600;
   color: var(--text-secondary);
-  font-size: 0.85rem;
-  padding: 20px 0;
+}
+
+.emptyHint {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin-top: 4px;
+}
+
+.chartControls {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(10, 14, 30, 0.4);
+}
+
+.controlsHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.controlsHeader {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statusBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.statusBadge.open {
+  background: rgba(0, 230, 118, 0.15);
+  color: #00e676;
+  border: 1px solid rgba(0, 230, 118, 0.3);
+}
+
+.statusBadge.ext {
+  background: rgba(0, 212, 170, 0.15);
+  color: #00d4aa;
+  border: 1px solid rgba(0, 212, 170, 0.3);
+}
+
+.statusBadge.closed {
+  background: rgba(255, 23, 68, 0.12);
+  color: #ff5252;
+  border: 1px solid rgba(255, 23, 68, 0.25);
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.toggleLabel:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateX(2px);
+}
+
+.labelInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.labelText {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: color 0.2s ease;
+}
+
+.toggleLabel:hover .labelText {
+  color: var(--text-primary);
+}
+
+.subBadge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #00d4aa;
+  background: rgba(0, 212, 170, 0.15);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 212, 170, 0.25);
+  letter-spacing: 0.4px;
+}
+
+.aiZoneToggle .labelText {
+  color: rgba(0, 230, 118, 0.9);
+}
+
+.volSignalToggle .labelText {
+  color: rgba(255, 215, 64, 0.9);
+}
+
+.toggleCheckbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  position: relative;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 0;
+}
+
+.toggleCheckbox::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.toggleCheckbox:checked {
+  background: var(--accent-main);
+  border-color: var(--accent-main);
+  box-shadow: 0 0 10px rgba(0, 212, 170, 0.4);
+}
+
+.toggleCheckbox:checked::after {
+  left: 16px;
+  background: #ffffff;
+}
+
+.extToggle .toggleCheckbox:checked {
+  background: #00d4aa;
+  border-color: #00d4aa;
+  box-shadow: 0 0 10px rgba(0, 212, 170, 0.4);
+}
+
+.aiZoneToggle .toggleCheckbox:checked {
+  background: #00e676;
+  border-color: #00e676;
+  box-shadow: 0 0 10px rgba(0, 230, 118, 0.4);
+}
+
+.volSignalToggle .toggleCheckbox:checked {
+  background: #ffd740;
+  border-color: #ffd740;
+  box-shadow: 0 0 10px rgba(255, 215, 64, 0.4);
 }

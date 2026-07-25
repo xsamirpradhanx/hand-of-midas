@@ -17,6 +17,22 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
   const [activeTab, setActiveTab] = useState<Tab>('chain');
   const [expirations, setExpirations] = useState<string[]>([]);
   const [activeExpiry, setActiveExpiry] = useState<string | null>(null);
+  const [highlightWhaleFlow, setHighlightWhaleFlow] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('options_highlight_whale_flow') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleWhaleFlow = (checked: boolean) => {
+    setHighlightWhaleFlow(checked);
+    try {
+      localStorage.setItem('options_highlight_whale_flow', String(checked));
+    } catch (err) {
+      console.warn(err);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -35,24 +51,36 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
   return (
     <div className={styles.container}>
       <div className={styles.subTabBar}>
-        <button
-          className={`${styles.tab} ${activeTab === 'chain' ? styles.active : ''}`}
-          onClick={() => setActiveTab('chain')}
-        >
-          Options Chain
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'metrics' ? styles.active : ''}`}
-          onClick={() => setActiveTab('metrics')}
-        >
-          Institutional Metrics
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'predictor' ? styles.active : ''}`}
-          onClick={() => setActiveTab('predictor')}
-        >
-          Outcome Predictor
-        </button>
+        <div className={styles.tabGroup}>
+          <button
+            className={`${styles.tab} ${activeTab === 'chain' ? styles.active : ''}`}
+            onClick={() => setActiveTab('chain')}
+          >
+            Options Chain
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === 'metrics' ? styles.active : ''}`}
+            onClick={() => setActiveTab('metrics')}
+          >
+            Institutional Metrics
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === 'predictor' ? styles.active : ''}`}
+            onClick={() => setActiveTab('predictor')}
+          >
+            Outcome Predictor
+          </button>
+        </div>
+
+        <label className={styles.whaleToggleLabel} title="Highlight contracts with high unusual volume concentration & whale flow">
+          <span className={styles.whaleToggleText}>🐋 Highlight Whale Flow</span>
+          <input
+            type="checkbox"
+            className={styles.whaleToggleCheckbox}
+            checked={highlightWhaleFlow}
+            onChange={(e) => toggleWhaleFlow(e.target.checked)}
+          />
+        </label>
       </div>
 
       {expirations.length > 0 && (
@@ -76,7 +104,12 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
               Options data unavailable — API limit may have been reached.
             </div>
           }>
-            <OptionsChainTable symbol={symbol} activeExpiry={activeExpiry} underlyingPrice={0} />
+            <OptionsChainTable
+              symbol={symbol}
+              activeExpiry={activeExpiry}
+              underlyingPrice={0}
+              highlightWhaleFlow={highlightWhaleFlow}
+            />
           </ErrorBoundary>
         )}
         {activeTab === 'metrics' && (

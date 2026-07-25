@@ -14,7 +14,7 @@ interface Props {
   children: React.ReactNode;
 }
 
-export const MaxPainModal: React.FC<Props> = ({ symbol, maxPainStrike, optionsData, children }) => {
+export const MaxPainModal: React.FC<Props> = ({ symbol: _symbol, maxPainStrike, optionsData, children }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   // Close on Escape

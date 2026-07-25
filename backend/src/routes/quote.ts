@@ -74,6 +74,7 @@ export async function getQuote(
     preMarketPrice: extPrice,
     preMarketChange: extChange,
     preMarketChangePercent: extChangePercent,
+    marketState: raw.marketState,
   };
 
   // --- Populate cache (fire-and-forget) ------------------------------------

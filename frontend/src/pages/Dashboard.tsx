@@ -76,6 +76,15 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const handleToggleExtendedHours = (checked: boolean) => {
+    setShowExtendedHours(checked);
+    // Extended hours data is only available for intraday intervals.
+    // If the user turns it on while on a daily/weekly/monthly chart, automatically switch to 1h.
+    if (checked && ['1day', '1week', '1month'].includes(interval)) {
+      setInterval('1h');
+    }
+  };
+
   return (
     <div className={styles.dashboard}>
       <WatchlistPanel
@@ -96,33 +105,6 @@ export const Dashboard: React.FC = () => {
                   <ChartTypeBar chartType={chartType} onChange={setChartType} />
                   <TimeframeBar interval={interval} onChange={setInterval} />
                 </div>
-                <label className={styles.toggleLabel}>
-                  <input
-                    type="checkbox"
-                    className={styles.toggleCheckbox}
-                    checked={showExtendedHours}
-                    onChange={(e) => setShowExtendedHours(e.target.checked)}
-                  />
-                  Extended Hours
-                </label>
-                <label className={styles.toggleLabel} style={{ color: '#00e676', marginLeft: '12px' }}>
-                  <input
-                    type="checkbox"
-                    className={styles.toggleCheckbox}
-                    checked={showPredictiveZones}
-                    onChange={(e) => setShowPredictiveZones(e.target.checked)}
-                  />
-                  AI Zones
-                </label>
-                <label className={styles.toggleLabel} style={{ color: '#ffd740', marginLeft: '12px' }}>
-                  <input
-                    type="checkbox"
-                    className={styles.toggleCheckbox}
-                    checked={showInstitutionalSignals}
-                    onChange={(e) => setShowInstitutionalSignals(e.target.checked)}
-                  />
-                  Vol Signals
-                </label>
               </div>
             )}
           </div>
@@ -177,6 +159,13 @@ export const Dashboard: React.FC = () => {
         <IndicatorPanel
           indicators={indicators}
           onChange={handleIndicatorsChange}
+          showExtendedHours={showExtendedHours}
+          setShowExtendedHours={handleToggleExtendedHours}
+          showPredictiveZones={showPredictiveZones}
+          setShowPredictiveZones={setShowPredictiveZones}
+          showInstitutionalSignals={showInstitutionalSignals}
+          setShowInstitutionalSignals={setShowInstitutionalSignals}
+          currentInterval={interval}
         />
       )}
     </div>

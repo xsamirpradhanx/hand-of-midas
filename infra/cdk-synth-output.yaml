@@ -1,0 +1,1368 @@
+Description: Hand of Midas - Personal Stock Watchlist & Charting App
+Resources:
+  FrontendBucketEFE2E19C:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: aws-cdk:auto-delete-objects
+          Value: "true"
+        - Key: aws-cdk:cr-owned:b9411927
+          Value: "true"
+        - Key: Project
+          Value: HandOfMidas
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/FrontendBucket/Resource
+  FrontendBucketPolicy1DFF75D9:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: FrontendBucketEFE2E19C
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:PutBucketPolicy
+              - s3:GetBucket*
+              - s3:List*
+              - s3:DeleteObject*
+            Effect: Allow
+            Principal:
+              AWS:
+                Fn::GetAtt:
+                  - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+                  - Arn
+            Resource:
+              - Fn::GetAtt:
+                  - FrontendBucketEFE2E19C
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - FrontendBucketEFE2E19C
+                        - Arn
+                    - /*
+          - Action: s3:GetObject
+            Condition:
+              StringEquals:
+                AWS:SourceArn:
+                  Fn::Join:
+                    - ""
+                    - - "arn:"
+                      - Ref: AWS::Partition
+                      - ":cloudfront::"
+                      - Ref: AWS::AccountId
+                      - :distribution/
+                      - Ref: FrontendDistributionE6EAF405
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Resource:
+              Fn::Join:
+                - ""
+                - - Fn::GetAtt:
+                      - FrontendBucketEFE2E19C
+                      - Arn
+                  - /*
+        Version: "2012-10-17"
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/FrontendBucket/Policy/Resource
+  FrontendBucketAutoDeleteObjectsCustomResourceDB860B32:
+    Type: Custom::S3AutoDeleteObjects
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F
+          - Arn
+      BucketName:
+        Ref: FrontendBucketEFE2E19C
+    DependsOn:
+      - FrontendBucketPolicy1DFF75D9
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/FrontendBucket/AutoDeleteObjectsCustomResource/Default
+  CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role
+  CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-068256468486-us-east-2
+        S3Key: faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6.zip
+      Timeout: 900
+      MemorySize: 128
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+          - Arn
+      Runtime: nodejs24.x
+      Description:
+        Fn::Join:
+          - ""
+          - - "Lambda function for auto-deleting objects in "
+            - Ref: FrontendBucketEFE2E19C
+            - " S3 bucket."
+    DependsOn:
+      - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler
+      aws:asset:path: asset.faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6
+      aws:asset:property: Code
+  FrontendDistributionOrigin1S3OriginAccessControl51A3EFC6:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: HandOfMidasStackFrontendDistOrigin1S3OriginAccessControlD852C1F4
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/FrontendDistribution/Origin1/S3OriginAccessControl/Resource
+  FrontendDistributionE6EAF405:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        CustomErrorResponses:
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          Compress: true
+          TargetOriginId: HandOfMidasStackFrontendDistributionOrigin1881FCBB6
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: true
+        Origins:
+          - DomainName:
+              Fn::GetAtt:
+                - FrontendBucketEFE2E19C
+                - RegionalDomainName
+            Id: HandOfMidasStackFrontendDistributionOrigin1881FCBB6
+            OriginAccessControlId:
+              Fn::GetAtt:
+                - FrontendDistributionOrigin1S3OriginAccessControl51A3EFC6
+                - Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/FrontendDistribution/Resource
+  DeployFrontendAwsCliLayerD774ED8F:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      Content:
+        S3Bucket: cdk-hnb659fds-assets-068256468486-us-east-2
+        S3Key: a72522445441e9b66c2f16956c54d4786af8c61c156b80c48a6e7c32fcc49023.zip
+      Description: /opt/awscli/aws
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/DeployFrontend/AwsCliLayer/Resource
+      aws:asset:path: asset.a72522445441e9b66c2f16956c54d4786af8c61c156b80c48a6e7c32fcc49023.zip
+      aws:asset:is-bundled: false
+      aws:asset:property: Content
+  DeployFrontendCustomResource3E02C3B7:
+    Type: Custom::CDKBucketDeployment
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536
+          - Arn
+      SourceBucketNames:
+        - cdk-hnb659fds-assets-068256468486-us-east-2
+      SourceObjectKeys:
+        - 29d1b8d9124a75b0ac11a64f2b9f0af8825d2f2ae14f35302e568aa1a17d4fd1.zip
+      DestinationBucketName:
+        Ref: FrontendBucketEFE2E19C
+      WaitForDistributionInvalidation: true
+      Prune: true
+      DistributionId:
+        Ref: FrontendDistributionE6EAF405
+      DistributionPaths:
+        - /*
+      OutputObjectKeys: true
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/DeployFrontend/CustomResource/Default
+  CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/Resource
+  CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetObject*
+              - s3:GetBucket*
+              - s3:List*
+            Effect: Allow
+            Resource:
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - :s3:::cdk-hnb659fds-assets-068256468486-us-east-2
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - :s3:::cdk-hnb659fds-assets-068256468486-us-east-2/*
+          - Action:
+              - s3:GetObject*
+              - s3:GetBucket*
+              - s3:List*
+              - s3:DeleteObject*
+              - s3:PutObject
+              - s3:PutObjectLegalHold
+              - s3:PutObjectRetention
+              - s3:PutObjectTagging
+              - s3:PutObjectVersionTagging
+              - s3:Abort*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - FrontendBucketEFE2E19C
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - FrontendBucketEFE2E19C
+                        - Arn
+                    - /*
+          - Action:
+              - cloudfront:GetInvalidation
+              - cloudfront:CreateInvalidation
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF
+      Roles:
+        - Ref: CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource
+  CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-068256468486-us-east-2
+        S3Key: 97e9ebf0b174a5c8f7faa505739022b7f509edddffcab9211dcd08b759944c4f.zip
+      Environment:
+        Variables:
+          AWS_CA_BUNDLE: /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+      Handler: index.handler
+      Layers:
+        - Ref: DeployFrontendAwsCliLayerD774ED8F
+      Role:
+        Fn::GetAtt:
+          - CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265
+          - Arn
+      Runtime: python3.13
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      Timeout: 900
+    DependsOn:
+      - CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF
+      - CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource
+      aws:asset:path: asset.97e9ebf0b174a5c8f7faa505739022b7f509edddffcab9211dcd08b759944c4f
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  UserPoolsmsRole4EA729DD:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: HandOfMidasStackUserPool6BC475D8
+            Effect: Allow
+            Principal:
+              Service: cognito-idp.amazonaws.com
+        Version: "2012-10-17"
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action: sns:Publish
+                Effect: Allow
+                Resource: "*"
+            Version: "2012-10-17"
+          PolicyName: sns-publish
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/UserPool/smsRole/Resource
+  UserPool6BA7E5F2:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AutoVerifiedAttributes:
+        - email
+      DeletionProtection: INACTIVE
+      EmailVerificationMessage: The verification code to your new account is {####}
+      EmailVerificationSubject: Verify your new account
+      EnabledMfas:
+        - SMS_MFA
+      MfaConfiguration: OPTIONAL
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      SmsConfiguration:
+        ExternalId: HandOfMidasStackUserPool6BC475D8
+        SnsCallerArn:
+          Fn::GetAtt:
+            - UserPoolsmsRole4EA729DD
+            - Arn
+      SmsVerificationMessage: The verification code to your new account is {####}
+      UserPoolName: HandOfMidasUserPool
+      UserPoolTags:
+        Project: HandOfMidas
+      UsernameAttributes:
+        - email
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailMessage: The verification code to your new account is {####}
+        EmailSubject: Verify your new account
+        SmsMessage: The verification code to your new account is {####}
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/UserPool/Resource
+  UserPoolClient2F5918F7:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AllowedOAuthFlows:
+        - implicit
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - profile
+        - phone
+        - email
+        - openid
+        - aws.cognito.signin.user.admin
+      CallbackURLs:
+        - https://example.com
+      ClientName: HandOfMidasWebClient
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+      SupportedIdentityProviders:
+        - COGNITO
+      UserPoolId:
+        Ref: UserPool6BA7E5F2
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/UserPoolClient/Resource
+  TableCD117FA1:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TableName: HandOfMidasTable
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/Table/Resource
+  BackendFunctionServiceRoleCA938F8D:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/BackendFunction/ServiceRole/Resource
+  BackendFunctionServiceRoleDefaultPolicyA83BBE0A:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TableCD117FA1
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TableCD117FA1
+                        - Arn
+                    - /index/*
+          - Action:
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TableCD117FA1
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TableCD117FA1
+                        - Arn
+                    - /index/*
+          - Action:
+              - ssm:DescribeParameters
+              - ssm:GetParameters
+              - ssm:GetParameter
+              - ssm:GetParameterHistory
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - :ssm:us-east-2:068256468486:parameter/handofmidas/twelvedata-api-key
+          - Action:
+              - ssm:DescribeParameters
+              - ssm:GetParameters
+              - ssm:GetParameter
+              - ssm:GetParameterHistory
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - :ssm:us-east-2:068256468486:parameter/handofmidas/polygon-api-key
+        Version: "2012-10-17"
+      PolicyName: BackendFunctionServiceRoleDefaultPolicyA83BBE0A
+      Roles:
+        - Ref: BackendFunctionServiceRoleCA938F8D
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/BackendFunction/ServiceRole/DefaultPolicy/Resource
+  BackendFunction63314140:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures:
+        - arm64
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-068256468486-us-east-2
+        S3Key: 984228dca5391a5b265f359ee0cbb66237f06bd810ba8bdaf158d43cdb1a5ff7.zip
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TableCD117FA1
+          SSM_API_KEY_PATH: /handofmidas/twelvedata-api-key
+          SSM_POLYGON_KEY_PATH: /handofmidas/polygon-api-key
+          COGNITO_USER_POOL_ID:
+            Ref: UserPool6BA7E5F2
+          NODE_OPTIONS: --enable-source-maps
+      FunctionName: HandOfMidasBackend
+      Handler: index.handler
+      MemorySize: 512
+      Role:
+        Fn::GetAtt:
+          - BackendFunctionServiceRoleCA938F8D
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      Timeout: 29
+    DependsOn:
+      - BackendFunctionServiceRoleDefaultPolicyA83BBE0A
+      - BackendFunctionServiceRoleCA938F8D
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/BackendFunction/Resource
+      aws:asset:path: asset.984228dca5391a5b265f359ee0cbb66237f06bd810ba8bdaf158d43cdb1a5ff7
+      aws:asset:is-bundled: true
+      aws:asset:property: Code
+  ChainRefreshFunctionServiceRole4A0FD20A:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/ChainRefreshFunction/ServiceRole/Resource
+  ChainRefreshFunctionServiceRoleDefaultPolicyC0CA7C75:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TableCD117FA1
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TableCD117FA1
+                        - Arn
+                    - /index/*
+          - Action:
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TableCD117FA1
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TableCD117FA1
+                        - Arn
+                    - /index/*
+          - Action:
+              - ssm:DescribeParameters
+              - ssm:GetParameters
+              - ssm:GetParameter
+              - ssm:GetParameterHistory
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - :ssm:us-east-2:068256468486:parameter/handofmidas/twelvedata-api-key
+          - Action:
+              - ssm:DescribeParameters
+              - ssm:GetParameters
+              - ssm:GetParameter
+              - ssm:GetParameterHistory
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - :ssm:us-east-2:068256468486:parameter/handofmidas/polygon-api-key
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - WebSocketConnectionsTable7F0028CC
+                  - Arn
+          - Action:
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - WebSocketConnectionsTable7F0028CC
+                  - Arn
+          - Action: execute-api:ManageConnections
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:us-east-2:068256468486:"
+                  - Ref: WebSocketApi
+                  - /*
+        Version: "2012-10-17"
+      PolicyName: ChainRefreshFunctionServiceRoleDefaultPolicyC0CA7C75
+      Roles:
+        - Ref: ChainRefreshFunctionServiceRole4A0FD20A
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/ChainRefreshFunction/ServiceRole/DefaultPolicy/Resource
+  ChainRefreshFunction963A9986:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures:
+        - arm64
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-068256468486-us-east-2
+        S3Key: 20f70237792a5e8a7b8e0b46f6dd13d3a36e2f481a8714dd23420bcb7d8a1c36.zip
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TableCD117FA1
+          SSM_API_KEY_PATH: /handofmidas/twelvedata-api-key
+          SSM_POLYGON_KEY_PATH: /handofmidas/polygon-api-key
+          COGNITO_USER_POOL_ID:
+            Ref: UserPool6BA7E5F2
+          NODE_OPTIONS: --enable-source-maps
+          WEBSOCKET_ENDPOINT:
+            Fn::Join:
+              - ""
+              - - https://
+                - Ref: WebSocketApi
+                - .execute-api.us-east-2.amazonaws.com/prod
+          CONNECTIONS_TABLE:
+            Ref: WebSocketConnectionsTable7F0028CC
+      FunctionName: HandOfMidasChainRefresh
+      Handler: index.handler
+      MemorySize: 512
+      Role:
+        Fn::GetAtt:
+          - ChainRefreshFunctionServiceRole4A0FD20A
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      Timeout: 300
+    DependsOn:
+      - ChainRefreshFunctionServiceRoleDefaultPolicyC0CA7C75
+      - ChainRefreshFunctionServiceRole4A0FD20A
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/ChainRefreshFunction/Resource
+      aws:asset:path: asset.20f70237792a5e8a7b8e0b46f6dd13d3a36e2f481a8714dd23420bcb7d8a1c36
+      aws:asset:is-bundled: true
+      aws:asset:property: Code
+  ChainRefreshRuleAF5163A4:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Triggers options chain refresh every 5 min during market hours
+      Name: HandOfMidas-ChainRefresh
+      ScheduleExpression: cron(0/5 13-21 ? * MON-FRI *)
+      State: ENABLED
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - ChainRefreshFunction963A9986
+              - Arn
+          Id: Target0
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/ChainRefreshRule/Resource
+  ChainRefreshRuleAllowEventRuleHandOfMidasStackChainRefreshFunction7AD30F2CD3B58974:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - ChainRefreshFunction963A9986
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - ChainRefreshRuleAF5163A4
+          - Arn
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/ChainRefreshRule/AllowEventRuleHandOfMidasStackChainRefreshFunction7AD30F2C
+  WebSocketConnectionsTable7F0028CC:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      TableName: HandOfMidasConnections
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketConnectionsTable/Resource
+  WebSocketFunctionServiceRole4CE9C9AF:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketFunction/ServiceRole/Resource
+  WebSocketFunctionServiceRoleDefaultPolicy87C77C7A:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - WebSocketConnectionsTable7F0028CC
+                  - Arn
+          - Action:
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - WebSocketConnectionsTable7F0028CC
+                  - Arn
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TableCD117FA1
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TableCD117FA1
+                        - Arn
+                    - /index/*
+          - Action:
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TableCD117FA1
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TableCD117FA1
+                        - Arn
+                    - /index/*
+          - Action: execute-api:ManageConnections
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:us-east-2:068256468486:"
+                  - Ref: WebSocketApi
+                  - /*
+        Version: "2012-10-17"
+      PolicyName: WebSocketFunctionServiceRoleDefaultPolicy87C77C7A
+      Roles:
+        - Ref: WebSocketFunctionServiceRole4CE9C9AF
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketFunction/ServiceRole/DefaultPolicy/Resource
+  WebSocketFunctionF4B8B6B6:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures:
+        - arm64
+      Code:
+        S3Bucket: cdk-hnb659fds-assets-068256468486-us-east-2
+        S3Key: c770874728bf820bdb7b952830596d6203aa28a54ed75d7c14e69719325795a4.zip
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TableCD117FA1
+          SSM_API_KEY_PATH: /handofmidas/twelvedata-api-key
+          SSM_POLYGON_KEY_PATH: /handofmidas/polygon-api-key
+          COGNITO_USER_POOL_ID:
+            Ref: UserPool6BA7E5F2
+          NODE_OPTIONS: --enable-source-maps
+          CONNECTIONS_TABLE:
+            Ref: WebSocketConnectionsTable7F0028CC
+      FunctionName: HandOfMidasWebSocket
+      Handler: index.handler
+      MemorySize: 256
+      Role:
+        Fn::GetAtt:
+          - WebSocketFunctionServiceRole4CE9C9AF
+          - Arn
+      Runtime: nodejs20.x
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      Timeout: 29
+    DependsOn:
+      - WebSocketFunctionServiceRoleDefaultPolicy87C77C7A
+      - WebSocketFunctionServiceRole4CE9C9AF
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketFunction/Resource
+      aws:asset:path: asset.c770874728bf820bdb7b952830596d6203aa28a54ed75d7c14e69719325795a4
+      aws:asset:is-bundled: true
+      aws:asset:property: Code
+  WebSocketFunctionWebSocketInvokeC53CE125:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - WebSocketFunctionF4B8B6B6
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:aws:execute-api:us-east-2:068256468486:"
+            - Ref: WebSocketApi
+            - /*
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketFunction/WebSocketInvoke
+  HttpApiF5A9A8A7:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      CorsConfiguration:
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowOrigins:
+          - Fn::Join:
+              - ""
+              - - https://
+                - Fn::GetAtt:
+                    - FrontendDistributionE6EAF405
+                    - DomainName
+      Name: HandOfMidasApi
+      ProtocolType: HTTP
+      Tags:
+        Project: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/Resource
+  HttpApiDefaultStage3EEB07D6:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      AutoDeploy: true
+      StageName: $default
+      Tags:
+        Project: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/DefaultStage/Resource
+  HttpApiGETapiproxyBackendIntegrationA5DB2CC0:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::GetAtt:
+          - BackendFunction63314140
+          - Arn
+      PayloadFormatVersion: "2.0"
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/GET--api--{proxy+}/BackendIntegration/Resource
+  HttpApiGETapiproxyBackendIntegrationPermissionEFF19936:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - BackendFunction63314140
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:us-east-2:068256468486:"
+            - Ref: HttpApiF5A9A8A7
+            - /*/*/api/{proxy+}
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/GET--api--{proxy+}/BackendIntegration-Permission
+  HttpApiGETapiproxy6870B9C8:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      AuthorizationType: JWT
+      AuthorizerId:
+        Ref: HttpApiCognitoAuthorizer935FA0F6
+      RouteKey: GET /api/{proxy+}
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: HttpApiGETapiproxyBackendIntegrationA5DB2CC0
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/GET--api--{proxy+}/Resource
+  HttpApiCognitoAuthorizer935FA0F6:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - Ref: UserPoolClient2F5918F7
+        Issuer:
+          Fn::Join:
+            - ""
+            - - https://cognito-idp.us-east-2.amazonaws.com/
+              - Ref: UserPool6BA7E5F2
+      Name: CognitoAuthorizer
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/CognitoAuthorizer/Resource
+  HttpApiPOSTapiproxyBackendIntegrationPermission5E6F6797:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - BackendFunction63314140
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:us-east-2:068256468486:"
+            - Ref: HttpApiF5A9A8A7
+            - /*/*/api/{proxy+}
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/POST--api--{proxy+}/BackendIntegration-Permission
+  HttpApiPOSTapiproxy01C1FCC0:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      AuthorizationType: JWT
+      AuthorizerId:
+        Ref: HttpApiCognitoAuthorizer935FA0F6
+      RouteKey: POST /api/{proxy+}
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: HttpApiGETapiproxyBackendIntegrationA5DB2CC0
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/POST--api--{proxy+}/Resource
+  HttpApiPUTapiproxyBackendIntegrationPermission20193594:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - BackendFunction63314140
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:us-east-2:068256468486:"
+            - Ref: HttpApiF5A9A8A7
+            - /*/*/api/{proxy+}
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/PUT--api--{proxy+}/BackendIntegration-Permission
+  HttpApiPUTapiproxy6C66EF29:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      AuthorizationType: JWT
+      AuthorizerId:
+        Ref: HttpApiCognitoAuthorizer935FA0F6
+      RouteKey: PUT /api/{proxy+}
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: HttpApiGETapiproxyBackendIntegrationA5DB2CC0
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/PUT--api--{proxy+}/Resource
+  HttpApiDELETEapiproxyBackendIntegrationPermission37E02B72:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - BackendFunction63314140
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:us-east-2:068256468486:"
+            - Ref: HttpApiF5A9A8A7
+            - /*/*/api/{proxy+}
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/DELETE--api--{proxy+}/BackendIntegration-Permission
+  HttpApiDELETEapiproxyDBD5CB62:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: HttpApiF5A9A8A7
+      AuthorizationType: JWT
+      AuthorizerId:
+        Ref: HttpApiCognitoAuthorizer935FA0F6
+      RouteKey: DELETE /api/{proxy+}
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: HttpApiGETapiproxyBackendIntegrationA5DB2CC0
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/HttpApi/DELETE--api--{proxy+}/Resource
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: HandOfMidasWebSocketApi
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+      Tags:
+        Project: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketApi
+  WsConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - arn:aws:apigateway:us-east-2:lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - WebSocketFunctionF4B8B6B6
+                - Arn
+            - /invocations
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WsConnectIntegration
+  WsConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      AuthorizationType: NONE
+      RouteKey: $connect
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WsConnectIntegration
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WsConnectRoute
+  WsDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - arn:aws:apigateway:us-east-2:lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - WebSocketFunctionF4B8B6B6
+                - Arn
+            - /invocations
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WsDisconnectIntegration
+  WsDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      AuthorizationType: NONE
+      RouteKey: $disconnect
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WsDisconnectIntegration
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WsDisconnectRoute
+  WsDefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - arn:aws:apigateway:us-east-2:lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - WebSocketFunctionF4B8B6B6
+                - Arn
+            - /invocations
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WsDefaultIntegration
+  WsDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      AuthorizationType: NONE
+      RouteKey: $default
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WsDefaultIntegration
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WsDefaultRoute
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        Ref: WebSocketApi
+      AutoDeploy: true
+      StageName: prod
+      Tags:
+        Project: HandOfMidas
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/WebSocketStage
+  CacheRefreshRule2C81917B:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Triggers the Hand of Midas Lambda hourly to refresh cached stock data
+      Name: HandOfMidas-CacheRefresh
+      ScheduleExpression: rate(1 hour)
+      State: ENABLED
+      Tags:
+        - Key: Project
+          Value: HandOfMidas
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - BackendFunction63314140
+              - Arn
+          Id: Target0
+          Input: '{"source":"scheduled","action":"refresh-cache"}'
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/CacheRefreshRule/Resource
+  CacheRefreshRuleAllowEventRuleHandOfMidasStackBackendFunction2CC253AD97D78CA5:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - BackendFunction63314140
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - CacheRefreshRule2C81917B
+          - Arn
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/CacheRefreshRule/AllowEventRuleHandOfMidasStackBackendFunction2CC253AD
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Analytics: v2:deflate64:H4sIAAAAAAAA/5VTS4/TMBD+LfTsmqWV9sAt2wqxEqJVF7ggVLnObHZax448dkuw8t/xY5sGJA6c5punv3l4wRf37/jdG3GhuaxPc4UHHp6ckCcWTftASx4evDyBY6tnXdD3MGvxJ+rZ+9k0LcXH8OwiXkIr78waFDjYHI4gHc2GH6y4tkah7G9Vi/4ftUtC5OqgBT0t/SAIBiaV8fWzNdrxsEZyFg/eodHsabmx2KCupASiVQywRiUi/zBPkwdGy32ooVOmT6++clmPBiaIwBGvkhiYEu2hFjzEMp9ED/YbWMocUDdxLEZ/8FpmViOIoVO8BdsiUX4bRcvDzihIjixvUywotm0ajc7w8JXAbk1pYcRXsFKYyE5cxTKwuteiNXU8gy/iUF7K4NrLXpsajsQ/ZzEyhXPaQWTnX9n5lCI6bOJ+LqI/L3j46FxXdZjcSSQ1rq/J8QUk0854V9CjdtBYcZ3EX+otLl7Zi7H4C2wuPWrDwFaenGl3QMZbWYiN+A/X1poz1mDT7bC8vMQobunatkrr28dDlAp5daE4r7xRNi2+8a7zcYhpRvxIb8+Le34Xv9eREOfWa4ct8F2RvwF2mW2sewMAAA==
+    Metadata:
+      aws:cdk:path: HandOfMidasStack/CDKMetadata/Default
+Outputs:
+  CloudFrontURL:
+    Description: CloudFront distribution URL for the frontend
+    Value:
+      Fn::Join:
+        - ""
+        - - https://
+          - Fn::GetAtt:
+              - FrontendDistributionE6EAF405
+              - DomainName
+  ApiURL:
+    Description: API Gateway HTTP API endpoint
+    Value:
+      Fn::GetAtt:
+        - HttpApiF5A9A8A7
+        - ApiEndpoint
+  WebSocketURL:
+    Description: WebSocket API endpoint for real-time updates
+    Value:
+      Fn::Join:
+        - ""
+        - - wss://
+          - Ref: WebSocketApi
+          - .execute-api.us-east-2.amazonaws.com/prod
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value:
+      Ref: UserPool6BA7E5F2
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value:
+      Ref: UserPoolClient2F5918F7
+  TableName:
+    Description: DynamoDB table name
+    Value:
+      Ref: TableCD117FA1
+  Region:
+    Description: Deployment region
+    Value: us-east-2
+  PolygonKeyInstructions:
+    Description: Command to set your Polygon.io API key in SSM
+    Value: aws ssm put-parameter --name /handofmidas/polygon-api-key --value YOUR_POLYGON_KEY --type SecureString --overwrite
+Parameters:
+  BootstrapVersion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cdk-bootstrap/hnb659fds/version
+    Description: Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]
+

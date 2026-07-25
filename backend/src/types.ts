@@ -219,6 +219,7 @@ export interface QuoteResponse {
   readonly preMarketPrice?: number;
   readonly preMarketChange?: number;
   readonly preMarketChangePercent?: number;
+  readonly marketState?: string;
 }
 
 /** Response payload for GET /api/watchlist. */

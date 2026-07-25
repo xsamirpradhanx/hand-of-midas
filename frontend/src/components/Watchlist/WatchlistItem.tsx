@@ -16,15 +16,17 @@ interface WatchlistItemProps {
 export const WatchlistItem: React.FC<WatchlistItemProps> = ({
   symbol, quote, isSelected, showExtendedHours, flashDirection, onSelect, onRemove
 }) => {
-  const displayPrice = showExtendedHours && quote?.preMarketPrice != null 
+  const isExtendedMarket = quote?.marketState ? quote.marketState !== 'REGULAR' : true;
+  
+  const displayPrice = showExtendedHours && isExtendedMarket && quote?.preMarketPrice != null 
     ? quote.preMarketPrice 
     : quote?.price;
     
-  const displayChangePercent = showExtendedHours && quote?.preMarketChangePercent != null
+  const displayChangePercent = showExtendedHours && isExtendedMarket && quote?.preMarketChangePercent != null
     ? quote.preMarketChangePercent
     : quote?.changePercent;
 
-  const displayChange = showExtendedHours && quote?.preMarketChange != null
+  const displayChange = showExtendedHours && isExtendedMarket && quote?.preMarketChange != null
     ? quote.preMarketChange
     : quote?.change;
 

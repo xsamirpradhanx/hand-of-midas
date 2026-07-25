@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../lib/api';
 import type { OptionsContract, OptionsChainResponse } from '../../types';
-import { getWhaleTier, isWhaleFlow, computeWhaleScore, resolveContractPrice } from '../../lib/whaleFlow';
 import styles from './OptionsChainTable.module.css';
 
 interface OptionsChainTableProps {
   symbol: string | null;
   activeExpiry: string | null;
   underlyingPrice: number;
+  highlightWhaleFlow?: boolean;
 }
 
 const formatNumber = (num: number) => {
@@ -20,26 +20,15 @@ const getIvColorClass = (iv: number) => {
   return styles.ivHigh;
 };
 
-const getContractWhaleScore = (contract?: OptionsContract): number | null => {
-  if (!contract) return null;
-  if (contract.whaleScore != null) return contract.whaleScore;
-
-  const price = resolveContractPrice(contract.bid, contract.ask, contract.mid, contract.last);
-  return computeWhaleScore({
-    volume: contract.volume,
-    openInterest: contract.openInterest,
-    price,
-    dte: contract.dte,
-  });
-};
-
-// We removed getWhaleClass as we use inline styles for top 7 volume shading
-
-export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({ symbol, activeExpiry, underlyingPrice: _underlyingPrice }) => {
+export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
+  symbol,
+  activeExpiry,
+  underlyingPrice: _underlyingPrice,
+  highlightWhaleFlow = false,
+}) => {
   const [data, setData] = useState<OptionsChainResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [highlightWhaleFlow, setHighlightWhaleFlow] = useState<boolean>(false);
 
   useEffect(() => {
     if (!symbol || !activeExpiry) {
@@ -143,22 +132,6 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({ symbol, ac
 
   return (
     <div className={styles.container}>
-      <div className={styles.controlsBar}>
-        <label className={styles.toggleLabel}>
-          <input 
-            type="checkbox" 
-            checked={highlightWhaleFlow}
-            onChange={e => setHighlightWhaleFlow(e.target.checked)}
-          />
-          Highlight Whale Flow 🐋
-        </label>
-        {highlightWhaleFlow && (
-          <span className={styles.whaleCount}>
-            Showing Top Volume Concentration (Top 7)
-          </span>
-        )}
-      </div>
-
       <div className={styles.tableWrapper}>
         {loading ? (
           <div className={styles.tableWrapper} style={{ padding: 'var(--space-md)' }}>

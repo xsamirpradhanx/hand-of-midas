@@ -7,15 +7,28 @@
   flex-shrink: 0;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.panel.collapsed {
+  width: 54px;
 }
 
 .header {
-  padding: 16px 20px;
+  padding: 12px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid rgba(184, 120, 10, 0.2);
   background: linear-gradient(180deg, rgba(15, 10, 5, 0.4) 0%, transparent 100%);
+  min-height: 52px;
+  box-sizing: border-box;
+}
+
+.panel.collapsed .header {
+  padding: 12px 8px;
+  justify-content: center;
 }
 
 .header h2 {
@@ -29,6 +42,13 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .addBtn {
@@ -41,10 +61,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 0 8px rgba(245, 200, 66, 0.1);
+  flex-shrink: 0;
 }
 
 .addBtn:hover {
@@ -54,10 +75,104 @@
   border-color: rgba(245, 200, 66, 0.5);
 }
 
+.collapseBtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.collapseBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 8px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(184, 120, 10, 0.3) transparent;
+}
+
+.list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.list::-webkit-scrollbar-thumb {
+  background: rgba(184, 120, 10, 0.3);
+  border-radius: 3px;
+}
+
+.list::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 200, 66, 0.6);
+}
+
+.collapsedItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.collapsedItem:hover {
+  background: rgba(184, 120, 10, 0.15);
+  border-color: rgba(245, 200, 66, 0.3);
+  transform: scale(1.04);
+}
+
+.collapsedItem.selected {
+  background: rgba(184, 120, 10, 0.25);
+  border-color: var(--gold-mid);
+  box-shadow: 0 0 12px rgba(245, 200, 66, 0.2);
+}
+
+.collapsedSymbol {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.collapsedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-top: 4px;
+}
+
+.positiveDot {
+  background: #00e676;
+  box-shadow: 0 0 6px rgba(0, 230, 118, 0.5);
+}
+
+.negativeDot {
+  background: #ff5252;
+  box-shadow: 0 0 6px rgba(255, 82, 82, 0.5);
 }
 
 .emptyState {

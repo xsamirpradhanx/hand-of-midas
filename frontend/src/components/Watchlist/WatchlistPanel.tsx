@@ -16,8 +16,27 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
   const [quotes, setQuotes] = useState<Record<string, QuoteResponse>>({});
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('watchlist_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [flashSymbols, setFlashSymbols] = useState<Record<string, 'up' | 'down'>>({});
   const prevPricesRef = useRef<Record<string, number>>({});
+
+  const toggleCollapse = () => {
+    setIsCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('watchlist_collapsed', String(next));
+      } catch (err) {
+        console.warn(err);
+      }
+      return next;
+    });
+  };
 
   const fetchWatchlist = async () => {
     try {
@@ -89,30 +108,57 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
   };
 
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
-        <h2>Watchlist</h2>
-        <button onClick={() => setIsModalOpen(true)} className={styles.addBtn}>+</button>
+        {!isCollapsed && <h2>Watchlist</h2>}
+        <div className={styles.headerActions}>
+          <button onClick={() => setIsModalOpen(true)} className={styles.addBtn} title="Add Ticker">+</button>
+          <button onClick={toggleCollapse} className={styles.collapseBtn} title={isCollapsed ? "Expand Watchlist" : "Collapse Watchlist"}>
+            {isCollapsed ? '»' : '«'}
+          </button>
+        </div>
       </div>
 
       <div className={styles.list}>
         {loading ? (
-          <div className={styles.emptyState}>Loading...</div>
+          <div className={styles.emptyState}>{isCollapsed ? '...' : 'Loading...'}</div>
         ) : entries.length === 0 ? (
-          <div className={styles.emptyState}>Add tickers to get started</div>
+          <div className={styles.emptyState}>{isCollapsed ? '+' : 'Add tickers to get started'}</div>
         ) : (
-          entries.map(entry => (
-            <WatchlistItem
-              key={entry.symbol}
-              symbol={entry.symbol}
-              quote={quotes[entry.symbol]}
-              isSelected={selectedSymbol === entry.symbol}
-              showExtendedHours={showExtendedHours}
-              flashDirection={flashSymbols[entry.symbol]}
-              onSelect={() => onSelectSymbol(entry.symbol)}
-              onRemove={() => handleRemoveTicker(entry.symbol)}
-            />
-          ))
+          entries.map(entry => {
+            const quote = quotes[entry.symbol];
+            if (isCollapsed) {
+              const isPositive = (quote?.change ?? 0) >= 0;
+              const priceStr = quote
+                ? `$${quote.price.toFixed(2)} (${isPositive ? '+' : ''}${quote.changePercent.toFixed(2)}%)`
+                : 'Loading quote...';
+              return (
+                <div
+                  key={entry.symbol}
+                  className={`${styles.collapsedItem} ${selectedSymbol === entry.symbol ? styles.selected : ''}`}
+                  onClick={() => onSelectSymbol(entry.symbol)}
+                  title={`${entry.symbol}: ${priceStr}`}
+                >
+                  <span className={styles.collapsedSymbol}>{entry.symbol.length > 5 ? entry.symbol.slice(0, 4) : entry.symbol}</span>
+                  {quote && (
+                    <span className={`${styles.collapsedDot} ${isPositive ? styles.positiveDot : styles.negativeDot}`} />
+                  )}
+                </div>
+              );
+            }
+            return (
+              <WatchlistItem
+                key={entry.symbol}
+                symbol={entry.symbol}
+                quote={quote}
+                isSelected={selectedSymbol === entry.symbol}
+                showExtendedHours={showExtendedHours}
+                flashDirection={flashSymbols[entry.symbol]}
+                onSelect={() => onSelectSymbol(entry.symbol)}
+                onRemove={() => handleRemoveTicker(entry.symbol)}
+              />
+            );
+          })
         )}
       </div>
 

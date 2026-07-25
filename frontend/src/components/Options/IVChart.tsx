@@ -104,19 +104,21 @@ export const IVChart: React.FC<IVChartProps> = ({ symbol }) => {
         
         const latest = sortedData[sortedData.length - 1];
         
-        const avgIv = sortedData.reduce((acc, val) => acc + val.atm_iv, 0) / sortedData.length;
+        const getIvValue = (item: any): number => item.atm_iv ?? item.realizedVol ?? 0;
+
+        const avgIv = sortedData.reduce((acc, val) => acc + getIvValue(val), 0) / sortedData.length;
 
         setStats({
           ivRank: latest.iv_rank || 0,
           ivPercentile: latest.iv_percentile || 0,
-          atmIv: latest.atm_iv || 0,
+          atmIv: getIvValue(latest),
           avgIv: avgIv
         });
 
         if (seriesRef.current) {
           const chartData = sortedData.map(d => ({
             time: (new Date(d.date).getTime() / 1000) as any,
-            value: d.atm_iv * 100
+            value: getIvValue(d) * 100
           }));
           
           seriesRef.current.setData(chartData);
@@ -133,7 +135,7 @@ export const IVChart: React.FC<IVChartProps> = ({ symbol }) => {
 
           // Set color based on latest vs avg
           seriesRef.current.applyOptions({
-            color: latest.atm_iv > avgIv ? '#f0b849' : '#00d4aa'
+            color: getIvValue(latest) > avgIv ? '#f0b849' : '#00d4aa'
           });
 
           chartRef.current?.timeScale().fitContent();
