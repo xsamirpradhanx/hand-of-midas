@@ -35,10 +35,14 @@
   --color-down-dim: rgba(255, 23, 68, 0.15);
 
   /* Golden branding */
-  --gold-start: #f9a825;
-  --gold-mid: #ffd54f;
-  --gold-end: #ffab00;
+  --gold-start: #c8860a;
+  --gold-mid: #f5c842;
+  --gold-end: #e8a020;
+  --gold-bright: #ffe082;
+  --gold-deep: #a0620a;
   --gold-gradient: linear-gradient(135deg, var(--gold-start), var(--gold-mid), var(--gold-end));
+  --gold-gradient-rich: linear-gradient(135deg, #b8780a 0%, #f5c842 35%, #ffeaa0 55%, #e8a020 75%, #b8780a 100%);
+  --gold-glow: rgba(245, 200, 66, 0.4);
 
   /* Component aliases */
   --bg-main: var(--bg-primary);
@@ -91,6 +95,7 @@
 
   /* Typography */
   --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
 
   /* Layout */
@@ -119,8 +124,9 @@ body {
   font-family: var(--font-family);
   background-color: var(--bg-primary);
   background-image:
-    radial-gradient(ellipse at 10% 0%, rgba(0, 212, 170, 0.04) 0%, transparent 40%),
-    radial-gradient(ellipse at 90% 100%, rgba(249, 168, 37, 0.05) 0%, transparent 40%);
+    radial-gradient(ellipse at 15% 0%, rgba(184, 120, 10, 0.07) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 100%, rgba(200, 134, 10, 0.06) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, rgba(10, 14, 39, 0) 0%, rgba(5, 8, 25, 0.5) 100%);
   color: var(--text-secondary);
   line-height: 1.5;
   min-height: 100vh;
@@ -232,10 +238,14 @@ textarea:focus {
 }
 
 .gradient-gold {
-  background: var(--gold-gradient);
+  background: var(--gold-gradient-rich);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+.font-display {
+  font-family: var(--font-display);
 }
 
 .text-up {

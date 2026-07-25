@@ -24,6 +24,10 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
     ? quote.preMarketChangePercent
     : quote?.changePercent;
 
+  const displayChange = showExtendedHours && quote?.preMarketChange != null
+    ? quote.preMarketChange
+    : quote?.change;
+
   const isPositive = displayChangePercent != null && displayChangePercent >= 0;
 
   return (
@@ -53,6 +57,11 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
           <span className={`${styles.change} ${isPositive ? styles.positive : styles.negative}`}>
             {isPositive ? '▲' : '▼'} {Math.abs(displayChangePercent || 0).toFixed(2)}%
           </span>
+          {displayChange != null && (
+            <span className={`${styles.changeDollar} ${isPositive ? styles.positive : styles.negative}`}>
+              {isPositive ? '+' : ''}{displayChange.toFixed(2)}
+            </span>
+          )}
         </div>
       )}
 

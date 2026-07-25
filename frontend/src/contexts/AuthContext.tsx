@@ -27,10 +27,14 @@ import { config } from '../config';
 
 /* ─── Cognito Pool ─── */
 
-export const userPool = new CognitoUserPool({
-  UserPoolId: config.cognitoUserPoolId,
-  ClientId: config.cognitoClientId,
-});
+const hasCognitoConfig = Boolean(config.cognitoUserPoolId && config.cognitoClientId);
+
+export const userPool = hasCognitoConfig
+  ? new CognitoUserPool({
+      UserPoolId: config.cognitoUserPoolId,
+      ClientId: config.cognitoClientId,
+    })
+  : null as unknown as CognitoUserPool;
 
 /* ─── Types ─── */
 
@@ -81,6 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /** Retrieve the current session and extract user info */
   const getSession = useCallback(async (): Promise<string | null> => {
+    if (!userPool) return null;
     const cognitoUser = userPool.getCurrentUser();
     if (!cognitoUser) return null;
 
@@ -99,6 +104,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /** Check for existing session on mount */
   useEffect(() => {
+    if (!userPool) { setLoading(false); return; }
     const cognitoUser = userPool.getCurrentUser();
     if (!cognitoUser) {
       setLoading(false);
@@ -125,6 +131,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /** Sign in with email and password */
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null);
+    if (!userPool) throw new Error('Cognito is not configured. Set VITE_COGNITO_USER_POOL_ID and VITE_COGNITO_CLIENT_ID.');
 
     const cognitoUser = new CognitoUser({
       Username: email,
@@ -157,6 +164,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /** Register a new user */
   const signUp = useCallback(async (email: string, password: string) => {
     setError(null);
+    if (!userPool) throw new Error('Cognito is not configured. Set VITE_COGNITO_USER_POOL_ID and VITE_COGNITO_CLIENT_ID.');
 
     const attributes = [
       new CognitoUserAttribute({ Name: 'email', Value: email }),
@@ -177,6 +185,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /** Confirm sign-up with a verification code */
   const confirmSignUp = useCallback(async (email: string, code: string) => {
     setError(null);
+    if (!userPool) throw new Error('Cognito is not configured.');
 
     const cognitoUser = new CognitoUser({
       Username: email,
@@ -197,7 +206,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /** Sign out the current user */
   const signOut = useCallback(() => {
-    const cognitoUser = userPool.getCurrentUser();
+    const cognitoUser = userPool?.getCurrentUser();
     if (cognitoUser) {
       cognitoUser.signOut();
     }
