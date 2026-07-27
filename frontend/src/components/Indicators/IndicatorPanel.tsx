@@ -27,6 +27,25 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
   currentInterval = '1day'
 }) => {
   const [showAdd, setShowAdd] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('indicator_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapse = () => {
+    setIsCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('indicator_collapsed', String(next));
+      } catch (err) {
+        console.warn(err);
+      }
+      return next;
+    });
+  };
 
   // Helper to determine current US Market Session
   const getMarketSession = () => {
@@ -63,7 +82,9 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
     if (type === 'RSI') params = { period: 14 };
     if (type === 'MACD') params = { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
     if (type === 'BOLLINGER') params = { period: 20, stdDev: 2 };
-    if (type === 'VOLUME') params = {};
+    if (type === 'ATR') params = { period: 14 };
+    if (type === 'STOCHASTIC') params = { periodK: 14, periodD: 3 };
+    if (type === 'VOLUME' || type === 'VWAP') params = {};
 
     const newIndicator: IndicatorType = {
       type,
@@ -87,19 +108,26 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
   };
 
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
-        <div className={styles.headerTitleGroup}>
-          <span className={styles.sectionIcon}>📊</span>
-          <h3>Indicators</h3>
-          <span className={styles.badge}>{indicators.length}</span>
+        {!isCollapsed && (
+          <div className={styles.headerTitleGroup}>
+            <span className={styles.sectionIcon}>📊</span>
+            <h3>Indicators</h3>
+            <span className={styles.badge}>{indicators.length}</span>
+          </div>
+        )}
+        <div className={styles.headerActions}>
+          <button onClick={() => setShowAdd(!showAdd)} className={styles.addBtn} title="Add Indicator">
+            {showAdd ? '✕' : '+'}
+          </button>
+          <button onClick={toggleCollapse} className={styles.collapseBtn} title={isCollapsed ? "Expand Indicators" : "Collapse Indicators"}>
+            {isCollapsed ? '«' : '»'}
+          </button>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)} className={styles.addBtn} title="Add Indicator">
-          {showAdd ? '✕' : '+'}
-        </button>
       </div>
       
-      {showAdd && (
+      {showAdd && !isCollapsed && (
         <div className={styles.addMenu}>
           <div className={styles.addMenuHeader}>Add Technical Indicator</div>
           <button onClick={() => handleAdd('SMA')}>📈 SMA (Simple Moving Avg)</button>
@@ -107,12 +135,21 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
           <button onClick={() => handleAdd('RSI')}>🌀 RSI (Relative Strength Index)</button>
           <button onClick={() => handleAdd('MACD')}>📊 MACD Oscillator</button>
           <button onClick={() => handleAdd('BOLLINGER')}>🛡️ Bollinger Bands</button>
+          <button onClick={() => handleAdd('ATR')}>📉 ATR (Average True Range)</button>
+          <button onClick={() => handleAdd('STOCHASTIC')}>📉 Stochastic Oscillator</button>
+          <button onClick={() => handleAdd('VWAP')}>📈 VWAP</button>
           <button onClick={() => handleAdd('VOLUME')}>📊 Volume Histogram</button>
         </div>
       )}
 
       <div className={styles.list}>
-        {indicators.length === 0 ? (
+        {isCollapsed ? (
+          indicators.map((ind, i) => (
+            <div key={`${ind.type}-${i}`} className={styles.collapsedItem} title={ind.type}>
+              <span className={styles.collapsedSymbol}>{ind.type.slice(0, 3)}</span>
+            </div>
+          ))
+        ) : indicators.length === 0 ? (
           <div className={styles.empty}>
             <span className={styles.emptyIcon}>🔍</span>
             <p>No active indicators</p>
@@ -130,9 +167,10 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
         )}
       </div>
       
-      <div className={styles.chartControls}>
-        <div className={styles.controlsHeaderRow}>
-          <h4 className={styles.controlsHeader}>
+      {!isCollapsed && (
+        <div className={styles.chartControls}>
+          <div className={styles.controlsHeaderRow}>
+            <h4 className={styles.controlsHeader}>
             <span className={styles.sectionIcon}>⚡</span> Overlays & Signals
           </h4>
           <span className={`${styles.statusBadge} ${styles[marketSession.type]}`}>
@@ -180,7 +218,8 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
             onChange={(e) => setShowInstitutionalSignals(e.target.checked)}
           />
         </label>
-      </div>
+        </div>
+      )}
     </div>
   );
 };

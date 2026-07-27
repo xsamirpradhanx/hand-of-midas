@@ -9,6 +9,12 @@
   -webkit-backdrop-filter: blur(16px);
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
   user-select: none;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.panel.collapsed {
+  width: 54px;
 }
 
 .header {
@@ -18,6 +24,11 @@
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
+}
+
+.panel.collapsed .header {
+  padding: 12px 8px;
+  justify-content: center;
 }
 
 .headerTitleGroup {
@@ -50,6 +61,12 @@
   border: 1px solid rgba(0, 212, 170, 0.3);
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .addBtn {
   background: rgba(0, 212, 170, 0.12);
   color: var(--accent-main);
@@ -71,6 +88,28 @@
   color: #0e1224;
   box-shadow: 0 0 12px rgba(0, 212, 170, 0.5);
   transform: scale(1.05);
+}
+
+.collapseBtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.collapseBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .addMenu {
@@ -120,6 +159,37 @@
   flex-direction: column;
   gap: 8px;
   scrollbar-width: thin;
+}
+
+.collapsedItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.collapsedItem:hover {
+  background: rgba(0, 212, 170, 0.15);
+  border-color: rgba(0, 212, 170, 0.3);
+  transform: scale(1.04);
+}
+
+.collapsedSymbol {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .empty {

@@ -14,3 +14,5 @@ export { calculateRSI } from './rsi';
 export { calculateMACD } from './macd';
 export { calculateBollingerBands } from './bollingerBands';
 export { calculateVWAP } from './vwap';
+export { calculateATR } from './atr';
+export { calculateStochastic } from './stochastic';

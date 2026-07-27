@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createMainChart, getSeriesColor } from '../../lib/chartHelpers';
+import { createMainChart } from '../../lib/chartHelpers';
 import { api } from '../../lib/api';
 import {
   IChartApi,
@@ -7,16 +7,11 @@ import {
   CandlestickSeries,
   LineSeries,
   AreaSeries,
-  HistogramSeries,
   MouseEventParams,
 } from 'lightweight-charts';
 import type { IndicatorConfig, OHLCVDataPoint } from '../../types';
-import { calculateSMA } from '../../lib/indicators/sma';
-import { calculateEMA } from '../../lib/indicators/ema';
-import { calculateRSI } from '../../lib/indicators/rsi';
-import { calculateMACD } from '../../lib/indicators/macd';
-import { calculateBollingerBands } from '../../lib/indicators/bollingerBands';
 import { calculateHeikinAshi } from '../../lib/indicators/heikinAshi';
+import { renderIndicators } from '../../lib/chartIndicatorRenderer';
 import { ZonePlugin, PredictiveZone } from '../../lib/chartPlugins/ZonePlugin';
 import { OHLCTooltip } from './OHLCTooltip';
 import type { ChartType } from './ChartTypeBar';
@@ -389,102 +384,9 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       }));
 
       const activeIndicators = indicators.filter(i => i.enabled);
-
-      // Track series by semantic key (type+period) so cleanup is deterministic across re-renders.
-      activeIndicators.forEach((ind, i) => {
-        if (ind.type === 'SMA' || ind.type === 'EMA') {
-          const period = Number(ind.params.period) || 14;
-          const calcData =
-            ind.type === 'SMA'
-              ? calculateSMA(indicatorData, period)
-              : calculateEMA(indicatorData, period);
-
-          const key = `${ind.type}_${period}`;
-          const series = chart.addSeries(LineSeries, {
-            color: ind.color || getSeriesColor(ind.type, i),
-            lineWidth: 2,
-          });
-          series.setData(calcData);
-          seriesMapRef.current.set(key, series);
-        } else if (ind.type === 'BOLLINGER') {
-          const period = Number(ind.params.period) || 20;
-          const stdDev = Number(ind.params.stdDev) || 2;
-          const bbData = calculateBollingerBands(indicatorData, period, stdDev);
-          const color = ind.color || '#2962FF';
-
-          const upper = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
-          const middle = chart.addSeries(LineSeries, { color, lineWidth: 1 });
-          const lower = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
-
-          upper.setData(bbData.map(d => ({ time: d.time, value: d.upper })));
-          middle.setData(bbData.map(d => ({ time: d.time, value: d.middle })));
-          lower.setData(bbData.map(d => ({ time: d.time, value: d.lower })));
-
-          seriesMapRef.current.set(`BOLLINGER_${period}_upper`, upper);
-          seriesMapRef.current.set(`BOLLINGER_${period}_middle`, middle);
-          seriesMapRef.current.set(`BOLLINGER_${period}_lower`, lower);
-        } else if (ind.type === 'RSI') {
-          const period = Number(ind.params.period) || 14;
-          const rsiData = calculateRSI(indicatorData, period);
-
-          const series = chart.addSeries(LineSeries, {
-            color: ind.color || '#9d4edd',
-            lineWidth: 2,
-          });
-          series.setData(rsiData);
-          seriesMapRef.current.set(`RSI_${period}`, series);
-        } else if (ind.type === 'VOLUME') {
-          const series = chart.addSeries(HistogramSeries, {
-            color: '#26a69a',
-            priceFormat: { type: 'volume' },
-            priceScaleId: 'volume',
-          });
-          chart.priceScale('volume').applyOptions({
-            scaleMargins: { top: 0.8, bottom: 0 },
-          });
-
-          // Ensure volume values are clean numbers and timestamps are unique
-          const volSeen = new Set<number | string>();
-          const volData: any[] = [];
-          for (const d of indicatorData) {
-            if (!volSeen.has(d.time)) {
-              volSeen.add(d.time);
-              const val = typeof d.volume === 'number' && !isNaN(d.volume) ? d.volume : 0;
-              volData.push({
-                time: d.time,
-                value: val,
-                color: d.close >= d.open ? '#00e676' : '#ff1744',
-              });
-            }
-          }
-
-          series.setData(volData);
-          seriesMapRef.current.set('VOLUME', series);
-        } else if (ind.type === 'MACD') {
-          const fast = Number(ind.params.fastPeriod) || 12;
-          const slow = Number(ind.params.slowPeriod) || 26;
-          const sig = Number(ind.params.signalPeriod) || 9;
-          const macdData = calculateMACD(indicatorData, fast, slow, sig);
-
-          const macdLine = chart.addSeries(LineSeries, { color: '#00b4d8', lineWidth: 2 });
-          const sigLine = chart.addSeries(LineSeries, { color: '#fca311', lineWidth: 1 });
-          const histLine = chart.addSeries(HistogramSeries, { color: '#e0a96d' });
-
-          macdLine.setData(macdData.map(d => ({ time: d.time, value: d.macd })));
-          sigLine.setData(macdData.map(d => ({ time: d.time, value: d.signal })));
-          histLine.setData(
-            macdData.map(d => ({
-              time: d.time,
-              value: d.histogram,
-              color: d.histogram >= 0 ? '#00e676' : '#ff1744',
-            })),
-          );
-
-          seriesMapRef.current.set('MACD_macd', macdLine);
-          seriesMapRef.current.set('MACD_signal', sigLine);
-          seriesMapRef.current.set('MACD_histogram', histLine);
-        }
-      });
+      
+      // Use abstracted renderer
+      renderIndicators(chart, indicatorData, activeIndicators, seriesMapRef);
       
       // ── Attach Zone Plugin if active ────────────────────────────────────────
       if (showPredictiveZones) {
@@ -523,14 +425,18 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
 
             // Re-apply autoscale to fit the newly attached zones, then disable again
             chart.priceScale('right').applyOptions({ autoScale: true });
+            
+            // Explicitly force the visible range to span all data points to eliminate left-side gaps
+            chart.timeScale().setVisibleLogicalRange({ from: 0, to: baseChartData.length - 1 });
+
             setTimeout(() => {
               chart.priceScale('right').applyOptions({ autoScale: false });
             }, 50);
           }
         }).catch(err => console.error("Failed to fetch predictive zones", err));
       }
-
-      chart.timeScale().fitContent();
+      // Force the logical range instead of fitContent to ensure the chart uses the full width
+      chart.timeScale().setVisibleLogicalRange({ from: 0, to: baseChartData.length - 1 });
       
       // Disable autoScale shortly after render to allow immediate vertical panning without having to drag the Y-axis
       requestAnimationFrame(() => {

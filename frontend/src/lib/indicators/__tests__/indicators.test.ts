@@ -14,6 +14,8 @@ import { calculateRSI } from '../rsi';
 import { calculateMACD } from '../macd';
 import { calculateBollingerBands } from '../bollingerBands';
 import { calculateVWAP } from '../vwap';
+import { calculateATR } from '../atr';
+import { calculateStochastic } from '../stochastic';
 import type { OHLCVBar } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -481,13 +483,14 @@ describe('calculateVWAP', () => {
   });
 
   it('handles zero volume gracefully', () => {
-    const zeroVolBars: OHLCVBar[] = [
-      { time: '2024-01-02T09:30:00Z', open: 100, high: 105, low: 99, close: 103, volume: 0 },
+    const zeroVolData: OHLCVBar[] = [
+      { time: '2024-01-01', open: 100, high: 105, low: 100, close: 102, volume: 0 },
     ];
-    const result = calculateVWAP(zeroVolBars);
+    const result = calculateVWAP(zeroVolData);
     expect(result).toHaveLength(1);
-    // cumVolume = 0 → VWAP = 0 (avoid NaN)
-    expect(result[0].value).toBe(0);
+    // cumVolume = 0 → VWAP = typicalPrice (to prevent chart plunge)
+    // typicalPrice = (105 + 100 + 102) / 3 = 307 / 3 = 102.333...
+    expect(result[0].value).toBeCloseTo(102.3333, 4);
   });
 });
 
@@ -540,5 +543,44 @@ describe('Cross-indicator integration', () => {
     expect(calculateBollingerBands(null)).toEqual([]);
     // @ts-expect-error intentional test of null input
     expect(calculateVWAP(null)).toEqual([]);
+    // @ts-expect-error intentional test of null input
+    expect(calculateATR(null)).toEqual([]);
+    // @ts-expect-error intentional test of null input
+    expect(calculateStochastic(null)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ATR Tests
+// ---------------------------------------------------------------------------
+describe('calculateATR', () => {
+  it('returns empty array for empty data', () => {
+    expect(calculateATR([], 14)).toEqual([]);
+  });
+
+  it('has correct output length', () => {
+    const period = 14;
+    const result = calculateATR(testBars, period);
+    expect(result).toHaveLength(testBars.length - period + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stochastic Oscillator Tests
+// ---------------------------------------------------------------------------
+describe('calculateStochastic', () => {
+  it('returns empty array for empty data', () => {
+    expect(calculateStochastic([], 14, 3)).toEqual([]);
+  });
+
+  it('has correct output length', () => {
+    const periodK = 14;
+    const periodD = 3;
+    const result = calculateStochastic(testBars, periodK, periodD);
+    // output length should be data.length - periodK + 1 - periodD + 1
+    // Wait, kValues has length data.length - periodK + 1
+    // dValues has length kValues.length - periodD + 1
+    const expectedLength = testBars.length - periodK + 1 - periodD + 1;
+    expect(result).toHaveLength(expectedLength);
   });
 });

@@ -90,10 +90,15 @@ export function calculateVWAP(data: OHLCVBar[]): IndicatorValue[] {
     }
 
     const typicalPrice = (bar.high + bar.low + bar.close) / 3;
-    cumulativeTPV += typicalPrice * bar.volume;
-    cumulativeVolume += bar.volume;
+    const vol = typeof bar.volume === 'number' && !isNaN(bar.volume) ? bar.volume : 0;
+    
+    cumulativeTPV += typicalPrice * vol;
+    cumulativeVolume += vol;
 
-    const vwap = cumulativeVolume === 0 ? 0 : cumulativeTPV / cumulativeVolume;
+    // If cumulativeVolume is 0 (e.g. pre-market or illiquid stock), fallback to typicalPrice instead of 0
+    // to prevent the indicator line from plunging to the bottom of the chart.
+    const vwap = cumulativeVolume === 0 ? typicalPrice : cumulativeTPV / cumulativeVolume;
+    
     result.push({
       time: bar.time,
       value: vwap,
