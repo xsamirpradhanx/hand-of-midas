@@ -52,6 +52,9 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
     return { price, delta: isCall && price > 0 ? 1 : (!isCall && price > 0 ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, vanna: 0, charm: 0, vomma: 0, speed: 0, color: 0, iv: sigma };
   }
 
+  // Clamp T to a minimum of 1 calendar day to prevent gamma/vanna blow-up on 0-DTE options
+  const T_eff = Math.max(T, 1 / 365);
+
   if (sigma <= 0) {
     const pvK = K * Math.exp(-r * T);
     const isCall = type === 'call';
@@ -59,8 +62,8 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
     return { price, delta: isCall && S > pvK ? 1 : (!isCall && S < pvK ? -1 : 0), gamma: 0, theta: 0, vega: 0, rho: 0, vanna: 0, charm: 0, vomma: 0, speed: 0, color: 0, iv: sigma };
   }
 
-  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (r + (sigma * sigma) / 2.0) * T_eff) / (sigma * Math.sqrt(T_eff));
+  const d2 = d1 - sigma * Math.sqrt(T_eff);
 
   const isCall = type === 'call';
   const w = isCall ? 1 : -1;
@@ -69,25 +72,27 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
   const N_d2 = normCDF(w * d2);
   const n_d1 = normPDF(d1);
 
-  const discount = Math.exp(-r * T);
+  const discount = Math.exp(-r * T_eff);
 
   const price = w * (S * N_d1 - K * discount * N_d2);
   const delta = w * N_d1;
-  const gamma = n_d1 / (S * sigma * Math.sqrt(T));
-  const vega = S * n_d1 * Math.sqrt(T) / 100.0; // Per 1%
-  const rho = w * K * T * discount * N_d2 / 100.0; // Per 1%
+  const gamma = n_d1 / (S * sigma * Math.sqrt(T_eff));
+  const vega = S * n_d1 * Math.sqrt(T_eff) / 100.0; // Per 1%
+  const rho = w * K * T_eff * discount * N_d2 / 100.0; // Per 1%
 
-  const theta1 = -(S * n_d1 * sigma) / (2.0 * Math.sqrt(T));
+  const theta1 = -(S * n_d1 * sigma) / (2.0 * Math.sqrt(T_eff));
   const theta2 = w * r * K * discount * N_d2;
   const theta = (theta1 - theta2) / 365.0; // Per day
 
   // Higher-Order Greeks
   // Vanna: d(Delta)/d(Vol) = d(Vega)/d(Spot)
-  const vanna = vega * 100.0 * (1 - d1 / (sigma * Math.sqrt(T))) / S;
+  // Correct closed-form: -n(d1) * d2 / sigma
+  // Previously used vega-based approximation which gave wrong sign/magnitude for ITM/OTM options.
+  const vanna = -n_d1 * d2 / sigma;
   
   // Charm: d(Delta)/d(Time). Usually scaled per day
   const q = 0; // dividend yield assumption
-  const charmRaw = -n_d1 * ((2 * (r - q) * T - d2 * sigma * Math.sqrt(T)) / (2 * T * sigma * Math.sqrt(T)));
+  const charmRaw = -n_d1 * ((2 * (r - q) * T_eff - d2 * sigma * Math.sqrt(T_eff)) / (2 * T_eff * sigma * Math.sqrt(T_eff)));
   const charm = (w === 1 ? q * discount * N_d1 : -q * discount * N_d1) + discount * charmRaw;
   const charmPerDay = charm / 365.0;
 
@@ -95,11 +100,11 @@ export function blackScholes(S: number, K: number, T: number, r: number, sigma: 
   const vomma = vega * 100.0 * (d1 * d2 / sigma) / 100.0; // Scaled per 1%
 
   // Speed: d(Gamma)/d(Spot)
-  const speed = -gamma / S * (d1 / (sigma * Math.sqrt(T)) + 1);
+  const speed = -gamma / S * (d1 / (sigma * Math.sqrt(T_eff)) + 1);
 
   // Color: d(Gamma)/d(Time)
-  const colorRaw = -Math.exp(-q * T) * n_d1 / (2 * S * T * sigma * Math.sqrt(T)) * 
-    (2 * q * T + 1 + (2 * (r - q) * T - d2 * sigma * Math.sqrt(T)) * d1 / (sigma * Math.sqrt(T)));
+  const colorRaw = -Math.exp(-q * T_eff) * n_d1 / (2 * S * T_eff * sigma * Math.sqrt(T_eff)) * 
+    (2 * q * T_eff + 1 + (2 * (r - q) * T_eff - d2 * sigma * Math.sqrt(T_eff)) * d1 / (sigma * Math.sqrt(T_eff)));
   const colorPerDay = colorRaw / 365.0;
 
   return { price, delta, gamma, theta, vega, rho, vanna, charm: charmPerDay, vomma, speed, color: colorPerDay, iv: sigma };

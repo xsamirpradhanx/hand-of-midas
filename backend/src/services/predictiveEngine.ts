@@ -13,6 +13,10 @@ import { TermStructureFactor } from './factors/termStructure.js';
 import { HurstExponentFactor } from './factors/hurstExponent.js';
 import { KamaZScoreFactor } from './factors/kamaZScore.js';
 import { InsiderCatalystFactor } from './factors/insiderCatalyst.js';
+import { IvRvRatioFactor } from './factors/ivRvRatio.js';
+import { MaxPainDriftFactor } from './factors/maxPainDrift.js';
+import { VannaDeltaPressureFactor } from './factors/vannaDeltaPressure.js';
+import { SmartMoneyFlowFactor } from './factors/smartMoneyFlow.js';
 import { CompositeScoreAgent } from './compositeScore.js';
 
 export interface PredictiveZone {
@@ -36,19 +40,29 @@ export interface PredictiveEngineResult {
 
 const aiAgent = new CompositeScoreAgent();
 
-// Complete Registry of 12 modular quantitative factor plugins
+// Complete Registry of 16 modular quantitative factor plugins
+// (12 original + 4 new institutional alpha factors from the quant audit)
 const registeredFactors: PredictiveFactor[] = [
+  // ── Price Action & Volume ──────────────────────────────────────────────────
   new VolumeProfileFactor(),
   new AnchoredVwapFactor(),
   new EstimatedCvdFactor(),
   new HvlrSupportFactor(),
   new AtrVolatilityFactor(),
-  new DealerHedgingFactor(),
+  // ── Regime & Momentum ─────────────────────────────────────────────────────
+  new HurstExponentFactor(),
+  new KamaZScoreFactor(),
+  // ── Options & Dealer Dynamics ─────────────────────────────────────────────
+  new DealerHedgingFactor(),        // Multi-expiry GEX + interpolated flip
   new OptionsSqueezeFactor(),
   new RiskReversalSkewFactor(),
   new TermStructureFactor(),
-  new HurstExponentFactor(),
-  new KamaZScoreFactor(),
+  // ── New Institutional Alpha Factors ───────────────────────────────────────
+  new IvRvRatioFactor(),            // IV/RV ratio — volatility premium edge
+  new MaxPainDriftFactor(),         // Max pain gravitational drift near OpEx
+  new VannaDeltaPressureFactor(),   // Vanna-driven MM spot hedging pressure
+  new SmartMoneyFlowFactor(),       // Smart money vs retail flow decoupling
+  // ── News & Catalyst ───────────────────────────────────────────────────────
   new InsiderCatalystFactor(),
 ];
 
@@ -98,7 +112,8 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
   const activeFactors = factorEvaluations.filter((res): res is FactorResult => res !== null);
 
   // 5. Run AI Synthesis Agent over all factor outputs
-  const synthesis = aiAgent.synthesize(sym, currentPrice, activeFactors);
+  // Pass `bars` so the agent can compute ATR-adaptive zone spread
+  const synthesis = aiAgent.synthesize(sym, currentPrice, activeFactors, bars);
 
   const zones: PredictiveZone[] = [
     {
@@ -111,7 +126,8 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
       type: 'sell',
       priceTop: synthesis.sellZone.top,
       priceBottom: synthesis.sellZone.bottom,
-      convictionScore: Number((1 - (synthesis.overallConviction * 0.5)).toFixed(2)),
+      // Previously artificially halved — both zones now reflect the same underlying conviction
+      convictionScore: synthesis.overallConviction,
     },
   ];
 

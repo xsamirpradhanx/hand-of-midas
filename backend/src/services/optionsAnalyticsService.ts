@@ -256,7 +256,7 @@ async function buildTermStructure(
   const nearIV = points[0]!.averageIV;
   const farIV = points[points.length - 1]!.averageIV;
   const slopeRatio = nearIV / farIV;
-  const classification = classifyTermStructure(nearIV, farIV);
+  const classification = classifyTermStructure(points);
 
   return {
     points,
@@ -320,27 +320,45 @@ function computeRiskReversal(
 }
 
 /**
- * Compute Gamma Exposure (GEX) profile across strikes.
+ * Compute Gamma Exposure (GEX) profile across strikes, aggregated across multiple expirations.
  * NOTE: This is an OI-based proxy. It assumes dealers are long calls and short puts.
  * Open interest does not definitively reveal customer vs. dealer positioning, so 
  * "net gamma" and "gamma flip" are assumptions, not measured facts.
+ *
+ * Multi-expiry weighting: each expiry is weighted by 1/DTE so near-term gamma
+ * dominates (as it should — near-expiry gamma is ~10x larger per dollar of OI).
+ * The gamma flip price is interpolated linearly between the two bracketing strikes.
  */
 function computeGexProfile(
   contracts: PolygonOptionsContract[],
   spot: number,
-  timeToExpiryYears: number,
+  expirations: string[],
 ): GexSummary | null {
   const gexByStrike: Record<number, number> = {};
 
+  // Nearest 6 expirations to avoid O(N²) BSM calls for very long chains
+  const targetExpiries = new Set(expirations.slice(0, 6));
+
   for (const c of contracts) {
+    const expiry = c.details.expiration_date;
+    if (!targetExpiries.has(expiry)) continue;
+
     const strike = c.details.strike_price;
     const type = c.details.contract_type;
     const oi = c.day.open_interest || 0;
     const iv = c.implied_volatility || 0;
     if (oi === 0 || iv === 0 || strike <= 0) continue;
 
-    const { gamma } = blackScholes(spot, strike, timeToExpiryYears, getRiskFreeRate(), iv, type);
-    const gex = gamma * oi * 100 * spot * spot * 0.01;
+    // T_eff guard: clamp to 1 calendar day minimum to prevent 0-DTE gamma explosion
+    const rawT = getTimeToExpiryYears(expiry);
+    const t = Math.max(rawT, 1 / 365);
+
+    // Inverse-DTE weight: nearer expiries have proportionally larger gamma contribution
+    const dte = Math.max(1, t * 365);
+    const dteWeight = 1 / dte;
+
+    const { gamma } = blackScholes(spot, strike, t, getRiskFreeRate(), iv, type);
+    const gex = gamma * oi * 100 * spot * spot * 0.01 * dteWeight;
     const signed = type === 'call' ? gex : -gex;
     gexByStrike[strike] = (gexByStrike[strike] || 0) + signed;
   }
@@ -354,6 +372,7 @@ function computeGexProfile(
   const isNetPositive = netGamma >= 0;
   const sortedProfile = [...profile].sort((a, b) => isNetPositive ? a.strike - b.strike : b.strike - a.strike);
 
+  // Interpolated gamma-flip price: linear interpolation between the two bracketing strikes
   let gammaFlipStrike = 0;
   let cumulative = 0;
   for (let i = 0; i < sortedProfile.length; i++) {
@@ -361,7 +380,10 @@ function computeGexProfile(
     cumulative += sortedProfile[i]!.totalGex;
     
     if (i > 0 && prev !== 0 && Math.sign(prev) !== Math.sign(cumulative)) {
-      gammaFlipStrike = sortedProfile[i]!.strike;
+      const strikeA = sortedProfile[i - 1]!.strike;
+      const strikeB = sortedProfile[i]!.strike;
+      // Linear zero-crossing interpolation: x0 + (x1-x0) * |prev| / (|prev| + |curr|)
+      gammaFlipStrike = strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulative));
       break;
     }
   }
@@ -409,11 +431,8 @@ export async function getOptionsAnalytics(
     const dte = await getDTE(targetExpiry);
     riskReversal = computeRiskReversalFromContracts(contracts, spotPrice, targetExpiry, dte);
 
-    const nearestContracts = contracts.filter(
-      c => c.details.expiration_date === targetExpiry,
-    );
-    const t = Math.max(1 / 365, getTimeToExpiryYears(targetExpiry));
-    gex = computeGexProfile(nearestContracts, spotPrice, t);
+    // Multi-expiry GEX: pass full contracts array and all expirations; function handles slicing to nearest 6
+    gex = computeGexProfile(contracts, spotPrice, expirations);
   }
 
   const termStructure = await buildTermStructure(sym, expirations, contracts);

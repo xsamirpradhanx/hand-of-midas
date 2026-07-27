@@ -37,8 +37,10 @@ export class KamaZScoreFactor implements PredictiveFactor {
     if (stdDev === 0) return null;
 
     const zScore = (currentPrice - kama) / stdDev;
-    const isOversold = zScore < -1.8;
-    const isOverbought = zScore > 1.8;
+    // ±2.0σ is the standard statistical threshold for meaningful mean-reversion extremes.
+    // Previously ±1.8σ fired too frequently (top/bottom 7.2% of observations vs 4.6% at ±2σ).
+    const isOversold = zScore < -2.0;
+    const isOverbought = zScore > 2.0;
 
     const bias = isOversold ? 'bullish' : isOverbought ? 'bearish' : 'neutral';
     const buyTarget = isOversold ? currentPrice * 0.995 : currentPrice * 0.98;
@@ -50,7 +52,7 @@ export class KamaZScoreFactor implements PredictiveFactor {
       sellTarget,
       bias,
       weight: 0.20,
-      reasoning: `KAMA Z-Score Distance is ${zScore >= 0 ? '+' : ''}${zScore.toFixed(2)}σ (KAMA at $${kama.toFixed(2)}). ${isOversold ? 'OVERSOLD: High statistical probability of mean-reversion rally.' : isOverbought ? 'OVERBOUGHT: High probability of mean-reversion pullback.' : 'Price within normal 2σ statistical distribution.'}`,
+      reasoning: `KAMA Z-Score Distance is ${zScore >= 0 ? '+' : ''}${zScore.toFixed(2)}σ (KAMA at $${kama.toFixed(2)}). ${isOversold ? 'OVERSOLD (< −2σ): High statistical probability of mean-reversion rally.' : isOverbought ? 'OVERBOUGHT (> +2σ): High probability of mean-reversion pullback.' : 'Price within normal ±2σ statistical distribution.'}`,
     };
   }
 }

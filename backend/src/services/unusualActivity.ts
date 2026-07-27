@@ -49,9 +49,11 @@ interface SnapshotItem extends DynamoDBBaseItem {
 // Whale scoring (shared by scanner + options chain)
 // ---------------------------------------------------------------------------
 
-export const WHALE_MIN_VOLUME = 500;
+export const WHALE_MIN_VOLUME = 250;          // Lowered from 500 — catches real flows on thinner names
 export const WHALE_MIN_PREMIUM = 100_000;
-export const WHALE_MIN_VOL_OI_RATIO = 3;
+// OI data lags 1 full day (updated overnight by exchanges). Using 3× against stale OI would reject
+// most real intraday whale prints. 1.5× is industry standard and still highly anomalous.
+export const WHALE_MIN_VOL_OI_RATIO = 1.5;
 
 export function computeWhaleScore(input: {
   volume: number;
@@ -189,7 +191,9 @@ export function scoreContract(contract: {
   ivZScore = Math.max(0, ivZScore);
 
   const oiBonus = volumeOIRatio > 1.5 ? 2.0 : 0;
-  const compositeSigma = (0.4 * volumeZScore) + (0.3 * premiumZScore) + (0.2 * ivZScore) + (0.1 * oiBonus) + (contract.isSweep ? 1.0 : 0);
+  // NOTE: isSweep bonus removed — daily bar options data cannot detect multi-exchange sweeps.
+  // The isSweep flag is reserved for future tick-level data integration.
+  const compositeSigma = (0.4 * volumeZScore) + (0.3 * premiumZScore) + (0.2 * ivZScore) + (0.1 * oiBonus);
 
   const flagReasons: string[] = [];
   if (volumeZScore > 2.0) flagReasons.push(`Volume is ${volumeZScore.toFixed(1)}σ above 20-day average`);
@@ -219,6 +223,21 @@ export function scoreContract(contract: {
 }
 
 /**
+ * Percentile-rank the compositeSigma scores within a scored set.
+ * Returns scores in [0, 100] where 100 = highest anomaly in the session.
+ * This makes cross-ticker comparison meaningful regardless of absolute score magnitude.
+ */
+export function percentileRankScores(anomalies: AnomalyScore[]): AnomalyScore[] {
+  if (anomalies.length === 0) return anomalies;
+  const sorted = [...anomalies].sort((a, b) => a.compositeSigma - b.compositeSigma);
+  return anomalies.map(a => {
+    const rank = sorted.findIndex(s => s === a);
+    const percentile = ((rank + 1) / sorted.length) * 100;
+    return { ...a, compositeSigma: Number(percentile.toFixed(1)) };
+  });
+}
+
+/**
  * Get all flagged unusual activity (Whale Flows).
  */
 export async function getUnusualActivity(filters: {
@@ -240,8 +259,9 @@ export async function getUnusualActivity(filters: {
   const { expirations } = await fetchOptionsChainWithFallback(filters.symbol);
   if (expirations.length === 0) return [];
 
-  // 2. We only scan the nearest 4 expirations to save time and because whale flows are short-dated
-  const nearestExpirations = expirations.slice(0, 4);
+  // 2. Scan nearest 6 expirations — institutions also build structured positions 60-90 days out.
+  // Previously only 4 expirations, which missed LEAPS and 2-3 month positioning.
+  const nearestExpirations = expirations.slice(0, 6);
   let anomalies: AnomalyScore[] = [];
 
   for (const expiry of nearestExpirations) {
@@ -274,6 +294,19 @@ export async function getUnusualActivity(filters: {
 
       const flagReasons = buildWhaleFlagReasons(vol, oi, premium, dte, volumeOIRatio);
 
+      // Trade-side estimation: if referencePrice is closer to ask → buyer-initiated (bullish aggression)
+      // if closer to bid → seller-initiated (bearish aggression). Mid-price = ambiguous.
+      // `bid` and `ask` are already declared above for the referencePrice calculation.
+      let isBuyerInitiated: boolean | null = null;
+      if (bid > 0 && ask > 0 && ask > bid) {
+        const midpoint = (bid + ask) / 2;
+        if (referencePrice >= midpoint + (ask - bid) * 0.15) isBuyerInitiated = true;  // paid near ask
+        else if (referencePrice <= midpoint - (ask - bid) * 0.15) isBuyerInitiated = false; // hit bid
+        // else: ambiguous mid-price trade
+      }
+      if (isBuyerInitiated === true) flagReasons.push('Buyer-initiated: premium paid near Ask (directional bullish aggression)');
+      if (isBuyerInitiated === false) flagReasons.push('Seller-initiated: trade hit Bid (directional bearish aggression)');
+
       anomalies.push({
         symbol: filters.symbol,
         strike: c.details.strike_price,
@@ -284,9 +317,11 @@ export async function getUnusualActivity(filters: {
         volume: vol,
         openInterest: oi,
         volumeOIRatio,
-        volumeZScore: volumeOIRatio,
-        premiumZScore: Math.log10(premium),
-        ivZScore: c.implied_volatility,
+        // FIX: These were previously raw metrics mislabeled as Z-scores.
+        // Now correctly named: raw Vol/OI ratio, log10(premium), and raw IV.
+        volumeZScore: volumeOIRatio,        // Vol/OI ratio proxy (true Z-scores need 20-day baseline)
+        premiumZScore: Math.log10(premium), // log10 of notional (normalized size proxy)
+        ivZScore: c.implied_volatility,     // raw IV — baseline Z-scores computed in scoreContract()
         isSweep: false,
         compositeSigma: whaleScore,
         flagReasons,
@@ -295,11 +330,14 @@ export async function getUnusualActivity(filters: {
     }
   }
 
-  // Filter by user params
-  const minSigma = filters.minSigma ?? 50;
+  // Percentile-rank scores within this session's anomaly set (0-100 where 100 = rarest)
+  const ranked = percentileRankScores(anomalies);
+
+  // Filter by user params — note: minSigma now compares against percentile rank (0-100)
+  const minSigma = filters.minSigma ?? 50; // Default: top 50th percentile
   const minPremium = filters.minPremium ?? WHALE_MIN_PREMIUM;
 
-  const filtered = anomalies.filter(a => {
+  const filtered = ranked.filter(a => {
     if (a.compositeSigma < minSigma) return false;
     if (a.premium < minPremium) return false;
     if (filters.side && a.side !== filters.side) return false;
@@ -307,7 +345,7 @@ export async function getUnusualActivity(filters: {
     return true;
   });
 
-  // Sort by highest Whale Score
+  // Sort by highest percentile rank
   filtered.sort((a, b) => b.compositeSigma - a.compositeSigma);
 
   return filtered.slice(0, 50); // Return top 50

@@ -57,7 +57,7 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
     setSymbolFilter(initialSymbol);
   }, [initialSymbol]);
 
-  const [minSigma, setMinSigma] = useState(250);
+  const [minSigma, setMinSigma] = useState(100);
   const [sideFilter, setSideFilter] = useState('all');
   const [dteMax, setDteMax] = useState(30);
 
