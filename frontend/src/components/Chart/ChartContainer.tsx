@@ -120,10 +120,13 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           ordered.sort((a, b) => parseDt(a.datetime) - parseDt(b.datetime));
 
           if (quoteResult && ordered.length > 0) {
+            const currentPrice = (showExtendedHours && quoteResult.preMarketPrice != null) 
+              ? quoteResult.preMarketPrice 
+              : quoteResult.price;
             const lastBar = { ...ordered[ordered.length - 1] };
-            lastBar.close = quoteResult.price;
-            if (quoteResult.price > lastBar.high) lastBar.high = quoteResult.price;
-            if (quoteResult.price < lastBar.low) lastBar.low = quoteResult.price;
+            lastBar.close = currentPrice;
+            if (currentPrice > lastBar.high) lastBar.high = currentPrice;
+            if (currentPrice < lastBar.low) lastBar.low = currentPrice;
             ordered[ordered.length - 1] = lastBar;
           }
           rawDataRef.current = ordered;
