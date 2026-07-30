@@ -454,3 +454,76 @@
   font-size: 0.8rem;
   color: var(--text-muted);
 }
+
+/* ── IV delta coloring ─────────────────────────────────────────────────────── */
+
+.ivSpikeUp {
+  color: #f5a623;
+  font-weight: 600;
+}
+
+.ivSpikeDown {
+  color: #6ec6ff;
+  font-weight: 600;
+}
+
+/* ── Stock change coloring ─────────────────────────────────────────────────── */
+
+.stockUp {
+  color: #4caf82;
+  font-weight: 600;
+}
+
+.stockDown {
+  color: #e05c5c;
+  font-weight: 600;
+}
+
+/* ── Earnings event chip ───────────────────────────────────────────────────── */
+
+.earningsChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(179, 136, 255, 0.18) 0%, rgba(212, 175, 55, 0.15) 100%);
+  border: 1px solid rgba(179, 136, 255, 0.35);
+  color: #c9a8ff;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* ── Responsive Methodology Panel (Marquee) ─────────────────────────────────── */
+
+@media (max-width: 1650px) {
+  .methodologyPanel {
+    overflow: hidden;
+  }
+  
+  .methodologyGrid {
+    display: flex;
+    flex-wrap: nowrap;
+    width: max-content;
+    /* 6 cards * 280px + 5 * 16px gap = 1760px */
+    animation: methodologyAutoScroll 15s linear infinite alternate;
+    cursor: pointer;
+  }
+  
+  .methodologyGrid.paused {
+    animation-play-state: paused;
+  }
+  
+  .metricCard {
+    width: 280px;
+    flex-shrink: 0;
+  }
+}
+
+@keyframes methodologyAutoScroll {
+  0% { transform: translateX(0); }
+  /* Approximate scroll distance: total width minus container width (roughly 100vw - 48px padding) */
+  100% { transform: translateX(calc(-1760px + 100vw - 48px)); }
+}

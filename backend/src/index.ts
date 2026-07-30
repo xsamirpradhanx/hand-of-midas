@@ -15,6 +15,7 @@ import * as insights from './routes/insights.js';
 import * as alerts from './routes/alerts.js';
 import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
+import * as screener from './routes/screener.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -252,6 +253,17 @@ const routes: readonly Route[] = [
     pattern: '/api/predictive/zones/:symbol',
     handler: async (event, params) => {
       return predictive.getPredictionZonesRoute(event, params);
+    },
+  },
+  
+  // ── Screener ───────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    pattern: '/api/screener',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return screener.getScreener(event);
     },
   },
 

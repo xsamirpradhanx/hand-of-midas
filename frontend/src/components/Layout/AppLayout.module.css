@@ -186,6 +186,36 @@
   gap: 16px;
 }
 
+.screenerBtn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--gold-bright, #f5c842);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  text-decoration: none;
+}
+
+.screenerBtn:hover {
+  background: rgba(245, 200, 66, 0.15);
+  border-color: rgba(245, 200, 66, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(245, 200, 66, 0.2);
+}
+
+.screenerBtn:active {
+  transform: translateY(0);
+}
+
+.icon {
+  filter: drop-shadow(0 0 6px rgba(245, 200, 66, 0.4));
+}
+
 .liveBadge {
   display: flex;
   align-items: center;

@@ -165,8 +165,21 @@ export async function getUnusualActivityFeed(
     const minPremium = parseFloat(event.queryStringParameters?.['minPremium'] || '100000');
     const side = event.queryStringParameters?.['side'] as 'call' | 'put' | undefined;
     const dteMax = event.queryStringParameters?.['dteMax'] ? parseInt(event.queryStringParameters?.['dteMax'], 10) : undefined;
-    
-    const feed = await getUnusualActivity({ symbol, minSigma, minPremium, side, dteMax });
+
+    // Fetch underlying quote to surface stock % change alongside whale flow rows.
+    // Non-fatal — the feed still works without it.
+    let stockChangePercent: number | undefined;
+    if (symbol) {
+      try {
+        const { getQuote } = await import('../services/polygon.js');
+        const quote = await getQuote(symbol);
+        stockChangePercent = quote.changePercent / 100; // normalize to decimal (e.g. -10% → -0.10)
+      } catch {
+        // ignore — changePercent just won't be populated
+      }
+    }
+
+    const feed = await getUnusualActivity({ symbol, minSigma, minPremium, side, dteMax, stockChangePercent });
     return jsonResponse(200, { data: feed });
   } catch (err: any) {
     return jsonResponse(500, { error: err.message });

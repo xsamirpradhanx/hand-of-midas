@@ -148,4 +148,7 @@ export const api = {
     const qs = params.toString();
     return fetchWithAuth(`/options-analytics/${symbol}${qs ? `?${qs}` : ''}`);
   },
+
+  getScreener: (mode: 'premarket' | 'open'): Promise<any[]> =>
+    fetchWithAuth(`/screener?mode=${mode}`),
 };

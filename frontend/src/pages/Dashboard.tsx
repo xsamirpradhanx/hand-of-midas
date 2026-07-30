@@ -8,6 +8,7 @@ import { IndicatorPanel } from '../components/Indicators/IndicatorPanel';
 import { OptionsDashboard } from '../components/Options/OptionsDashboard';
 import { UnusualActivityFeed } from '../components/Options/UnusualActivityFeed';
 import { PortfolioDashboard } from './PortfolioDashboard';
+
 import { api } from '../lib/api';
 import type { IndicatorConfig } from '../types';
 import styles from './Dashboard.module.css';
@@ -114,6 +115,7 @@ export const Dashboard: React.FC = () => {
           <button className={`${styles.tab} ${activeTab === 'chart' ? styles.active : ''}`} onClick={() => setActiveTab('chart')}>Chart</button>
           <button className={`${styles.tab} ${activeTab === 'options' ? styles.active : ''}`} onClick={() => setActiveTab('options')}>Options Chain</button>
           <button className={`${styles.tab} ${activeTab === 'unusual' ? styles.active : ''}`} onClick={() => setActiveTab('unusual')}>🐋 Whale Flow</button>
+
           <button className={`${styles.tab} ${activeTab === 'portfolio' ? styles.active : ''}`} onClick={() => setActiveTab('portfolio')}>Portfolio</button>
         </div>
 

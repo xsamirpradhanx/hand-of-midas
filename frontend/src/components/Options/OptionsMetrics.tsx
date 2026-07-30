@@ -301,34 +301,64 @@ export const OptionsMetrics: React.FC<Props> = ({ symbol, activeExpiry }) => {
           <p className={styles.subtext}>Net dealer gamma by strike · Positive = call gamma · Negative = put gamma</p>
 
           <div className={styles.gexChartContainer}>
-            {data.gexProfile.length > 0 && maxAbsGex > 0 ? (
-              <svg width="100%" height="250" viewBox={`0 0 ${data.gexProfile.length * 15} 250`} preserveAspectRatio="none">
-                <line x1="0" y1="125" x2={data.gexProfile.length * 15} y2="125" stroke="rgba(255,255,255,0.1)" strokeWidth="1" strokeDasharray="4" />
-                {data.gexProfile.map((d, i) => {
-                  const x = i * 15;
-                  const callHeight = (d.callGex / maxAbsGex) * 100;
-                  const putHeight = (Math.abs(d.putGex) / maxAbsGex) * 100;
-                  // Dim low-liquidity strikes relative to peak
-                  const strikeOpacity = Math.max(0.3, Math.min(0.85, (Math.abs(d.callGex) + Math.abs(d.putGex)) / (Math.abs(maxGexValue) * 0.2)));
+            {data.gexProfile.length > 0 && maxAbsGex > 0 ? (() => {
+              const CHART_W = 800;
+              const CHART_H = 440;         // extra height for rotated labels
+              const MID = 165;
+              const BAR_AREA = 145; // max bar height in px — bigger for visibility
+              const LABEL_Y = CHART_H - 60; // anchor point for rotated strike labels
+              const n = data.gexProfile.length;
+              // Distribute bars evenly across the fixed width with padding
+              const PAD = 40;
+              const slotW = n > 1 ? (CHART_W - PAD * 2) / n : CHART_W - PAD * 2;
+              const barW = Math.max(8, Math.min(40, slotW * 0.72));
 
-                  return (
-                    <g key={d.strike}>
-                      {callHeight > 0 && (
-                        <rect x={x + 2} y={125 - callHeight} width="10" height={callHeight} fill="#00d4aa" opacity={strikeOpacity} rx="1" />
-                      )}
-                      {putHeight > 0 && (
-                        <rect x={x + 2} y={125} width="10" height={putHeight} fill="#ff4d4d" opacity={strikeOpacity} rx="1" />
-                      )}
-                      {i % Math.ceil(data.gexProfile.length / 15) === 0 && (
-                        <text x={x + 7} y="240" fill="#6b6b8a" fontSize="10" textAnchor="end" transform={`rotate(-45, ${x + 7}, 240)`}>
-                          {d.strike}
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
-            ) : (
+              return (
+                <svg
+                  width="100%"
+                  height={CHART_H}
+                  viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  overflow="visible"
+                >
+                  {/* Zero line */}
+                  <line x1={PAD} y1={MID} x2={CHART_W - PAD} y2={MID} stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" strokeDasharray="5" />
+                  {data.gexProfile.map((d, i) => {
+                    const cx = PAD + i * slotW + slotW / 2;
+                    const x = cx - barW / 2;
+                    const callHeight = (d.callGex / maxAbsGex) * BAR_AREA;
+                    const putHeight = (Math.abs(d.putGex) / maxAbsGex) * BAR_AREA;
+                    const strikeOpacity = Math.max(0.4, Math.min(1, (Math.abs(d.callGex) + Math.abs(d.putGex)) / (Math.abs(maxGexValue) * 0.2)));
+                    // Show every label if few strikes, otherwise thin out
+                    const showLabel = n <= 20 || i % Math.ceil(n / 20) === 0;
+
+                    return (
+                      <g key={d.strike}>
+                        {callHeight > 0 && (
+                          <rect x={x} y={MID - callHeight} width={barW} height={callHeight} fill="#00d4aa" opacity={strikeOpacity} rx="3" />
+                        )}
+                        {putHeight > 0 && (
+                          <rect x={x} y={MID} width={barW} height={putHeight} fill="#ff4d4d" opacity={strikeOpacity} rx="3" />
+                        )}
+                        {showLabel && (
+                          <text
+                            x={cx}
+                            y={LABEL_Y}
+                            fill="#9b9bbf"
+                            fontSize="12"
+                            fontWeight="500"
+                            textAnchor="end"
+                            transform={`rotate(-45, ${cx}, ${LABEL_Y})`}
+                          >
+                            {d.strike}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              );
+            })() : (
               <div className={styles.empty}>No GEX data available</div>
             )}
           </div>

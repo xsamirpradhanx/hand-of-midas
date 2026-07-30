@@ -19,6 +19,23 @@ const formatNumber = (num: number) => {
   return num.toString();
 };
 
+const formatIV = (iv: number | null | undefined): string => {
+  if (iv == null) return '—';
+  return (iv * 100).toFixed(1) + '%';
+};
+
+const formatIVDelta = (delta: number | null | undefined): string => {
+  if (delta == null) return '—';
+  const sign = delta >= 0 ? '+' : '';
+  return `${sign}${(delta * 100).toFixed(1)}pp`;
+};
+
+const formatStockChange = (pct: number | null | undefined): string => {
+  if (pct == null) return '—';
+  const sign = pct >= 0 ? '+' : '';
+  return `${sign}${(pct * 100).toFixed(2)}%`;
+};
+
 type SortKey = keyof UnusualActivityItem;
 
 const METRIC_DEFINITIONS = [
@@ -42,6 +59,16 @@ const METRIC_DEFINITIONS = [
     formula: 'Calendar days until expiration',
     description: 'Short-dated options (≤14 DTE) carry higher urgency and are flagged as aggressive positioning. Scans the nearest 4 expiration cycles.',
   },
+  {
+    name: 'IV & ΔIV (Implied Vol)',
+    formula: 'Exchange-reported IV | ΔIV = Today IV − Yesterday IV',
+    description: 'IV shows the market-implied annualised volatility for the contract. ΔIV shows the intraday change vs prior day snapshot — a spike of +10pp or more is flagged as a signal of aggressive new positioning.',
+  },
+  {
+    name: 'Stock Δ',
+    formula: 'Underlying % change today',
+    description: 'The stock\'s current day price change. Contextualises whether the options flow is directional (e.g. buying puts while stock is falling 10% signals conviction, not hedging).',
+  },
 ];
 
 export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initialSymbol = '' }) => {
@@ -50,6 +77,7 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
   const [showMethodology, setShowMethodology] = useState(true);
+  const [isMarqueePaused, setIsMarqueePaused] = useState(false);
 
   const [symbolFilter, setSymbolFilter] = useState(initialSymbol);
 
@@ -158,7 +186,10 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
 
       {showMethodology && (
         <div className={styles.methodologyPanel}>
-          <div className={styles.methodologyGrid}>
+          <div 
+            className={`${styles.methodologyGrid} ${isMarqueePaused ? styles.paused : ''}`}
+            onClick={() => setIsMarqueePaused(prev => !prev)}
+          >
             {METRIC_DEFINITIONS.map((m) => (
               <div key={m.name} className={styles.metricCard}>
                 <div className={styles.metricCardHeader}>
@@ -266,6 +297,9 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
                 <th onClick={() => handleSort('volume')}>Vol</th>
                 <th onClick={() => handleSort('openInterest')}>OI</th>
                 <th onClick={() => handleSort('volumeOIRatio')}>Vol/OI</th>
+                <th onClick={() => handleSort('rawIV')}>IV</th>
+                <th onClick={() => handleSort('ivDelta')}>ΔIV</th>
+                <th onClick={() => handleSort('stockChangePercent')}>Stock Δ</th>
                 <th onClick={() => handleSort('compositeSigma')}>Whale Score</th>
                 <th className={styles.leftAlign}>Signals</th>
               </tr>
@@ -289,6 +323,36 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
                   <td className={styles.mono}>{formatNumber(item.volume)}</td>
                   <td className={styles.mono}>{formatNumber(item.openInterest)}</td>
                   <td className={styles.mono}>{item.volumeOIRatio.toFixed(1)}×</td>
+                  {/* IV column */}
+                  <td className={styles.mono}>{formatIV(item.rawIV ?? item.ivZScore)}</td>
+                  {/* ΔIV column */}
+                  <td
+                    className={`${styles.mono} ${
+                      item.ivDelta == null
+                        ? ''
+                        : item.ivDelta >= 0.10
+                        ? styles.ivSpikeUp
+                        : item.ivDelta <= -0.05
+                        ? styles.ivSpikeDown
+                        : ''
+                    }`}
+                  >
+                    {item.ivDelta != null
+                      ? (item.ivDelta >= 0 ? '▲' : '▼') + ' ' + formatIVDelta(item.ivDelta)
+                      : '—'}
+                  </td>
+                  {/* Stock Δ column */}
+                  <td
+                    className={`${styles.mono} ${
+                      item.stockChangePercent == null
+                        ? ''
+                        : item.stockChangePercent >= 0
+                        ? styles.stockUp
+                        : styles.stockDown
+                    }`}
+                  >
+                    {formatStockChange(item.stockChangePercent)}
+                  </td>
                   <td>
                     <div className={`${styles.sigmaBadge} ${getSigmaClass(item.compositeSigma)}`}>
                       <span className={styles.sigmaValue}>{item.compositeSigma.toFixed(0)}</span>
@@ -304,6 +368,9 @@ export const UnusualActivityFeed: React.FC<UnusualActivityFeedProps> = ({ initia
                   </td>
                   <td className={styles.leftAlign}>
                     <div className={styles.flagList}>
+                      {item.earningsBeforeExpiry && (
+                        <span className={styles.earningsChip} title="Earnings before expiry — event-driven flow">🗓 Earnings</span>
+                      )}
                       {item.flagReasons.slice(0, 2).map((reason, idx) => (
                         <span key={idx} className={styles.flagChip}>{reason}</span>
                       ))}

@@ -5,6 +5,8 @@ import { Dashboard } from './pages/Dashboard';
 import { AppLayout } from './components/Layout/AppLayout';
 import type { ReactNode } from 'react';
 
+import ScreenerDashboard from './components/Screener/ScreenerDashboard';
+
 /**
  * Auth guard — redirects unauthenticated users to /login.
  */
@@ -56,6 +58,7 @@ export function App() {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="screener" element={<ScreenerDashboard />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

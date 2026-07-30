@@ -85,7 +85,16 @@ export interface UnusualActivityItem {
   volumeOIRatio: number;
   volumeZScore: number;
   premiumZScore: number;
+  /** @deprecated Use rawIV instead. */
   ivZScore: number;
+  /** Raw implied volatility as a decimal (e.g. 1.12 = 112%). */
+  rawIV: number;
+  /** Change in IV vs prior day, in decimal points (e.g. 0.25 = +25pp). Null if no prior snapshot. */
+  ivDelta: number | null;
+  /** Underlying stock % change today as decimal (e.g. -0.10 = -10%). Null if unavailable. */
+  stockChangePercent: number | null;
+  /** True if next earnings date falls on or before this contract's expiry. */
+  earningsBeforeExpiry: boolean;
   isSweep: boolean;
   compositeSigma: number;
   flagReasons: string[];

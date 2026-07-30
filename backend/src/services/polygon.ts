@@ -274,6 +274,20 @@ export async function getQuote(symbol: string): Promise<PolygonQuote> {
 }
 
 /**
+ * Get snapshot for all US tickers (Phase 1 lightweight scan).
+ */
+export async function getUniversalSnapshot(): Promise<any[]> {
+  const url = `${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers?include_otc=false`;
+  try {
+    const data = await fetchPolygon<{ tickers: any[] }>(url);
+    return data.tickers ?? [];
+  } catch (err) {
+    console.error('Failed to fetch universal snapshot:', err);
+    return [];
+  }
+}
+
+/**
  * Get full options chain for an underlying.
  */
 export async function getOptionsChain(symbol: string, expiryStr?: string): Promise<{ expirations: string[], contracts: PolygonOptionsContract[], quote?: any }> {
@@ -398,4 +412,28 @@ export async function getTickerNews(symbol: string, limit: number = 20): Promise
   const url = `${BASE_URL}/v2/reference/news?ticker=${sym}&limit=${limit}&sort=published_utc&order=desc`;
   const data = await fetchPolygon<{ results: PolygonNewsArticle[] }>(url);
   return data.results || [];
+}
+
+/**
+ * Fetch the next upcoming earnings date for a ticker from Polygon's events API.
+ * Returns a YYYY-MM-DD string if found, or null if unavailable.
+ *
+ * Polygon endpoint: GET /v3/reference/tickers/{ticker}/events?types=earnings
+ */
+export async function getEarningsDate(symbol: string): Promise<string | null> {
+  const sym = symbol.toUpperCase();
+  try {
+    const url = `${BASE_URL}/v3/reference/tickers/${sym}/events?types=earnings`;
+    const data = await fetchPolygon<{ results?: { events?: { type: string; date: string }[] } }>(url);
+    const events = data.results?.events ?? [];
+    const today = new Date().toISOString().split('T')[0]!;
+    // Find the soonest upcoming (or same-day) earnings event
+    const upcoming = events
+      .filter(e => e.type === 'earnings' && e.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    return upcoming[0]?.date ?? null;
+  } catch {
+    // Non-fatal — many tickers don't have events data on free Polygon tiers
+    return null;
+  }
 }

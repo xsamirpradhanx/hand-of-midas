@@ -334,6 +334,8 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           borderVisible: false,
           wickUpColor: '#26a69a',
           wickDownColor: '#ef5350',
+          priceLineColor: '#ffffff',
+          priceLineWidth: 2,
         });
         mainSeries.setData(baseChartData);
       } else if (chartType === 'heikinashi') {
@@ -352,12 +354,16 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           borderVisible: false,
           wickUpColor: '#00bcd4',
           wickDownColor: '#e91e63',
+          priceLineColor: '#ffffff',
+          priceLineWidth: 2,
         });
         mainSeries.setData(haData);
       } else if (chartType === 'line') {
         mainSeries = chart.addSeries(LineSeries, {
           color: '#ffffff',
           lineWidth: 2,
+          priceLineColor: '#ffffff',
+          priceLineWidth: 2,
         });
         mainSeries.setData(baseChartData.map(d => ({ time: d.time, value: d.close })));
       } else {
@@ -367,6 +373,8 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           topColor: 'rgba(255, 255, 255, 0.4)',
           bottomColor: 'rgba(255, 255, 255, 0.0)',
           lineWidth: 2,
+          priceLineColor: '#ffffff',
+          priceLineWidth: 2,
         });
         mainSeries.setData(baseChartData.map(d => ({ time: d.time, value: d.close })));
       }

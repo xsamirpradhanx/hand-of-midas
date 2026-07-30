@@ -1,4 +1,5 @@
-import { getTimeSeries, getTickerNews, PolygonNewsArticle } from './polygon.js';
+import { getTickerNews, PolygonNewsArticle } from './polygon.js';
+import { getTimeSeriesYahoo } from './yahoo.js';
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import type { FactorResult, FactorInput, PredictiveFactor } from './factors/types.js';
 import { VolumeProfileFactor } from './factors/volumeProfile.js';
@@ -70,7 +71,7 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
   const sym = symbol.toUpperCase();
 
   // 1. Fetch OHLCV (6 months / 126 trading days)
-  const bars = await getTimeSeries(sym, '1d', 126);
+  const bars = await getTimeSeriesYahoo(sym, '1d', 126);
   if (!bars || bars.length === 0) {
     throw new Error(`Insufficient historical price data found for ticker ${sym}`);
   }
@@ -90,7 +91,7 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
   try {
     news = await getTickerNews(sym, 15);
   } catch (err) {
-    console.warn(`[PredictiveEngine] News unavailable for ${sym}, proceeding without news sentiment:`, err);
+    console.warn(`[PredictiveEngine] News unavailable for ${sym}, proceeding without news sentiment: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const factorInput: FactorInput = {

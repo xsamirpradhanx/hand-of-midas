@@ -1,5 +1,6 @@
 import { getItem, putItem, queryItems } from './dynamodb.js';
 import type { DynamoDBBaseItem } from '../types.js';
+import { getEarningsDate } from './polygon.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,7 +34,16 @@ export interface AnomalyScore {
   volumeOIRatio: number;
   volumeZScore: number;
   premiumZScore: number;
+  /** @deprecated Use rawIV instead. Kept for backward-compat. */
   ivZScore: number;
+  /** Raw implied volatility as a decimal (e.g. 1.12 = 112%). */
+  rawIV: number;
+  /** Change in IV vs prior trading day, in decimal points (e.g. 0.25 = +25pp). Null if no prior snapshot. */
+  ivDelta: number | null;
+  /** Underlying stock % change today (e.g. -0.10 = -10%). */
+  stockChangePercent: number | null;
+  /** True if next earnings date falls on or before this contract's expiry. */
+  earningsBeforeExpiry: boolean;
   isSweep: boolean;
   compositeSigma: number;
   flagReasons: string[];
@@ -214,7 +224,11 @@ export function scoreContract(contract: {
     volumeOIRatio,
     volumeZScore,
     premiumZScore,
-    ivZScore,
+    ivZScore,          // backward-compat alias
+    rawIV: contract.iv,
+    ivDelta: null,     // caller populates after snapshot lookup
+    stockChangePercent: null,
+    earningsBeforeExpiry: false,
     isSweep: contract.isSweep,
     compositeSigma,
     flagReasons,
@@ -246,6 +260,8 @@ export async function getUnusualActivity(filters: {
   minPremium?: number;
   side?: 'call' | 'put';
   dteMax?: number;
+  /** Underlying stock % change for the day, threaded in from the quote endpoint. */
+  stockChangePercent?: number;
 }): Promise<AnomalyScore[]> {
   
   if (!filters.symbol) {
@@ -254,9 +270,30 @@ export async function getUnusualActivity(filters: {
 
   const { fetchOptionsChainWithFallback } = await import('./optionsFallback.js');
   const { getDTE } = await import('./tradingCalendar.js');
-  
+
+  const symbol = filters.symbol;
+
+  // 0. Prefetch earnings date and prior-day IV snapshot in parallel
+  const todayDate = new Date().toISOString().split('T')[0]!;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayDate = yesterday.toISOString().split('T')[0]!;
+
+  const [earningsDate, priorIVSnaps] = await Promise.all([
+    getEarningsDate(symbol),
+    queryItems<{ pk: string; sk: string; iv: number }>(  
+      `IV_SNAP#${symbol}#${yesterdayDate}`,
+    ),
+  ]);
+
+  // Build a lookup map: "strike#expiry#side" → prior IV
+  const priorIVMap = new Map<string, number>();
+  for (const snap of priorIVSnaps) {
+    priorIVMap.set(snap.sk, snap.iv);
+  }
+
   // 1. Fetch available expirations
-  const { expirations } = await fetchOptionsChainWithFallback(filters.symbol);
+  const { expirations } = await fetchOptionsChainWithFallback(symbol);
   if (expirations.length === 0) return [];
 
   // 2. Scan nearest 6 expirations — institutions also build structured positions 60-90 days out.
@@ -307,21 +344,40 @@ export async function getUnusualActivity(filters: {
       if (isBuyerInitiated === true) flagReasons.push('Buyer-initiated: premium paid near Ask (directional bullish aggression)');
       if (isBuyerInitiated === false) flagReasons.push('Seller-initiated: trade hit Bid (directional bearish aggression)');
 
+      const contractIV = c.implied_volatility ?? 0;
+      const side = c.details.contract_type as 'call' | 'put';
+      const ivSnapKey = `${c.details.strike_price}#${expiry}#${side}`;
+      const priorIV = priorIVMap.get(ivSnapKey) ?? null;
+      const ivDelta = priorIV !== null ? contractIV - priorIV : null;
+
+      // Flag significant IV spike (≥10pp = 0.10 in decimal)
+      if (ivDelta !== null && ivDelta >= 0.10) {
+        flagReasons.push(`IV spike: +${(ivDelta * 100).toFixed(1)}pp today (now ${(contractIV * 100).toFixed(1)}%)`);
+      }
+
+      // Earnings before expiry flag
+      const earningsBeforeExpiry = earningsDate !== null && earningsDate <= expiry;
+      if (earningsBeforeExpiry && earningsDate) {
+        flagReasons.push(`Earnings ${earningsDate} before expiry — event-driven positioning`);
+      }
+
       anomalies.push({
-        symbol: filters.symbol,
+        symbol,
         strike: c.details.strike_price,
         expiry: expiry,
         dte,
-        side: c.details.contract_type as 'call' | 'put',
+        side,
         premium,
         volume: vol,
         openInterest: oi,
         volumeOIRatio,
-        // FIX: These were previously raw metrics mislabeled as Z-scores.
-        // Now correctly named: raw Vol/OI ratio, log10(premium), and raw IV.
         volumeZScore: volumeOIRatio,        // Vol/OI ratio proxy (true Z-scores need 20-day baseline)
         premiumZScore: Math.log10(premium), // log10 of notional (normalized size proxy)
-        ivZScore: c.implied_volatility,     // raw IV — baseline Z-scores computed in scoreContract()
+        ivZScore: contractIV,               // backward-compat alias (raw IV)
+        rawIV: contractIV,
+        ivDelta,
+        stockChangePercent: filters.stockChangePercent ?? null,
+        earningsBeforeExpiry,
         isSweep: false,
         compositeSigma: whaleScore,
         flagReasons,
@@ -332,6 +388,20 @@ export async function getUnusualActivity(filters: {
 
   // Percentile-rank scores within this session's anomaly set (0-100 where 100 = rarest)
   const ranked = percentileRankScores(anomalies);
+
+  // Persist today's IV snapshot (non-blocking, best-effort)
+  const ivSnapshotPk = `IV_SNAP#${symbol}#${todayDate}`;
+  const ivTtl = Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60; // 3-day TTL
+  Promise.all(
+    anomalies.map(a =>
+      putItem({
+        pk: ivSnapshotPk,
+        sk: `${a.strike}#${a.expiry}#${a.side}`,
+        iv: a.rawIV,
+        ttl: ivTtl,
+      }),
+    ),
+  ).catch(err => console.warn('IV snapshot write failed (non-fatal):', err));
 
   // Filter by user params — note: minSigma now compares against percentile rank (0-100)
   const minSigma = filters.minSigma ?? 50; // Default: top 50th percentile
