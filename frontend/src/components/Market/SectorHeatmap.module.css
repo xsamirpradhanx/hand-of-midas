@@ -56,14 +56,66 @@
   50% { border-color: transparent; }
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 12px;
+.scrollContainer {
+  display: flex;
+  overflow: hidden;
   width: 100%;
+  position: relative;
+}
+
+.scrollWrapper {
+  display: flex;
+  width: max-content;
+  align-items: center;
+  white-space: nowrap;
+  animation: scrollLeft 45s linear infinite;
+}
+
+.scrollWrapper:hover {
+  animation-play-state: paused;
+}
+
+.scrollGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 12px;
+}
+
+@keyframes scrollLeft {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-25%); }
+}
+
+.leftZone, .rightZone {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 60px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 39, 0.8);
+  color: var(--accent-main);
+  font-size: 24px;
+  font-weight: bold;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+.leftZone { left: 0; box-shadow: 10px 0 20px -5px rgba(0,0,0,0.5); }
+.rightZone { right: 0; box-shadow: -10px 0 20px -5px rgba(0,0,0,0.5); }
+
+.scrollContainer:hover .leftZone,
+.scrollContainer:hover .rightZone {
+  opacity: 1;
 }
 
 .tile {
+  text-decoration: none;
+  flex-shrink: 0;
+  width: 140px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -109,6 +161,8 @@
   text-transform: uppercase;
   font-family: var(--font-family);
   letter-spacing: 0.5px;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 .change {

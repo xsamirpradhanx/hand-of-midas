@@ -199,6 +199,13 @@ export interface MarketInternalsResponse {
     change: number;
     changePercent: number;
   }>;
+  leaders?: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
   crypto: Array<{
     symbol: string;
     name: string;

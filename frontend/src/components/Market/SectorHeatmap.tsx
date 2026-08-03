@@ -6,6 +6,16 @@ import styles from './SectorHeatmap.module.css';
 export const SectorHeatmap: React.FC = () => {
   const [sectors, setSectors] = useState<SectorData[]>([]);
   const [loading, setLoading] = useState(true);
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  const setScrollDir = (dir: 'normal' | 'reverse') => {
+    if (wrapperRef.current) {
+      const animations = wrapperRef.current.getAnimations();
+      if (animations.length > 0) {
+        animations[0].playbackRate = dir === 'normal' ? 1 : -1;
+      }
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -30,6 +40,22 @@ export const SectorHeatmap: React.FC = () => {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (sectors.length > 0) {
+      requestAnimationFrame(() => {
+        if (wrapperRef.current) {
+          const animations = wrapperRef.current.getAnimations();
+          if (animations.length > 0) {
+            // Only set if we haven't set it yet
+            if ((animations[0].currentTime as number) < 40000000) {
+              animations[0].currentTime = 45000000;
+            }
+          }
+        }
+      });
+    }
+  }, [sectors]);
 
   if (loading && sectors.length === 0) {
     return <div className={styles.container}><div className={styles.loading}>Loading Sector Heatmap...</div></div>;
@@ -57,23 +83,38 @@ export const SectorHeatmap: React.FC = () => {
 
   const formatPercent = (val: number) => `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
 
+  const renderTiles = (suffix: string) => (
+    <div className={styles.scrollGroup}>
+      {sectors.map((sector) => (
+        <a
+          href={`https://finance.yahoo.com/quote/${sector.symbol}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          key={`${sector.symbol}-${suffix}`}
+          className={styles.tile}
+          style={{ backgroundColor: getHeatmapColor(sector.changePercent) }}
+        >
+          <div className={styles.symbol}>{sector.symbol}</div>
+          <div className={styles.name}>{sector.name}</div>
+          <div className={styles.change} style={{ color: getTextColor(sector.changePercent) }}>
+            {formatPercent(sector.changePercent)}
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+
   return (
     <div className={styles.container}>
-      <h3 className={styles.header}>Sector Heatmap</h3>
-      <div className={styles.grid}>
-        {sectors.map((sector) => (
-          <div
-            key={sector.symbol}
-            className={styles.tile}
-            style={{ backgroundColor: getHeatmapColor(sector.changePercent) }}
-          >
-            <div className={styles.symbol}>{sector.symbol}</div>
-            <div className={styles.name}>{sector.name}</div>
-            <div className={styles.change} style={{ color: getTextColor(sector.changePercent) }}>
-              {formatPercent(sector.changePercent)}
-            </div>
-          </div>
-        ))}
+      <div className={styles.scrollContainer}>
+        <div className={styles.leftZone} onClick={() => setScrollDir('normal')}>&#10094;</div>
+        <div className={styles.rightZone} onClick={() => setScrollDir('reverse')}>&#10095;</div>
+        <div className={styles.scrollWrapper} ref={wrapperRef}>
+          {renderTiles('1')}
+          {renderTiles('2')}
+          {renderTiles('3')}
+          {renderTiles('4')}
+        </div>
       </div>
     </div>
   );
