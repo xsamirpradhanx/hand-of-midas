@@ -409,9 +409,30 @@ export interface PolygonNewsArticle {
 
 export async function getTickerNews(symbol: string, limit: number = 20): Promise<PolygonNewsArticle[]> {
   const sym = symbol.toUpperCase();
-  const url = `${BASE_URL}/v2/reference/news?ticker=${sym}&limit=${limit}&sort=published_utc&order=desc`;
-  const data = await fetchPolygon<{ results: PolygonNewsArticle[] }>(url);
-  return data.results || [];
+  try {
+    const url = `${BASE_URL}/v2/reference/news?ticker=${sym}&limit=${limit}&sort=published_utc&order=desc`;
+    const data = await fetchPolygon<{ results: PolygonNewsArticle[] }>(url);
+    return data.results || [];
+  } catch (err) {
+    console.warn(`Polygon news rate limit/error for ${sym}, falling back to Yahoo Finance`, err instanceof Error ? err.message : String(err));
+    try {
+      const result = await yf.search(sym, { newsCount: limit });
+      if (!result.news) return [];
+      
+      return result.news.map((item: any) => ({
+        title: item.title || '',
+        author: item.publisher || '',
+        published_utc: item.providerPublishTime ? new Date(item.providerPublishTime).toISOString() : new Date().toISOString(),
+        article_url: item.link || '',
+        tickers: item.relatedTickers || [sym],
+        description: item.summary || '',
+        keywords: []
+      }));
+    } catch (yfErr) {
+      console.error(`Yahoo Finance news fallback also failed for ${sym}:`, yfErr);
+      return [];
+    }
+  }
 }
 
 /**

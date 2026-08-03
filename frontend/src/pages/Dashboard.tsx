@@ -8,12 +8,14 @@ import { IndicatorPanel } from '../components/Indicators/IndicatorPanel';
 import { OptionsDashboard } from '../components/Options/OptionsDashboard';
 import { UnusualActivityFeed } from '../components/Options/UnusualActivityFeed';
 import { PortfolioDashboard } from './PortfolioDashboard';
+import { MarketInternals } from '../components/Market/MarketInternals';
+import { SectorHeatmap } from '../components/Market/SectorHeatmap';
 
 import { api } from '../lib/api';
 import type { IndicatorConfig } from '../types';
 import styles from './Dashboard.module.css';
 
-type Tab = 'chart' | 'options' | 'unusual' | 'portfolio';
+type Tab = 'chart' | 'options' | 'unusual' | 'portfolio' | 'market';
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -39,6 +41,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
   return [storedValue, setValue];
 }
 export const Dashboard: React.FC = () => {
+  const [isMarketOverviewOpen, setIsMarketOverviewOpen] = useLocalStorage<boolean>('dashboard_marketOverviewOpen', true);
   const [selectedSymbol, setSelectedSymbol] = useLocalStorage<string | null>('dashboard_selectedSymbol', null);
   const [activeTab, setActiveTab] = useLocalStorage<Tab>('dashboard_activeTab', 'chart');
   const [interval, setInterval] = useLocalStorage<string>('dashboard_interval', '1day');
@@ -88,14 +91,31 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className={styles.dashboard}>
-      <WatchlistPanel
-        selectedSymbol={selectedSymbol}
-        onSelectSymbol={setSelectedSymbol}
-        showExtendedHours={showExtendedHours}
-      />
+    <div className={styles.appLayout}>
+      <div className={styles.marketOverviewWrapper}>
+        {isMarketOverviewOpen && (
+          <div className={styles.marketOverviewStrip}>
+            <MarketInternals />
+            <SectorHeatmap />
+          </div>
+        )}
+        <button 
+          className={styles.marketToggleBtn}
+          onClick={() => setIsMarketOverviewOpen(!isMarketOverviewOpen)}
+          title="Toggle Market Overview"
+        >
+          {isMarketOverviewOpen ? '▲' : '▼'}
+        </button>
+      </div>
 
-      <div className={styles.mainArea}>
+      <div className={styles.dashboard}>
+          <WatchlistPanel
+            selectedSymbol={selectedSymbol}
+            onSelectSymbol={setSelectedSymbol}
+            showExtendedHours={showExtendedHours}
+          />
+
+          <div className={styles.mainArea}>
         {selectedSymbol && (
           <div className={styles.chartHeader}>
             <div className={styles.symbolTitle}>
@@ -124,7 +144,6 @@ export const Dashboard: React.FC = () => {
           <button className={`${styles.tab} ${activeTab === 'chart' ? styles.active : ''}`} onClick={() => setActiveTab('chart')}>Chart</button>
           <button className={`${styles.tab} ${activeTab === 'options' ? styles.active : ''}`} onClick={() => setActiveTab('options')}>Options Chain</button>
           <button className={`${styles.tab} ${activeTab === 'unusual' ? styles.active : ''}`} onClick={() => setActiveTab('unusual')}>🐋 Whale Flow</button>
-
           <button className={`${styles.tab} ${activeTab === 'portfolio' ? styles.active : ''}`} onClick={() => setActiveTab('portfolio')}>Portfolio</button>
         </div>
 
@@ -165,21 +184,21 @@ export const Dashboard: React.FC = () => {
             </>
           )}
         </div>
-      </div>
-
-      {activeTab === 'chart' && (
-        <IndicatorPanel
-          indicators={indicators}
-          onChange={handleIndicatorsChange}
-          showExtendedHours={showExtendedHours}
-          setShowExtendedHours={handleToggleExtendedHours}
-          showPredictiveZones={showPredictiveZones}
-          setShowPredictiveZones={setShowPredictiveZones}
-          showInstitutionalSignals={showInstitutionalSignals}
-          setShowInstitutionalSignals={setShowInstitutionalSignals}
-          currentInterval={interval}
-        />
-      )}
+          </div>
+          {activeTab === 'chart' && (
+            <IndicatorPanel
+              indicators={indicators}
+              onChange={handleIndicatorsChange}
+              showExtendedHours={showExtendedHours}
+              setShowExtendedHours={handleToggleExtendedHours}
+              showPredictiveZones={showPredictiveZones}
+              setShowPredictiveZones={setShowPredictiveZones}
+              showInstitutionalSignals={showInstitutionalSignals}
+              setShowInstitutionalSignals={setShowInstitutionalSignals}
+              currentInterval={interval}
+            />
+          )}
+        </div>
     </div>
   );
 };

@@ -85,6 +85,8 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
     if (type === 'ATR') params = { period: 14 };
     if (type === 'STOCHASTIC') params = { periodK: 14, periodD: 3 };
     if (type === 'VOLUME' || type === 'VWAP') params = {};
+    if (type === 'ADX') params = { period: 14 };
+    if (type === 'FIBONACCI') params = {};
 
     const newIndicator: IndicatorType = {
       type,
@@ -139,6 +141,8 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
           <button onClick={() => handleAdd('STOCHASTIC')}>📉 Stochastic Oscillator</button>
           <button onClick={() => handleAdd('VWAP')}>📈 VWAP</button>
           <button onClick={() => handleAdd('VOLUME')}>📊 Volume Histogram</button>
+          <button onClick={() => handleAdd('ADX')}>📊 ADX (Trend Strength)</button>
+          <button onClick={() => handleAdd('FIBONACCI')}>📐 Fibonacci Retracement</button>
         </div>
       )}
 

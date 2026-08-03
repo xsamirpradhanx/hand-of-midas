@@ -1,0 +1,114 @@
+.container {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, var(--bg-main) 0%, #0d0f11 100%);
+  border-bottom: 1px solid rgba(249, 168, 37, 0.3);
+  padding: 0 16px;
+  height: 48px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  width: 100%;
+  box-shadow: inset 0 -1px 4px rgba(249, 168, 37, 0.05);
+}
+
+.loading {
+  color: #00ff41;
+  font-family: 'Courier New', Courier, monospace;
+  font-style: normal;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 4px solid #00ff41;
+  animation: 
+    matrixType 1.5s steps(25, end) infinite alternate,
+    matrixBlink 0.5s step-end infinite;
+}
+
+@keyframes matrixType {
+  from { max-width: 0; }
+  to { max-width: 400px; }
+}
+
+@keyframes matrixBlink {
+  50% { border-color: transparent; }
+}
+
+.scrollWrapper {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  white-space: nowrap;
+  animation: scrollLeft 45s linear infinite;
+}
+
+@keyframes scrollLeft {
+  0% { transform: translateX(200px); }
+  100% { transform: translateX(-1500px); }
+}
+
+.scrollWrapper:hover {
+  animation-play-state: paused;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.symbol {
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.price {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.change {
+  font-weight: 700;
+}
+
+.item.positive {
+  background: rgba(0, 212, 170, 0.2);
+  border-color: rgba(0, 212, 170, 0.4);
+}
+
+.item.positive .change {
+  color: var(--color-up);
+}
+
+.item.negative {
+  background: rgba(255, 23, 68, 0.2);
+  border-color: rgba(255, 23, 68, 0.4);
+}
+
+.item.negative .change {
+  color: var(--color-down);
+}
+
+.item.neutral {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.item.neutral .change {
+  color: #ffffff;
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: linear-gradient(180deg, transparent, rgba(249, 168, 37, 0.4), transparent);
+}
+
+

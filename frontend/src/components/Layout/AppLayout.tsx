@@ -13,7 +13,7 @@ export const AppLayout: React.FC = () => {
   return (
     <div className={styles.layout}>
       <header className={styles.topbar}>
-        <div className={styles.logo}>
+        <Link to="/" className={styles.logo} style={{ textDecoration: 'none' }}>
           <div className={styles.logoGlow}>
             <img src="/logo.png" alt="Hand of Midas Logo" className={styles.logoImg} />
           </div>
@@ -21,7 +21,7 @@ export const AppLayout: React.FC = () => {
             <h1>Hand of Midas</h1>
             <span className={styles.tagline}>The Golden Touch</span>
           </div>
-        </div>
+        </Link>
 
         <div className={styles.userMenu}>
           <Link to="/screener" className={styles.screenerBtn} title="Screener">

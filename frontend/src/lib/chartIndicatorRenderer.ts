@@ -10,6 +10,8 @@ import { calculateBollingerBands } from './indicators/bollingerBands';
 import { calculateVWAP } from './indicators/vwap';
 import { calculateATR } from './indicators/atr';
 import { calculateStochastic } from './indicators/stochastic';
+import { calculateADX } from './indicators/adx';
+import { calculateFibonacci } from './indicators/fibonacci';
 import type { OHLCVBar } from './indicators/types';
 
 // Optional: you can define a specific type for the internal OHLCV format expected by indicator math
@@ -31,7 +33,7 @@ export function renderIndicators(
   const data = indicatorData as unknown as OHLCVBar[];
 
   // 1. Identify which indicators require a sub-pane
-  const subPaneTypes = ['VOLUME', 'RSI', 'MACD', 'ATR', 'STOCHASTIC'];
+  const subPaneTypes = ['VOLUME', 'RSI', 'MACD', 'ATR', 'STOCHASTIC', 'ADX'];
   const activeSubPanes = activeIndicators.filter(ind => subPaneTypes.includes(ind.type));
   const subPaneCount = activeSubPanes.length;
 
@@ -198,6 +200,51 @@ export function renderIndicators(
       seriesMapRef.current.set(`MACD_${fast}_${slow}_${sig}_macd`, macdLine);
       seriesMapRef.current.set(`MACD_${fast}_${slow}_${sig}_signal`, sigLine);
       seriesMapRef.current.set(`MACD_${fast}_${slow}_${sig}_histogram`, histLine);
+    } else if (ind.type === 'ADX' && margins) {
+      const period = Number(ind.params.period) || 14;
+      const adxData = calculateADX(data, period);
+      const scaleId = `adx_${i}`;
+      
+      const plusDISeries = chart.addSeries(LineSeries, { color: '#00e676', lineWidth: 1.5, priceScaleId: scaleId });
+      const minusDISeries = chart.addSeries(LineSeries, { color: '#ff1744', lineWidth: 1.5, priceScaleId: scaleId });
+      const adxSeries = chart.addSeries(LineSeries, { color: '#ffd700', lineWidth: 2, priceScaleId: scaleId });
+      
+      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      
+      plusDISeries.setData(adxData.map(d => ({ time: d.time, value: d.plusDI })) as any);
+      minusDISeries.setData(adxData.map(d => ({ time: d.time, value: d.minusDI })) as any);
+      adxSeries.setData(adxData.map(d => ({ time: d.time, value: d.adx })) as any);
+      
+      seriesMapRef.current.set(`ADX_${period}_plusDI`, plusDISeries);
+      seriesMapRef.current.set(`ADX_${period}_minusDI`, minusDISeries);
+      seriesMapRef.current.set(`ADX_${period}_adx`, adxSeries);
     }
   });
+
+  // Fibonacci overlay (rendered after other indicators)
+  const fibIndicator = activeIndicators.find(ind => ind.type === 'FIBONACCI');
+  if (fibIndicator) {
+    const fibLevels = calculateFibonacci(data);
+    
+    fibLevels.forEach((fib, idx) => {
+      const color = fib.level === 0.5 || fib.level === 0.618 ? '#ffd700' : 'rgba(255, 215, 0, 0.4)';
+      const lineWidth = fib.level === 0.5 || fib.level === 0.618 ? 2 : 1;
+      const series = chart.addSeries(LineSeries, {
+        color,
+        lineWidth,
+        lineStyle: 2, // dashed
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      // Create a flat horizontal line spanning the full data range
+      if (data.length >= 2) {
+        series.setData([
+          { time: data[0].time, value: fib.price },
+          { time: data[data.length - 1].time, value: fib.price },
+        ] as any);
+      }
+      seriesMapRef.current.set(`FIB_${fib.label}`, series);
+    });
+  }
 }

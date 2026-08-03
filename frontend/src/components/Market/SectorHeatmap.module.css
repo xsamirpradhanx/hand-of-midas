@@ -1,0 +1,123 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, rgba(13, 15, 17, 0.95), rgba(20, 24, 28, 0.98));
+  height: 100%;
+  font-family: var(--font-mono);
+  box-shadow: inset 0 -1px 0 rgba(249, 168, 37, 0.2);
+}
+
+.header {
+  margin: 0 0 16px 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-main);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  background-color: var(--accent-main);
+  border-radius: 2px;
+  box-shadow: 0 0 8px var(--accent-main);
+}
+
+.loading {
+  color: #00ff41;
+  font-family: 'Courier New', Courier, monospace;
+  font-style: normal;
+  font-weight: bold;
+  padding: 16px;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 4px solid #00ff41;
+  animation: 
+    matrixType 1.5s steps(25, end) infinite alternate,
+    matrixBlink 0.5s step-end infinite;
+}
+
+@keyframes matrixType {
+  from { max-width: 0; }
+  to { max-width: 400px; }
+}
+
+@keyframes matrixBlink {
+  50% { border-color: transparent; }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 14px 12px;
+  border-radius: 6px;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1), 0 4px 6px rgba(0,0,0,0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.tile:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: inset 0 0 0 1px rgba(249, 168, 37, 0.4), 0 6px 12px rgba(0,0,0,0.3);
+  z-index: 2;
+}
+
+.symbol {
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin-bottom: 2px;
+  letter-spacing: 0.5px;
+}
+
+.name {
+  font-size: 0.8rem;
+  text-align: center;
+  margin-bottom: 8px;
+  opacity: 1;
+  font-weight: 600;
+  line-height: 1.2;
+  text-transform: uppercase;
+  font-family: var(--font-family);
+  letter-spacing: 0.5px;
+}
+
+.change {
+  font-size: 1.05rem;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px 10px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+

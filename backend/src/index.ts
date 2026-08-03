@@ -16,6 +16,8 @@ import * as alerts from './routes/alerts.js';
 import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
 import * as screener from './routes/screener.js';
+import * as marketInternals from './routes/marketInternals.js';
+import * as sectorHeatmap from './routes/sectorHeatmap.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -274,6 +276,17 @@ const routes: readonly Route[] = [
       if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
       return screener.getScreener(event);
     },
+  },
+
+  {
+    method: 'GET',
+    pattern: '/api/market-internals',
+    handler: async () => marketInternals.getMarketInternals(),
+  },
+  {
+    method: 'GET', 
+    pattern: '/api/sectors',
+    handler: async () => sectorHeatmap.getSectors(),
   },
 
   // ── Portfolio ──────────────────────────────────────────────────────────

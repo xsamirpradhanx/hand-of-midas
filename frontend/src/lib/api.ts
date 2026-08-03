@@ -12,6 +12,8 @@ import type {
   Position,
   Alert,
   OptionsAnalyticsResponse,
+  MarketInternalsResponse,
+  SectorHeatmapResponse,
 } from '../types';
 
 import { userPool } from '../contexts/AuthContext';
@@ -154,4 +156,10 @@ export const api = {
 
   getScreener: (mode: 'premarket' | 'open'): Promise<any[]> =>
     fetchWithAuth(`/screener?mode=${mode}`),
+
+  getMarketInternals: (): Promise<MarketInternalsResponse> =>
+    fetchWithAuth('/market-internals'),
+
+  getSectors: (): Promise<SectorHeatmapResponse> =>
+    fetchWithAuth('/sectors'),
 };

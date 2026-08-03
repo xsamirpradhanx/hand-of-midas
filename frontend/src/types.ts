@@ -189,3 +189,52 @@ export interface OptionsAnalyticsResponse {
   } | null;
   vixTermStructure: OptionsAnalyticsResponse['termStructure'];
 }
+
+export interface MarketInternalsResponse {
+  vix: { price: number; change: number; changePercent: number };
+  indices: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
+  crypto: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
+  commodities: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
+  forex: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
+  bonds: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
+}
+
+export interface SectorHeatmapResponse {
+  sectors: Array<{
+    symbol: string;
+    name: string;
+    price: number;
+    change: number;
+    changePercent: number;
+  }>;
+}
