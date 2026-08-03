@@ -46,6 +46,7 @@ export const Dashboard: React.FC = () => {
   const [showExtendedHours, setShowExtendedHours] = useLocalStorage<boolean>('dashboard_showExtendedHours', false);
   const [showPredictiveZones, setShowPredictiveZones] = useLocalStorage<boolean>('dashboard_showPredictiveZones', false);
   const [showInstitutionalSignals, setShowInstitutionalSignals] = useLocalStorage<boolean>('dashboard_showInstitutionalSignals', true);
+  const [timezone, setTimezone] = useLocalStorage<'EST' | 'GMT'>('dashboard_timezone', 'EST');
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
 
   // Load chart config when symbol changes
@@ -105,6 +106,14 @@ export const Dashboard: React.FC = () => {
                 <div className={styles.headerControls}>
                   <ChartTypeBar chartType={chartType} onChange={setChartType} />
                   <TimeframeBar interval={interval} onChange={setInterval} />
+                  <button 
+                    className={`${styles.tab} ${styles.timezoneToggle || ''}`}
+                    style={{ padding: '6px 12px', minWidth: '50px', fontSize: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', marginLeft: '4px' }}
+                    onClick={() => setTimezone(prev => prev === 'EST' ? 'GMT' : 'EST')}
+                    title="Toggle Timezone"
+                  >
+                    {timezone}
+                  </button>
                 </div>
               </div>
             )}
@@ -137,6 +146,7 @@ export const Dashboard: React.FC = () => {
                     chartType={chartType}
                     showExtendedHours={showExtendedHours}
                     showPredictiveZones={showPredictiveZones}
+                    timezone={timezone}
                   />
                   {showInstitutionalSignals && (
                     <InstitutionalSubCharts symbol={selectedSymbol} />

@@ -39,7 +39,17 @@ export async function getWatchlist(
   const entries: WatchlistEntry[] = items.map((item) => ({
     symbol: item.symbol,
     addedAt: item.addedAt,
+    sortOrder: item.sortOrder,
   }));
+  
+  entries.sort((a, b) => {
+    if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+      return a.sortOrder - b.sortOrder;
+    }
+    if (a.sortOrder !== undefined) return -1;
+    if (b.sortOrder !== undefined) return 1;
+    return a.symbol.localeCompare(b.symbol);
+  });
 
   const body: WatchlistResponse = { items: entries };
   return jsonResponse(200, body);
@@ -77,11 +87,20 @@ export async function addToWatchlist(
 
   const now = new Date().toISOString();
 
+  const items = await queryItems<WatchlistItem>(userPK(userId), 'WATCHLIST#');
+  let maxOrder = -1;
+  for (const it of items) {
+    if (it.sortOrder !== undefined && it.sortOrder > maxOrder) {
+      maxOrder = it.sortOrder;
+    }
+  }
+
   const item: WatchlistItem = {
     pk: userPK(userId),
     sk: watchlistSK(symbol),
     symbol,
     addedAt: now,
+    sortOrder: maxOrder + 1,
   };
 
   await putItem(item);
@@ -112,3 +131,51 @@ export async function removeFromWatchlist(
 
   return jsonResponse(204, undefined);
 }
+
+/**
+ * PUT /api/watchlist/reorder
+ *
+ * Reorder the authenticated user's watchlist items.
+ *
+ * @param userId - The authenticated user's subject claim.
+ * @param body   - JSON containing an array of symbols in the new order.
+ */
+export async function reorderWatchlist(
+  userId: string,
+  body: string | undefined,
+): Promise<APIGatewayProxyResultV2> {
+  if (!body) {
+    return jsonResponse(400, { error: 'Request body is required' });
+  }
+
+  let parsed: { symbols?: string[] };
+  try {
+    parsed = JSON.parse(body) as { symbols?: string[] };
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON in request body' });
+  }
+
+  const symbols = parsed.symbols;
+  if (!Array.isArray(symbols)) {
+    return jsonResponse(400, { error: '"symbols" must be an array of strings' });
+  }
+
+  const items = await queryItems<WatchlistItem>(userPK(userId), 'WATCHLIST#');
+  const itemsBySymbol = new Map<string, WatchlistItem>();
+  for (const item of items) {
+    itemsBySymbol.set(item.symbol.toUpperCase(), item);
+  }
+
+  let order = 0;
+  for (const sym of symbols) {
+    const upperSym = sym.trim().toUpperCase();
+    const existing = itemsBySymbol.get(upperSym);
+    if (existing) {
+      existing.sortOrder = order++;
+      await putItem(existing);
+    }
+  }
+
+  return jsonResponse(200, { success: true });
+}
+

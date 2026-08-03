@@ -75,6 +75,9 @@ export const api = {
   removeFromWatchlist: (symbol: string): Promise<void> => 
     fetchWithAuth(`/watchlist/${symbol}`, { method: 'DELETE' }),
 
+  reorderWatchlist: (symbols: string[]): Promise<void> =>
+    fetchWithAuth('/watchlist/reorder', { method: 'PUT', body: JSON.stringify({ symbols }) }),
+
   getMarketData: (symbol: string, interval = '1day', outputsize = '200', extendedHours?: boolean): Promise<{ symbol: string, interval: string, data: OHLCVDataPoint[] }> => 
     fetchWithAuth(`/market-data/${symbol}?interval=${interval}&outputsize=${outputsize}${extendedHours ? '&extendedHours=true' : ''}`),
 

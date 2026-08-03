@@ -97,6 +97,64 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+.sortBtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sortBtn:hover {
+  background: rgba(184, 120, 10, 0.2);
+  color: var(--gold-bright);
+  border-color: rgba(245, 200, 66, 0.3);
+}
+
+.sortContainer {
+  position: relative;
+}
+
+.sortMenu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(15, 10, 5, 0.95);
+  border: 1px solid rgba(245, 200, 66, 0.3);
+  border-radius: 8px;
+  padding: 4px;
+  width: 160px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  backdrop-filter: blur(10px);
+}
+
+.sortMenuItem {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.sortMenuItem:hover {
+  background: rgba(245, 200, 66, 0.15);
+  color: var(--gold-bright);
+}
+
 .list {
   flex: 1;
   overflow-y: auto;
@@ -190,10 +248,14 @@
   padding: 12px;
   border-radius: 8px;
   margin-bottom: 4px;
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.2s ease;
   position: relative;
   border-left: 3px solid transparent;
+}
+
+.item:active {
+  cursor: grabbing;
 }
 
 .item:hover {
@@ -259,9 +321,21 @@
   color: var(--down-color);
 }
 
-.removeBtn {
+.itemActions {
   position: absolute;
   right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.item:hover .itemActions {
+  opacity: 1;
+}
+
+.removeBtn {
   background: rgba(255, 23, 68, 0.1);
   color: var(--down-color);
   border: none;
@@ -273,16 +347,15 @@
   justify-content: center;
   font-size: 1.1rem;
   cursor: pointer;
-  opacity: 0;
   transition: all 0.2s ease;
 }
 
-.item:hover .removeBtn {
-  opacity: 1;
+.removeBtn:hover {
+  background: rgba(255, 23, 68, 0.2);
 }
 
 .item:hover .itemData {
-  opacity: 0; /* Hide data on hover to show remove btn */
+  opacity: 0; /* Hide data on hover to show actions */
 }
 
 @keyframes flashUp {

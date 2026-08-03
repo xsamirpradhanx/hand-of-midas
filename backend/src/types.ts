@@ -57,6 +57,7 @@ export interface DynamoDBBaseItem {
 export interface WatchlistItem extends DynamoDBBaseItem {
   readonly symbol: string;
   readonly addedAt: string;
+  sortOrder?: number;
 }
 
 /** A saved chart configuration stored in DynamoDB. */
@@ -231,6 +232,7 @@ export interface WatchlistResponse {
 export interface WatchlistEntry {
   readonly symbol: string;
   readonly addedAt: string;
+  readonly sortOrder?: number;
 }
 
 /** Response payload for GET / PUT /api/chart-config/:symbol. */

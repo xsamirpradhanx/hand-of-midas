@@ -11,10 +11,16 @@ interface WatchlistItemProps {
   flashDirection?: 'up' | 'down';
   onSelect: () => void;
   onRemove: () => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnter?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
 }
 
 export const WatchlistItem: React.FC<WatchlistItemProps> = ({
-  symbol, quote, isSelected, showExtendedHours, flashDirection, onSelect, onRemove
+  symbol, quote, isSelected, showExtendedHours, flashDirection, onSelect, onRemove,
+  draggable, onDragStart, onDragEnter, onDragEnd, onDragOver
 }) => {
   const isExtendedMarket = quote?.marketState ? quote.marketState !== 'REGULAR' : true;
   
@@ -36,6 +42,11 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
     <div
       className={`${styles.item} ${isSelected ? styles.selected : ''}`}
       onClick={onSelect}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
     >
       <div className={styles.itemInfo}>
         <span className={styles.symbol}>{symbol}</span>
@@ -67,13 +78,15 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
         </div>
       )}
 
-      <button
-        className={styles.removeBtn}
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        title="Remove"
-      >
-        ×
-      </button>
+      <div className={styles.itemActions}>
+        <button
+          className={styles.removeBtn}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="Remove"
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
 };

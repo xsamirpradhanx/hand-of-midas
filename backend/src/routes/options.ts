@@ -6,6 +6,7 @@ import { blackScholes, americanProxy, impliedVolatility , getRiskFreeRate } from
 import { getDTE, getCalendarDTE, getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import { getUnusualActivity, scoreContract, getBaseline, computeWhaleScore } from '../services/unusualActivity.js';
 import { getCachedData, setCachedData } from '../services/cache.js';
+import { withCoalescing } from '../utils/inflight.js';
 
 export interface OptionsContract {
   ticker: string;
@@ -52,7 +53,8 @@ export async function getOptionsChain(
   }
 
   try {
-    const { expirations: availableExpirations, contracts: rawChain } = await fetchOptionsChain(symbol, expiryParam);
+    const fetchKey = `FETCH_OPTIONS#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
+    const { expirations: availableExpirations, contracts: rawChain } = await withCoalescing(fetchKey, () => fetchOptionsChain(symbol, expiryParam));
     // Process chain
     const processedChain: Record<string, OptionsContract[]> = {};
     

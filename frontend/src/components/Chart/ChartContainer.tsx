@@ -25,6 +25,7 @@ interface ChartContainerProps {
   chartType: ChartType;
   showExtendedHours?: boolean;
   showPredictiveZones?: boolean;
+  timezone?: 'EST' | 'GMT';
 }
 
 interface TooltipData {
@@ -43,6 +44,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   chartType,
   showExtendedHours = false,
   showPredictiveZones = false,
+  timezone = 'EST',
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -183,6 +185,37 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     };
   }, []);
 
+  // Apply timezone formatting
+  useEffect(() => {
+    if (!chartRef.current) return;
+    
+    const tzString = timezone === 'EST' ? 'America/New_York' : 'UTC';
+    
+    const timeFormatter = (time: number | string) => {
+      if (typeof time === 'string') return time;
+      return new Date(time * 1000).toLocaleString('en-US', {
+        timeZone: tzString,
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
+      });
+    };
+
+    const tickMarkFormatter = (time: number | string, tickMarkType: any) => {
+      if (typeof time === 'string') return time;
+      const date = new Date(time * 1000);
+      const options: Intl.DateTimeFormatOptions = { timeZone: tzString };
+      if (tickMarkType === 0) options.year = 'numeric';
+      else if (tickMarkType === 1) options.month = 'short';
+      else if (tickMarkType === 2) options.day = 'numeric';
+      else { options.hour = '2-digit'; options.minute = '2-digit'; options.hour12 = false; }
+      return date.toLocaleString('en-US', options);
+    };
+
+    chartRef.current.applyOptions({
+      localization: { timeFormatter },
+      timeScale: { tickMarkFormatter }
+    });
+  }, [timezone]);
+
   // Crosshair tooltip subscription — runs once chart is ready, re-binds when data changes
   useEffect(() => {
     const chart = chartRef.current;
@@ -208,8 +241,17 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
         return parsed === param.time;
       });
 
+      const formatTooltipTime = (t: number | string) => {
+        if (typeof t === 'string') return t;
+        const tzString = timezone === 'EST' ? 'America/New_York' : 'UTC';
+        return new Date(t * 1000).toLocaleString('en-US', {
+          timeZone: tzString,
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
+        });
+      };
+
       setTooltip({
-        time: String(param.time),
+        time: formatTooltipTime(param.time),
         open: barData.open ?? barData.value ?? 0,
         high: barData.high ?? barData.value ?? 0,
         low: barData.low ?? barData.value ?? 0,
@@ -222,7 +264,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     return () => {
       chart.unsubscribeCrosshairMove(handler);
     };
-  }, [data]);
+  }, [data, timezone]);
 
   // Handle live tick updates
   useEffect(() => {

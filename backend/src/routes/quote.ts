@@ -6,6 +6,7 @@ import {
 import { yf } from '../services/yahoo.js';
 import type { APIGatewayProxyResultV2, QuoteResponse } from '../types.js';
 import { jsonResponse } from '../index.js';
+import { withCoalescing } from '../utils/inflight.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -46,7 +47,8 @@ export async function getQuote(
   // --- Fetch from upstream -------------------------------------------------
   let raw;
   try {
-    raw = await yf.quote(upperSymbol);
+    const fetchKey = `FETCH_QUOTE#${upperSymbol}`;
+    raw = await withCoalescing(fetchKey, () => yf.quote(upperSymbol));
   } catch (err) {
     console.error('Yahoo quote fetch error:', err);
     return jsonResponse(404, {

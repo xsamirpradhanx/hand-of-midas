@@ -110,6 +110,15 @@ const routes: readonly Route[] = [
     },
   },
   {
+    method: 'PUT',
+    pattern: '/api/watchlist/reorder',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return watchlist.reorderWatchlist(userId, event.body);
+    },
+  },
+  {
     method: 'DELETE',
     pattern: '/api/watchlist/:symbol',
     handler: async (event, params) => {

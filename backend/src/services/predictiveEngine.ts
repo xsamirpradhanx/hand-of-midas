@@ -89,6 +89,7 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
   // 3. Fetch News safely
   let news: PolygonNewsArticle[] | undefined;
   try {
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 750));
     news = await getTickerNews(sym, 15);
   } catch (err) {
     console.warn(`[PredictiveEngine] News unavailable for ${sym}, proceeding without news sentiment: ${err instanceof Error ? err.message : String(err)}`);

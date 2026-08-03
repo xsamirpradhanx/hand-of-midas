@@ -11,6 +11,15 @@ interface WatchlistPanelProps {
   showExtendedHours: boolean;
 }
 
+function getDisplayChangePercent(quote?: QuoteResponse, showExtendedHours?: boolean) {
+  if (!quote) return -Infinity;
+  const isExtendedMarket = quote.marketState ? quote.marketState !== 'REGULAR' : true;
+  if (showExtendedHours && isExtendedMarket && quote.preMarketChangePercent != null) {
+    return quote.preMarketChangePercent;
+  }
+  return quote.changePercent || 0;
+}
+
 export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, onSelectSymbol, showExtendedHours }) => {
   const [entries, setEntries] = useState<WatchlistEntry[]>([]);
   const [quotes, setQuotes] = useState<Record<string, QuoteResponse>>({});
@@ -25,6 +34,21 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
   });
   const [flashSymbols, setFlashSymbols] = useState<Record<string, 'up' | 'down'>>({});
   const prevPricesRef = useRef<Record<string, number>>({});
+  
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setIsSortMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const toggleCollapse = () => {
     setIsCollapsed(prev => {
@@ -107,11 +131,67 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
     }
   };
 
+  const handleDragStart = (e: React.DragEvent, position: number) => {
+    dragItem.current = position;
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnter = (e: React.DragEvent, position: number) => {
+    dragOverItem.current = position;
+  };
+
+  const handleDragEnd = async () => {
+    if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
+      const newEntries = [...entries];
+      const draggedItemContent = newEntries[dragItem.current];
+      newEntries.splice(dragItem.current, 1);
+      newEntries.splice(dragOverItem.current, 0, draggedItemContent);
+      setEntries(newEntries);
+      await api.reorderWatchlist(newEntries.map(e => e.symbol));
+    }
+    dragItem.current = null;
+    dragOverItem.current = null;
+  };
+
+  const handleSortOption = async (mode: 'name_asc' | 'name_desc' | 'percent_up' | 'percent_down') => {
+    setIsSortMenuOpen(false);
+    if (entries.length === 0) return;
+    
+    const sortedEntries = [...entries].sort((a, b) => {
+      if (mode === 'name_asc') return a.symbol.localeCompare(b.symbol);
+      if (mode === 'name_desc') return b.symbol.localeCompare(a.symbol);
+      
+      const aPct = getDisplayChangePercent(quotes[a.symbol], showExtendedHours);
+      const bPct = getDisplayChangePercent(quotes[b.symbol], showExtendedHours);
+      
+      if (mode === 'percent_up') return bPct - aPct;
+      if (mode === 'percent_down') return aPct - bPct;
+      
+      return 0;
+    });
+    
+    setEntries(sortedEntries);
+    await api.reorderWatchlist(sortedEntries.map(e => e.symbol));
+  };
+
   return (
     <div className={`${styles.panel} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
         {!isCollapsed && <h2>Watchlist</h2>}
         <div className={styles.headerActions}>
+          <div className={styles.sortContainer} ref={sortMenuRef}>
+            <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className={styles.sortBtn} title="Sort Options">
+              ↕
+            </button>
+            {isSortMenuOpen && (
+              <div className={styles.sortMenu}>
+                <div className={styles.sortMenuItem} onClick={() => handleSortOption('name_asc')}>Name (A-Z)</div>
+                <div className={styles.sortMenuItem} onClick={() => handleSortOption('name_desc')}>Name (Z-A)</div>
+                <div className={styles.sortMenuItem} onClick={() => handleSortOption('percent_up')}>% Up (High to Low)</div>
+                <div className={styles.sortMenuItem} onClick={() => handleSortOption('percent_down')}>% Down (Low to High)</div>
+              </div>
+            )}
+          </div>
           <button onClick={() => setIsModalOpen(true)} className={styles.addBtn} title="Add Ticker">+</button>
           <button onClick={toggleCollapse} className={styles.collapseBtn} title={isCollapsed ? "Expand Watchlist" : "Collapse Watchlist"}>
             {isCollapsed ? '»' : '«'}
@@ -125,7 +205,7 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
         ) : entries.length === 0 ? (
           <div className={styles.emptyState}>{isCollapsed ? '+' : 'Add tickers to get started'}</div>
         ) : (
-          entries.map(entry => {
+          entries.map((entry, index) => {
             const quote = quotes[entry.symbol];
             if (isCollapsed) {
               const isPositive = (quote?.change ?? 0) >= 0;
@@ -156,6 +236,11 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
                 flashDirection={flashSymbols[entry.symbol]}
                 onSelect={() => onSelectSymbol(entry.symbol)}
                 onRemove={() => handleRemoveTicker(entry.symbol)}
+                draggable={!isCollapsed}
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragEnter={(e) => handleDragEnter(e, index)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => e.preventDefault()}
               />
             );
           })
