@@ -101,11 +101,11 @@
 }
 
 .callItm {
-  background: rgba(0, 230, 118, 0.03);
+  background: rgba(0, 230, 118, 0.07);
 }
 
 .putItm {
-  background: rgba(255, 23, 68, 0.03);
+  background: rgba(255, 23, 68, 0.07);
 }
 
 .strikeCell {
@@ -113,6 +113,12 @@
   font-weight: 700;
   color: var(--text-primary);
   background: var(--bg-tertiary);
+}
+
+.strikeCellAtm {
+  color: #ffc107;
+  text-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+  font-size: 0.9rem;
 }
 
 .addBtn {
@@ -169,6 +175,78 @@
 .skeletonRow {
   height: 32px;
   margin-bottom: 2px;
+}
+
+/* ── ATM Divider ─────────────────────────────────────────────────────────── */
+.atmDividerRow td {
+  padding: 0;
+  border: none;
+  background: transparent;
+  position: relative;
+}
+
+.atmDividerLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 193, 7, 0.12) 15%,
+    rgba(255, 193, 7, 0.18) 50%,
+    rgba(255, 193, 7, 0.12) 85%,
+    transparent 100%
+  );
+  border-top: 1px solid rgba(255, 193, 7, 0.55);
+  border-bottom: 1px solid rgba(255, 193, 7, 0.25);
+  box-shadow: 0 0 12px rgba(255, 193, 7, 0.15);
+  animation: atmGlow 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes atmGlow {
+  from { box-shadow: 0 0 8px rgba(255, 193, 7, 0.1); }
+  to   { box-shadow: 0 0 18px rgba(255, 193, 7, 0.3); }
+}
+
+.atmLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #ffc107;
+  text-shadow: 0 0 8px rgba(255, 193, 7, 0.7);
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 2px 6px;
+  background: rgba(255, 193, 7, 0.1);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  margin: 0 auto;
+}
+
+/* Highlight ATM row cells with a very subtle gold tint */
+.atmRow td {
+  background: rgba(255, 193, 7, 0.04);
+}
+
+/* ── Dimmed Greeks (near-zero values) ────────────────────────────────────── */
+.dimmed {
+  color: var(--text-muted, #444) !important;
+  opacity: 0.38;
+}
+
+/* ── Whale Badge ─────────────────────────────────────────────────────────── */
+.whaleBadge {
+  display: inline-block;
+  font-size: 0.85em;
+  margin-right: 3px;
+  filter: drop-shadow(0 0 4px rgba(255, 193, 7, 0.8));
+  animation: whalePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes whalePop {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
 }
 
 .controlsBar {

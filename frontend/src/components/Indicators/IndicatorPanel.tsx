@@ -78,23 +78,35 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
 
   const handleAdd = (type: string) => {
     let params: Record<string, any> = {};
-    if (type === 'SMA' || type === 'EMA') params = { period: 20 };
-    if (type === 'RSI') params = { period: 14 };
-    if (type === 'MACD') params = { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
+    // Moving averages / overlays
+    if (type === 'SMA' || type === 'EMA' || type === 'WMA') params = { period: 20 };
+    if (type === 'HMA')       params = { period: 9 };
     if (type === 'BOLLINGER') params = { period: 20, stdDev: 2 };
-    if (type === 'ATR') params = { period: 14 };
-    if (type === 'STOCHASTIC') params = { periodK: 14, periodD: 3 };
-    if (type === 'VOLUME' || type === 'VWAP') params = {};
-    if (type === 'ADX') params = { period: 14 };
+    if (type === 'KC')        params = { period: 20, mult: 2 };
+    if (type === 'DC')        params = { period: 20 };
+    if (type === 'PSAR')      params = { step: 0.02, max: 0.2 };
+    if (type === 'ICHIMOKU')  params = {};
+    if (type === 'VWAP')      params = {};
     if (type === 'FIBONACCI') params = {};
+    // Oscillators
+    if (type === 'RSI')       params = { period: 14 };
+    if (type === 'MACD')      params = { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
+    if (type === 'STOCHASTIC') params = { periodK: 14, periodD: 3 };
+    if (type === 'CCI')       params = { period: 20 };
+    if (type === 'WILLR')     params = { period: 14 };
+    if (type === 'MFI')       params = { period: 14 };
+    if (type === 'ROC')       params = { period: 12 };
+    if (type === 'MOM')       params = { period: 10 };
+    if (type === 'AROON')     params = { period: 25 };
+    // Volume
+    if (type === 'VOLUME')    params = {};
+    if (type === 'OBV')       params = {};
+    if (type === 'CMF')       params = { period: 20 };
+    // Strength / Volatility
+    if (type === 'ATR')       params = { period: 14 };
+    if (type === 'ADX')       params = { period: 14 };
 
-    const newIndicator: IndicatorType = {
-      type,
-      enabled: true,
-      params,
-    };
-
-    onChange([...indicators, newIndicator]);
+    onChange([...indicators, { type, enabled: true, params }]);
     setShowAdd(false);
   };
 
@@ -130,19 +142,41 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
       </div>
       
       {showAdd && !isCollapsed && (
-        <div className={styles.addMenu}>
+      <div className={styles.addMenu}>
           <div className={styles.addMenuHeader}>Add Technical Indicator</div>
-          <button onClick={() => handleAdd('SMA')}>📈 SMA (Simple Moving Avg)</button>
-          <button onClick={() => handleAdd('EMA')}>⚡ EMA (Exponential Moving Avg)</button>
-          <button onClick={() => handleAdd('RSI')}>🌀 RSI (Relative Strength Index)</button>
-          <button onClick={() => handleAdd('MACD')}>📊 MACD Oscillator</button>
-          <button onClick={() => handleAdd('BOLLINGER')}>🛡️ Bollinger Bands</button>
-          <button onClick={() => handleAdd('ATR')}>📉 ATR (Average True Range)</button>
-          <button onClick={() => handleAdd('STOCHASTIC')}>📉 Stochastic Oscillator</button>
-          <button onClick={() => handleAdd('VWAP')}>📈 VWAP</button>
-          <button onClick={() => handleAdd('VOLUME')}>📊 Volume Histogram</button>
-          <button onClick={() => handleAdd('ADX')}>📊 ADX (Trend Strength)</button>
-          <button onClick={() => handleAdd('FIBONACCI')}>📐 Fibonacci Retracement</button>
+
+          <div className={styles.addMenuSection}>📈 Trend &amp; Overlays</div>
+          <button onClick={() => handleAdd('SMA')}>SMA — Simple Moving Avg</button>
+          <button onClick={() => handleAdd('EMA')}>EMA — Exponential Moving Avg</button>
+          <button onClick={() => handleAdd('WMA')}>WMA — Weighted Moving Avg</button>
+          <button onClick={() => handleAdd('HMA')}>HMA — Hull Moving Avg</button>
+          <button onClick={() => handleAdd('BOLLINGER')}>Bollinger Bands</button>
+          <button onClick={() => handleAdd('KC')}>Keltner Channels</button>
+          <button onClick={() => handleAdd('DC')}>Donchian Channels</button>
+          <button onClick={() => handleAdd('PSAR')}>Parabolic SAR</button>
+          <button onClick={() => handleAdd('ICHIMOKU')}>Ichimoku Cloud</button>
+          <button onClick={() => handleAdd('VWAP')}>VWAP</button>
+          <button onClick={() => handleAdd('FIBONACCI')}>Fibonacci Retracement</button>
+
+          <div className={styles.addMenuSection}>🌀 Oscillators</div>
+          <button onClick={() => handleAdd('RSI')}>RSI — Relative Strength Index</button>
+          <button onClick={() => handleAdd('MACD')}>MACD Oscillator</button>
+          <button onClick={() => handleAdd('STOCHASTIC')}>Stochastic Oscillator</button>
+          <button onClick={() => handleAdd('CCI')}>CCI — Commodity Channel Index</button>
+          <button onClick={() => handleAdd('WILLR')}>Williams %R</button>
+          <button onClick={() => handleAdd('MFI')}>MFI — Money Flow Index</button>
+          <button onClick={() => handleAdd('ROC')}>ROC — Rate of Change</button>
+          <button onClick={() => handleAdd('MOM')}>Momentum</button>
+          <button onClick={() => handleAdd('AROON')}>Aroon</button>
+
+          <div className={styles.addMenuSection}>📊 Volume</div>
+          <button onClick={() => handleAdd('VOLUME')}>Volume Histogram</button>
+          <button onClick={() => handleAdd('OBV')}>OBV — On Balance Volume</button>
+          <button onClick={() => handleAdd('CMF')}>CMF — Chaikin Money Flow</button>
+
+          <div className={styles.addMenuSection}>⚡ Strength &amp; Volatility</div>
+          <button onClick={() => handleAdd('ATR')}>ATR — Average True Range</button>
+          <button onClick={() => handleAdd('ADX')}>ADX — Trend Strength</button>
         </div>
       )}
 

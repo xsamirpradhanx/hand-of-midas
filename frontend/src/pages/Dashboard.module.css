@@ -21,8 +21,9 @@
 
 .marketOverviewStrip {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   width: 100%;
+  overflow: hidden;
 }
 
 .marketToggleBtn {

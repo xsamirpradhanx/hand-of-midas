@@ -298,12 +298,16 @@
   color: var(--text-primary);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.9rem;
+  text-align: right;
+  min-width: 68px;
 }
 
 .change {
   font-size: 0.75rem;
   font-weight: 600;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  text-align: right;
+  min-width: 68px;
 }
 
 .changeDollar {

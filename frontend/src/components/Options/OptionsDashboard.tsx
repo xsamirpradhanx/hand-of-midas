@@ -7,6 +7,17 @@ import { api } from '../../lib/api';
 import styles from './OptionsDashboard.module.css';
 import chainStyles from './OptionsChainTable.module.css';
 
+/**
+ * Returns true if the expiry date is a standard monthly expiry.
+ * Monthly expirations fall on the 3rd Friday of the month (day 15–21).
+ */
+function isMonthlyExpiry(dateStr: string): boolean {
+  const d = new Date(dateStr + 'T12:00:00Z');
+  const day = d.getUTCDate();
+  const dow = d.getUTCDay(); // 5 = Friday
+  return dow === 5 && day >= 15 && day <= 21;
+}
+
 interface Props {
   symbol: string;
 }
@@ -17,6 +28,7 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
   const [activeTab, setActiveTab] = useState<Tab>('chain');
   const [expirations, setExpirations] = useState<string[]>([]);
   const [activeExpiry, setActiveExpiry] = useState<string | null>(null);
+  const [underlyingPrice, setUnderlyingPrice] = useState<number>(0);
   const [highlightWhaleFlow, setHighlightWhaleFlow] = useState<boolean>(() => {
     try {
       return localStorage.getItem('options_highlight_whale_flow') !== 'false';
@@ -34,8 +46,26 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
     }
   };
 
+  const [strikeDesc, setStrikeDesc] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('options_strike_desc') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleStrikeOrder = (checked: boolean) => {
+    setStrikeDesc(checked);
+    try {
+      localStorage.setItem('options_strike_desc', String(checked));
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
+    // Fetch expirations
     api.getOptionsChain(symbol)
       .then(res => {
         if (!isMounted) return;
@@ -43,6 +73,13 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
         if (res.expirations.length > 0) {
           setActiveExpiry(res.expirations[0]);
         }
+      })
+      .catch(console.error);
+    // Fetch underlying quote for ATM detection
+    api.getQuote(symbol)
+      .then(quote => {
+        if (!isMounted) return;
+        if (quote?.price) setUnderlyingPrice(quote.price);
       })
       .catch(console.error);
     return () => { isMounted = false; };
@@ -56,7 +93,7 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
             className={`${styles.tab} ${activeTab === 'chain' ? styles.active : ''}`}
             onClick={() => setActiveTab('chain')}
           >
-            Options Chain
+            Chain View
           </button>
           <button
             className={`${styles.tab} ${activeTab === 'metrics' ? styles.active : ''}`}
@@ -81,19 +118,38 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
             onChange={(e) => toggleWhaleFlow(e.target.checked)}
           />
         </label>
+
+        <label
+          className={styles.strikeOrderLabel}
+          title="Toggle strike order: Ascending (low→high, industry standard) or Descending (high→low, matches chart Y-axis)"
+        >
+          <span className={styles.strikeOrderText}>
+            {strikeDesc ? '↓' : '↑'} Strike Order ({strikeDesc ? 'Desc' : 'Asc'})
+          </span>
+          <input
+            type="checkbox"
+            className={styles.strikeOrderCheckbox}
+            checked={strikeDesc}
+            onChange={(e) => toggleStrikeOrder(e.target.checked)}
+          />
+        </label>
       </div>
 
       {expirations.length > 0 && (
         <div className={chainStyles.header}>
-          {expirations.map(exp => (
-            <button
-              key={exp}
-              className={`${chainStyles.expiryTab} ${activeExpiry === exp ? chainStyles.expiryTabActive : ''}`}
-              onClick={() => setActiveExpiry(exp)}
-            >
-              {exp}
-            </button>
-          ))}
+          {expirations.map(exp => {
+            const isWeekly = !isMonthlyExpiry(exp);
+            return (
+              <button
+                key={exp}
+                className={`${chainStyles.expiryTab} ${activeExpiry === exp ? chainStyles.expiryTabActive : ''}`}
+                onClick={() => setActiveExpiry(exp)}
+              >
+                {exp}
+                {isWeekly && <span className={styles.weeklyBadge}>W</span>}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -107,8 +163,9 @@ export const OptionsDashboard: React.FC<Props> = ({ symbol }) => {
             <OptionsChainTable
               symbol={symbol}
               activeExpiry={activeExpiry}
-              underlyingPrice={0}
+              underlyingPrice={underlyingPrice}
               highlightWhaleFlow={highlightWhaleFlow}
+              strikeDesc={strikeDesc}
             />
           </ErrorBoundary>
         )}

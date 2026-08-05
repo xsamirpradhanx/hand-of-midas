@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../../lib/api';
 import type { OptionsContract, OptionsChainResponse } from '../../types';
 import styles from './OptionsChainTable.module.css';
@@ -8,6 +8,7 @@ interface OptionsChainTableProps {
   activeExpiry: string | null;
   underlyingPrice: number;
   highlightWhaleFlow?: boolean;
+  strikeDesc?: boolean;
 }
 
 const formatNumber = (num: number) => {
@@ -20,15 +21,20 @@ const getIvColorClass = (iv: number) => {
   return styles.ivHigh;
 };
 
+/** Returns true when a greek value is essentially zero and should be dimmed. */
+const isNearZero = (val: number) => Math.abs(val) < 0.005;
+
 export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
   symbol,
   activeExpiry,
-  underlyingPrice: _underlyingPrice,
+  underlyingPrice,
   highlightWhaleFlow = false,
+  strikeDesc = false,
 }) => {
   const [data, setData] = useState<OptionsChainResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const atmRowRef = useRef<HTMLTableRowElement | null>(null);
 
   useEffect(() => {
     if (!symbol || !activeExpiry) {
@@ -60,6 +66,17 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
 
     return () => { isMounted = false; };
   }, [symbol, activeExpiry]);
+
+  // Auto-scroll to ATM row when data or underlying price changes
+  useEffect(() => {
+    if (!loading && atmRowRef.current) {
+      // Small timeout to allow the DOM to paint
+      const t = setTimeout(() => {
+        atmRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 80);
+      return () => clearTimeout(t);
+    }
+  }, [loading, underlyingPrice, activeExpiry]);
 
   const handleAddPosition = (contract: OptionsContract) => {
     api.addPosition({
@@ -93,6 +110,19 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
       return { strike, call, put };
     });
   }, [data, activeExpiry]);
+
+  /** The ATM strike: the one closest to the underlying price. */
+  const atmStrike = useMemo(() => {
+    if (!rows.length || !underlyingPrice) return null;
+    return rows.reduce((best, row) =>
+      Math.abs(row.strike - underlyingPrice) < Math.abs(best.strike - underlyingPrice) ? row : best
+    ).strike;
+  }, [rows, underlyingPrice]);
+
+  /** Rows in the order to display — reversed when strikeDesc is true. */
+  const displayRows = useMemo(() => {
+    return strikeDesc ? [...rows].reverse() : rows;
+  }, [rows, strikeDesc]);
 
   const topVolumes = useMemo(() => {
     if (!data || !activeExpiry || !data.chain[activeExpiry]) return { call: new Map<number, number>(), put: new Map<number, number>() };
@@ -130,6 +160,12 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
     );
   }
 
+  /** Insert an ATM divider row between the last ITM and first OTM strike.
+   *  - Ascending  (low→high): insert before the first strike >= underlyingPrice
+   *  - Descending (high→low): insert before the first strike <  underlyingPrice
+   */
+  let atmDividerInserted = false;
+
   return (
     <div className={styles.container}>
       <div className={styles.tableWrapper}>
@@ -163,7 +199,7 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ strike, call, put }) => {
+              {displayRows.map(({ strike, call, put }) => {
                 const callRank = highlightWhaleFlow ? topVolumes.call.get(strike) : undefined;
                 const putRank = highlightWhaleFlow ? topVolumes.put.get(strike) : undefined;
 
@@ -177,43 +213,82 @@ export const OptionsChainTable: React.FC<OptionsChainTableProps> = ({
 
                 const callStyle = callOpacity > 0 ? { background: `rgba(0, 230, 118, ${callOpacity})` } : {};
                 const putStyle = putOpacity > 0 ? { background: `rgba(255, 23, 68, ${putOpacity})` } : {};
-                
-                return (
-                <tr key={strike}>
-                  {/* Call Side */}
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>
-                    {call && <button className={`${styles.addBtn} ${styles.callAdd}`} onClick={() => handleAddPosition(call)}>+</button>}
-                    {call ? formatNumber(call.volume) : '-'}
-                  </td>
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call ? formatNumber(call.openInterest) : '-'}</td>
-                  <td className={`${call?.itm ? styles.callItm : ''} ${call ? getIvColorClass(call.impliedVolatility) : ''}`} style={callStyle}>
-                    {call ? (call.impliedVolatility * 100).toFixed(1) + '%' : '-'}
-                  </td>
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.bid.toFixed(2) || '-'}</td>
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.ask.toFixed(2) || '-'}</td>
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.delta.toFixed(2) || '-'}</td>
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.gamma.toFixed(3) || '-'}</td>
-                  <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.theta.toFixed(3) || '-'}</td>
-                  
-                  {/* Strike */}
-                  <td className={styles.strikeCell}>{strike.toFixed(2)}</td>
 
-                  {/* Put Side */}
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.theta.toFixed(3) || '-'}</td>
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.gamma.toFixed(3) || '-'}</td>
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.delta.toFixed(2) || '-'}</td>
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.bid.toFixed(2) || '-'}</td>
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.ask.toFixed(2) || '-'}</td>
-                  <td className={`${put?.itm ? styles.putItm : ''} ${put ? getIvColorClass(put.impliedVolatility) : ''}`} style={putStyle}>
-                    {put ? (put.impliedVolatility * 100).toFixed(1) + '%' : '-'}
-                  </td>
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put ? formatNumber(put.openInterest) : '-'}</td>
-                  <td className={put?.itm ? styles.putItm : ''} style={putStyle}>
-                    {put ? formatNumber(put.volume) : '-'}
-                    {put && <button className={`${styles.addBtn} ${styles.putAdd}`} onClick={() => handleAddPosition(put)}>+</button>}
-                  </td>
-                </tr>
-              )})}
+                const isAtm = strike === atmStrike;
+
+                // ATM divider: position changes based on sort direction
+                let showAtmDivider = false;
+                if (!atmDividerInserted && underlyingPrice > 0) {
+                  if (!strikeDesc && strike >= underlyingPrice) {
+                    // Ascending: insert before first strike at-or-above spot price
+                    showAtmDivider = true;
+                    atmDividerInserted = true;
+                  } else if (strikeDesc && strike < underlyingPrice) {
+                    // Descending: insert before first strike that drops below spot price
+                    showAtmDivider = true;
+                    atmDividerInserted = true;
+                  }
+                }
+
+                return (
+                  <React.Fragment key={strike}>
+                    {showAtmDivider && (
+                      <tr className={styles.atmDividerRow} aria-hidden="true">
+                        <td colSpan={17}>
+                          <div className={styles.atmDividerLine}>
+                            <span className={styles.atmLabel}>
+                              ATM · ${underlyingPrice.toFixed(2)}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    <tr
+                      ref={isAtm ? atmRowRef : undefined}
+                      className={isAtm ? styles.atmRow : undefined}
+                    >
+                      {/* Call Side */}
+                      <td className={call?.itm ? styles.callItm : ''} style={callStyle}>
+                        {call && <button className={`${styles.addBtn} ${styles.callAdd}`} onClick={() => handleAddPosition(call)}>+</button>}
+                        {callRank === 0 && highlightWhaleFlow && call && (
+                          <span className={styles.whaleBadge} title="Top whale volume">🐋</span>
+                        )}
+                        {call ? formatNumber(call.volume) : '-'}
+                      </td>
+                      <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call ? formatNumber(call.openInterest) : '-'}</td>
+                      <td className={`${call?.itm ? styles.callItm : ''} ${call ? getIvColorClass(call.impliedVolatility) : ''}`} style={callStyle}>
+                        {call ? (call.impliedVolatility * 100).toFixed(1) + '%' : '-'}
+                      </td>
+                      <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.bid.toFixed(2) || '-'}</td>
+                      <td className={call?.itm ? styles.callItm : ''} style={callStyle}>{call?.ask.toFixed(2) || '-'}</td>
+                      <td className={`${call?.itm ? styles.callItm : ''} ${call && isNearZero(call.delta) ? styles.dimmed : ''}`} style={callStyle}>{call?.delta.toFixed(2) || '-'}</td>
+                      <td className={`${call?.itm ? styles.callItm : ''} ${call && isNearZero(call.gamma) ? styles.dimmed : ''}`} style={callStyle}>{call?.gamma.toFixed(3) || '-'}</td>
+                      <td className={`${call?.itm ? styles.callItm : ''} ${call && isNearZero(call.theta) ? styles.dimmed : ''}`} style={callStyle}>{call?.theta.toFixed(3) || '-'}</td>
+                      
+                      {/* Strike */}
+                      <td className={isAtm ? `${styles.strikeCell} ${styles.strikeCellAtm}` : styles.strikeCell}>{strike.toFixed(2)}</td>
+
+                      {/* Put Side */}
+                      <td className={`${put?.itm ? styles.putItm : ''} ${put && isNearZero(put.theta) ? styles.dimmed : ''}`} style={putStyle}>{put?.theta.toFixed(3) || '-'}</td>
+                      <td className={`${put?.itm ? styles.putItm : ''} ${put && isNearZero(put.gamma) ? styles.dimmed : ''}`} style={putStyle}>{put?.gamma.toFixed(3) || '-'}</td>
+                      <td className={`${put?.itm ? styles.putItm : ''} ${put && isNearZero(put.delta) ? styles.dimmed : ''}`} style={putStyle}>{put?.delta.toFixed(2) || '-'}</td>
+                      <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.bid.toFixed(2) || '-'}</td>
+                      <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put?.ask.toFixed(2) || '-'}</td>
+                      <td className={`${put?.itm ? styles.putItm : ''} ${put ? getIvColorClass(put.impliedVolatility) : ''}`} style={putStyle}>
+                        {put ? (put.impliedVolatility * 100).toFixed(1) + '%' : '-'}
+                      </td>
+                      <td className={put?.itm ? styles.putItm : ''} style={putStyle}>{put ? formatNumber(put.openInterest) : '-'}</td>
+                      <td className={put?.itm ? styles.putItm : ''} style={putStyle}>
+                        {put ? formatNumber(put.volume) : '-'}
+                        {putRank === 0 && highlightWhaleFlow && put && (
+                          <span className={styles.whaleBadge} title="Top whale volume">🐋</span>
+                        )}
+                        {put && <button className={`${styles.addBtn} ${styles.putAdd}`} onClick={() => handleAddPosition(put)}>+</button>}
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}
