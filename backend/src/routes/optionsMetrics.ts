@@ -1,6 +1,6 @@
 import { getRiskFreeRate } from '../services/greeks.js';
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
-import { getOptionsChainYahoo } from '../services/yahoo.js';
+import { fetchOptionsChainProviderAware } from '../services/providerService.js';
 import { getDTE, getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import { getItem, putItem, queryItems } from '../services/dynamodb.js';
 import { jsonResponse } from '../utils/response.js';
@@ -35,13 +35,19 @@ export async function getOptionsMetrics(
   if (!symbol) return jsonResponse(400, { error: 'Symbol required' });
 
   try {
+    const providerHeader = event.headers?.['x-data-provider']?.toLowerCase();
+    
     // Fetch all expirations
-    const { expirations, quote } = await getOptionsChainYahoo(symbol);
+    const { expirations, quote, source } = await fetchOptionsChainProviderAware(symbol, undefined, providerHeader);
     if (!expirations || expirations.length === 0) {
       return jsonResponse(404, { error: 'No options data found' });
     }
 
     let spotPrice = quote?.regularMarketPrice || 0;
+    
+    const responseHeaders = {
+      'X-Source-Provider': source
+    };
 
     // Term Structure Data
     const termStructure: { expiry: string; dte: number; averageIV: number }[] = [];
@@ -81,7 +87,7 @@ export async function getOptionsMetrics(
 
     // Build Term Structure
     for (const expiry of tsExpirations) {
-      const { contracts } = await getOptionsChainYahoo(symbol, expiry);
+      const { contracts } = await fetchOptionsChainProviderAware(symbol, expiry, providerHeader);
       const dte = await getDTE(expiry);
 
       let sumIV = 0;
@@ -109,7 +115,7 @@ export async function getOptionsMetrics(
 
     // Build Specific Metrics (GEX, Skew, Vol/OI)
     for (const expiry of metricsExpirations) {
-      const { contracts } = await getOptionsChainYahoo(symbol, expiry);
+      const { contracts } = await fetchOptionsChainProviderAware(symbol, expiry, providerHeader);
       
       for (const c of contracts) {
         const strike = c.details.strike_price;
@@ -147,7 +153,7 @@ export async function getOptionsMetrics(
       const { blackScholes } = await import('../services/greeks.js');
 
       for (const expiry of metricsExpirations) {
-        const { contracts } = await getOptionsChainYahoo(symbol, expiry);
+        const { contracts } = await fetchOptionsChainProviderAware(symbol, expiry, providerHeader);
         const dte = await getDTE(expiry);
         const t = Math.max(1 / 365, getTimeToExpiryYears(expiry));
 
@@ -178,7 +184,7 @@ export async function getOptionsMetrics(
 
     // Calculate Max Pain for the target expiration
     if (spotPrice > 0) {
-      const { contracts: nearestContracts } = await getOptionsChainYahoo(symbol, activeMaxPainExpiry);
+      const { contracts: nearestContracts } = await fetchOptionsChainProviderAware(symbol, activeMaxPainExpiry, providerHeader);
       const strikes = Array.from(new Set(nearestContracts.map(c => c.details.strike_price))).sort((a, b) => a - b);
       
       for (const evalStrike of strikes) {
@@ -338,7 +344,7 @@ export async function getOptionsMetrics(
       gexProfile,
       volumeOIByStrike: volumeOIProfile,
       oiChanges,
-    });
+    }, responseHeaders);
   } catch (err: any) {
     console.error('Metrics Error:', err);
     return jsonResponse(500, { error: err.message });

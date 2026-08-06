@@ -3,7 +3,7 @@ import {
   setCachedData,
   quoteCacheKey,
 } from '../services/cache.js';
-import { yf } from '../services/yahoo.js';
+import { getQuoteProviderAware } from '../services/providerService.js';
 import type { APIGatewayProxyResultV2, QuoteResponse } from '../types.js';
 import { jsonResponse } from '../index.js';
 import { withCoalescing } from '../utils/inflight.js';
@@ -30,27 +30,34 @@ const QUOTE_TTL_SECONDS = 2 * 60;
  */
 export async function getQuote(
   symbol: string,
+  event?: any,
 ): Promise<APIGatewayProxyResultV2> {
   const upperSymbol = symbol.trim().toUpperCase();
   if (!upperSymbol) {
     return jsonResponse(400, { error: '"symbol" path parameter is required' });
   }
 
+  // --- Extract Provider ----------------------------------------------------
+  const provider = event?.headers?.['x-data-provider']?.toLowerCase();
+
   // --- Check cache ---------------------------------------------------------
-  const cacheKey = quoteCacheKey(upperSymbol);
-  const cached = await getCachedData<QuoteResponse>(cacheKey);
+  const cacheKey = quoteCacheKey(upperSymbol) + (provider ? `#PROV-${provider}` : '');
+  const cached = await getCachedData<{ quote: QuoteResponse; source: string }>(cacheKey);
 
   if (cached) {
-    return jsonResponse(200, cached);
+    return jsonResponse(200, cached.quote, { 'X-Source-Provider': cached.source });
   }
 
   // --- Fetch from upstream -------------------------------------------------
-  let raw;
+  let raw: any;
+  let source = 'yahoo';
   try {
-    const fetchKey = `FETCH_QUOTE#${upperSymbol}`;
-    raw = await withCoalescing(fetchKey, () => yf.quote(upperSymbol));
+    const fetchKey = `FETCH_QUOTE#${upperSymbol}#PROV-${provider || 'DEFAULT'}`;
+    const res = await withCoalescing(fetchKey, () => getQuoteProviderAware(upperSymbol, provider));
+    raw = res.data;
+    source = res.source;
   } catch (err) {
-    console.error('Yahoo quote fetch error:', err);
+    console.error('Quote provider fetch error:', err);
     return jsonResponse(404, {
       error: `No quote data found for symbol "${upperSymbol}".`,
     });
@@ -80,11 +87,11 @@ export async function getQuote(
   };
 
   // --- Populate cache (fire-and-forget) ------------------------------------
-  void setCachedData(cacheKey, quoteResponse, QUOTE_TTL_SECONDS).catch(
+  void setCachedData(cacheKey, { quote: quoteResponse, source }, QUOTE_TTL_SECONDS).catch(
     (err: unknown) => {
       console.error('Failed to write quote to cache', err);
     },
   );
 
-  return jsonResponse(200, quoteResponse);
+  return jsonResponse(200, quoteResponse, { 'X-Source-Provider': source });
 }

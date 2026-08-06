@@ -41,16 +41,39 @@ async function getCognitoToken(): Promise<string | null> {
 async function fetchWithAuth(path: string, options: RequestInit = {}) {
   const token = await getCognitoToken();
   
-  const headers = new Headers(options.headers || {});
+  const headers = new Headers(options.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  if (!headers.has('Content-Type')) {
+  
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json');
+  }
+
+  try {
+    const rawProvider = window.localStorage.getItem('dashboard_dataProvider');
+    const provider = rawProvider ? JSON.parse(rawProvider) : 'yahoo';
+    headers.set('X-Data-Provider', provider);
+  } catch (e) {
+    headers.set('X-Data-Provider', 'yahoo');
   }
 
   const fetchUrl = `${API_BASE_URL}${path}`;
   const response = await fetch(fetchUrl, { ...options, headers });
+
+  const requestedProvider = headers.get('X-Data-Provider');
+  const actualProvider = response.headers.get('X-Source-Provider');
+  
+  if (actualProvider && actualProvider !== 'cache' && requestedProvider && actualProvider !== requestedProvider) {
+    window.dispatchEvent(new CustomEvent('DATA_PROVIDER_FALLBACK', {
+      detail: { requested: requestedProvider, actual: actualProvider }
+    }));
+  }
+
+  if (response.status === 401) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.error || `API Error: ${response.status} ${response.statusText}`);
+  }
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));

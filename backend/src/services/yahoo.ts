@@ -76,7 +76,7 @@ export async function getTimeSeriesYahoo(symbol: string, interval: string, limit
     // Approximate limit: 1d = limit days, 1h = limit hours (limit/7 days roughly), etc.
     // To be safe, fetch enough days to satisfy the limit
     let daysToFetch = limit;
-    if (yfInterval === '1h' || yfInterval === '60m') daysToFetch = Math.ceil(limit / 7) + 5;
+    if ((yfInterval as string) === '1h' || (yfInterval as string) === '60m') daysToFetch = Math.ceil(limit / 7) + 5;
     if (yfInterval === '15m') daysToFetch = Math.ceil(limit / 28) + 5;
     
     // But yahoo-finance2 allows simple `chart` with `period1` and `period2`.

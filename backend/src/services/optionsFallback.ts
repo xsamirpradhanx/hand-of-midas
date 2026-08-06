@@ -6,11 +6,12 @@ let polygonOptionsDisabled = false;
 export async function fetchOptionsChainWithFallback(
   symbol: string,
   expiryStr?: string
-): Promise<{ expirations: string[]; contracts: PolygonOptionsContract[]; quote?: any }> {
+): Promise<{ expirations: string[]; contracts: PolygonOptionsContract[]; quote?: any; source: string }> {
   if (!polygonOptionsDisabled) {
     try {
       // Polygon is the licensed source of record. Yahoo is a degraded fallback only.
-      return await getOptionsChainPolygon(symbol, expiryStr);
+      const data = await getOptionsChainPolygon(symbol, expiryStr);
+      return { ...data, source: 'polygon' };
     } catch (polygonErr: any) {
       if (polygonErr.message.includes('403')) {
         console.warn(`Polygon options 403 for ${symbol} — disabling for this session.`);
@@ -22,7 +23,8 @@ export async function fetchOptionsChainWithFallback(
   }
     
   try {
-    return await getOptionsChainYahoo(symbol, expiryStr);
+    const data = await getOptionsChainYahoo(symbol, expiryStr);
+    return { ...data, source: 'yahoo' };
   } catch (yahooErr: any) {
     console.error(`Yahoo Finance fallback also failed for ${symbol}:`, yahooErr);
     throw new Error(`Failed to fetch options chain for ${symbol} from all providers.`);

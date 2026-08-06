@@ -7,7 +7,8 @@ import type { APIGatewayProxyResultV2 } from '../types.js';
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Data-Provider',
+  'Access-Control-Expose-Headers': 'X-Source-Provider',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -22,6 +23,7 @@ const CORS_HEADERS: Record<string, string> = {
 export function jsonResponse(
   statusCode: number,
   body: unknown,
+  extraHeaders?: Record<string, string>,
 ): APIGatewayProxyResultV2 {
   return {
     statusCode,
@@ -29,6 +31,7 @@ export function jsonResponse(
       ...CORS_HEADERS,
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
+      ...extraHeaders,
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   };

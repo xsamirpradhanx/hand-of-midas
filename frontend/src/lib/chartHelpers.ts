@@ -18,9 +18,25 @@ export function createMainChart(container: HTMLElement, width: number, height: n
     },
     crosshair: {
       mode: 1, // Normal mode
-    }
+    },
+    localization: {
+      // Always display times in US Eastern (market timezone), regardless of browser locale.
+      // This ensures Schwab (UTC epoch) and Yahoo (UTC strings) both display as ET.
+      timeFormatter: (time: number | string) => {
+        if (typeof time === 'string') return time;
+        return new Date(time * 1000).toLocaleString('en-US', {
+          timeZone: 'America/New_York',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        });
+      },
+    },
   });
 }
+
 
 const colors = [
   '#00d4aa', // teal

@@ -1,5 +1,4 @@
-import { fetchOptionsChainWithFallback } from './optionsFallback.js';
-import { getQuote } from './polygon.js';
+import { fetchOptionsChainProviderAware, getQuoteProviderAware } from './providerService.js';
 import type { PolygonOptionsContract } from './polygon.js';
 import { blackScholes , getRiskFreeRate } from './greeks.js';
 import { getDTE, getTimeToExpiryYears } from './tradingCalendar.js';
@@ -54,6 +53,7 @@ export interface OptionsAnalyticsResult {
   termStructure: TermStructureResult | null;
   gex: GexSummary | null;
   vixTermStructure: TermStructureResult | null;
+  source: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ async function buildTermStructure(
   const points: TermStructurePoint[] = [];
 
   for (const expiry of slice) {
-    const { contracts } = await fetchOptionsChainWithFallback(symbol, expiry);
+    const { contracts } = await fetchOptionsChainProviderAware(symbol, expiry);
     const avgIV = oiWeightedAvgIV(contracts);
     if (avgIV <= 0) continue;
 
@@ -406,18 +406,19 @@ function computeGexProfile(
  */
 export async function getOptionsAnalytics(
   symbol: string,
-  options?: { includeVix?: boolean; expiry?: string },
+  options?: { includeVix?: boolean; expiry?: string; provider?: string },
 ): Promise<OptionsAnalyticsResult> {
   const sym = symbol.toUpperCase();
   const includeVix = options?.includeVix !== false;
+  const provider = options?.provider;
 
-  const [quote, chain] = await Promise.all([
-    getQuote(sym),
-    fetchOptionsChainWithFallback(sym),
+  const [quoteRes, chainRes] = await Promise.all([
+    getQuoteProviderAware(sym, provider),
+    fetchOptionsChainProviderAware(sym, undefined, provider),
   ]);
 
-  const spotPrice = quote.price;
-  const { expirations, contracts } = chain;
+  const spotPrice = quoteRes.data.price;
+  const { expirations, contracts, source } = chainRes;
 
   const targetExpiry =
     options?.expiry && expirations.includes(options.expiry)
@@ -440,7 +441,7 @@ export async function getOptionsAnalytics(
   let vixTermStructure: TermStructureResult | null = null;
   if (includeVix && sym !== 'VIX') {
     try {
-      const vixChain = await fetchOptionsChainWithFallback('VIX');
+      const vixChain = await fetchOptionsChainProviderAware('VIX', undefined, provider);
       vixTermStructure = await buildTermStructure('VIX', vixChain.expirations);
     } catch {
       // VIX chain may be unavailable on some data tiers — non-fatal.
@@ -455,6 +456,7 @@ export async function getOptionsAnalytics(
     termStructure,
     gex,
     vixTermStructure,
+    source,
   };
 }
 

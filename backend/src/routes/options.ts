@@ -1,7 +1,8 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../utils/response.js';
 import { getHistoricalRealizedVol as fetchHistoricalIV } from '../services/polygon.js';
-import { fetchOptionsChainWithFallback as fetchOptionsChain } from '../services/optionsFallback.js';
+import { fetchOptionsChainWithFallback } from '../services/optionsFallback.js';
+import { fetchOptionsChainSchwab } from '../services/schwabService.js';
 import { blackScholes, americanProxy, impliedVolatility , getRiskFreeRate } from '../services/greeks.js';
 import { getDTE, getCalendarDTE, getTimeToExpiryYears } from '../services/tradingCalendar.js';
 import { getUnusualActivity, scoreContract, getBaseline, computeWhaleScore } from '../services/unusualActivity.js';
@@ -45,27 +46,60 @@ export async function getOptionsChain(
   }
 
   const expiryParam = event.queryStringParameters?.['expiry'];
-  const cacheKey = `OPTIONS_CHAIN_V3#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
+  const providerHeader = event.headers?.['x-data-provider']?.toLowerCase();
+  const isSchwab = providerHeader === 'schwab';
+  const cacheKey = `OPTIONS_CHAIN_V4#${isSchwab ? 'SCHWAB' : 'DEFAULT'}#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
   
   const cached = await getCachedData<any>(cacheKey);
   if (cached) {
-    return jsonResponse(200, cached);
+    return jsonResponse(200, cached, { 'X-Source-Provider': cached.source || 'cache' });
   }
 
   try {
-    const fetchKey = `FETCH_OPTIONS#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
-    const { expirations: availableExpirations, contracts: rawChain } = await withCoalescing(fetchKey, () => fetchOptionsChain(symbol, expiryParam));
+    const providerHeader = event.headers?.['x-data-provider']?.toLowerCase();
+    const isSchwab = providerHeader === 'schwab';
+    
+    let source = 'yahoo';
+    let rawChain: any[] = [];
+    let availableExpirations: string[] = [];
+    let schwabQuote: any = null;
+
+    if (isSchwab) {
+      try {
+        const res = await fetchOptionsChainSchwab(symbol, expiryParam);
+        rawChain = res.contracts;
+        availableExpirations = res.expirations;
+        schwabQuote = res.quote;
+        source = 'schwab';
+      } catch (err) {
+        console.warn(`Schwab options fetch failed for ${symbol}: ${err instanceof Error ? err.message : String(err)}. Falling back to default pipeline...`);
+        // Fallthrough to default
+      }
+    }
+
+    // Default pipeline (Polygon -> Yahoo)
+    if (source !== 'schwab') {
+      const fetchKey = `FETCH_OPTIONS#DEFAULT#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
+      const res = await withCoalescing(fetchKey, () => fetchOptionsChainWithFallback(symbol, expiryParam));
+      rawChain = res.contracts;
+      availableExpirations = res.expirations;
+      schwabQuote = res.quote;
+      source = res.source || 'yahoo';
+    }
+    
     // Process chain
     const processedChain: Record<string, OptionsContract[]> = {};
     
-    // Fetch real underlying price from Yahoo Finance to use for intrinsic calculations
-    let underlyingPrice = 0;
-    try {
-      const { yf } = await import('../services/yahoo.js');
-      const underlyingQuote = await yf.quote(symbol);
-      underlyingPrice = underlyingQuote?.regularMarketPrice || 0;
-    } catch (err) {
-      console.error('Failed to fetch underlying price from Yahoo Finance:', err);
+    // Fetch real underlying price to use for intrinsic calculations
+    let underlyingPrice = schwabQuote?.regularMarketPrice || 0;
+    if (!underlyingPrice) {
+      try {
+        const { yf } = await import('../services/yahoo.js');
+        const underlyingQuote = await yf.quote(symbol);
+        underlyingPrice = underlyingQuote?.regularMarketPrice || 0;
+      } catch (err) {
+        console.error('Failed to fetch underlying price from Yahoo Finance:', err);
+      }
     }
 
     for (const contract of rawChain) {
@@ -146,12 +180,18 @@ export async function getOptionsChain(
       underlyingPrice,
       expirations: availableExpirations.length > 0 ? availableExpirations : Object.keys(processedChain).sort(),
       chain: processedChain,
+      source,
     };
     
     // Cache TTL: 5 min during market hours, 4 hours after close. For simplicity, just use 5 mins here.
-    await setCachedData(cacheKey, responseData, 300);
+    const actualCacheKey = `OPTIONS_CHAIN_V4#${source.toUpperCase()}#${symbol}${expiryParam ? `#${expiryParam}` : ''}`;
+    try {
+      await setCachedData(actualCacheKey, responseData, 300);
+    } catch (cacheErr) {
+      console.warn(`Failed to cache options chain for ${symbol} (possibly too large):`, cacheErr);
+    }
     
-    return jsonResponse(200, responseData);
+    return jsonResponse(200, responseData, { 'X-Source-Provider': source });
   } catch (err: any) {
     return jsonResponse(500, { error: err.message });
   }
@@ -167,22 +207,23 @@ export async function getUnusualActivityFeed(
     const minPremium = parseFloat(event.queryStringParameters?.['minPremium'] || '100000');
     const side = event.queryStringParameters?.['side'] as 'call' | 'put' | undefined;
     const dteMax = event.queryStringParameters?.['dteMax'] ? parseInt(event.queryStringParameters?.['dteMax'], 10) : undefined;
+    const provider = event.headers?.['x-data-provider']?.toLowerCase();
 
     // Fetch underlying quote to surface stock % change alongside whale flow rows.
     // Non-fatal — the feed still works without it.
     let stockChangePercent: number | undefined;
     if (symbol) {
       try {
-        const { getQuote } = await import('../services/polygon.js');
-        const quote = await getQuote(symbol);
-        stockChangePercent = quote.changePercent / 100; // normalize to decimal (e.g. -10% → -0.10)
+        const { getQuoteProviderAware } = await import('../services/providerService.js');
+        const quoteRes = await getQuoteProviderAware(symbol, provider);
+        stockChangePercent = quoteRes.data.changePercent / 100; // normalize to decimal (e.g. -10% → -0.10)
       } catch {
         // ignore — changePercent just won't be populated
       }
     }
 
-    const feed = await getUnusualActivity({ symbol, minSigma, minPremium, side, dteMax, stockChangePercent });
-    return jsonResponse(200, { data: feed });
+    const feedResult = await getUnusualActivity({ symbol, minSigma, minPremium, side, dteMax, stockChangePercent, provider });
+    return jsonResponse(200, { data: feedResult.data }, { 'X-Source-Provider': feedResult.source });
   } catch (err: any) {
     return jsonResponse(500, { error: err.message });
   }

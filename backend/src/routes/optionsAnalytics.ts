@@ -17,8 +17,9 @@ export async function getOptionsAnalyticsRoute(
   const forceRefresh = event.queryStringParameters?.refresh === 'true';
   const includeVix = event.queryStringParameters?.includeVix !== 'false';
   const expiry = event.queryStringParameters?.expiry;
+  const provider = event.headers?.['x-data-provider']?.toLowerCase();
 
-  const cacheKey = `OPTIONS_ANALYTICS#${symbol}${expiry ? `#${expiry}` : ''}#VIX-${includeVix ? 'ON' : 'OFF'}`;
+  const cacheKey = `OPTIONS_ANALYTICS#${symbol}${expiry ? `#${expiry}` : ''}#VIX-${includeVix ? 'ON' : 'OFF'}#PROV-${provider || 'DEFAULT'}`;
   if (!forceRefresh) {
     const cached = await getCachedData<unknown>(cacheKey);
     if (cached) {
@@ -27,9 +28,9 @@ export async function getOptionsAnalyticsRoute(
   }
 
   try {
-    const data = await getOptionsAnalytics(symbol, { includeVix, expiry });
+    const data = await getOptionsAnalytics(symbol, { includeVix, expiry, provider });
     await setCachedData(cacheKey, data, CACHE_TTL_SECONDS);
-    return jsonResponse(200, data);
+    return jsonResponse(200, data, { 'X-Source-Provider': data.source });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Options analytics failed';
     console.error('Options Analytics Error:', err);

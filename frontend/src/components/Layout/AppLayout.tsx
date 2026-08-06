@@ -1,6 +1,8 @@
 import React from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { AlertsMenu } from './AlertsMenu';
+import { ProviderSelector } from './ProviderSelector';
+import { ToastManager } from './ToastManager';
 import styles from './AppLayout.module.css';
 
 export const AppLayout: React.FC = () => {
@@ -24,6 +26,7 @@ export const AppLayout: React.FC = () => {
         </Link>
 
         <div className={styles.userMenu}>
+          <ProviderSelector />
           <Link to="/screener" className={styles.screenerBtn} title="Screener">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.icon}>
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -45,6 +48,7 @@ export const AppLayout: React.FC = () => {
       <main className={styles.mainContent}>
         <Outlet />
       </main>
+      <ToastManager />
     </div>
   );
 };

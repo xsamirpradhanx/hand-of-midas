@@ -262,13 +262,14 @@ export async function getUnusualActivity(filters: {
   dteMax?: number;
   /** Underlying stock % change for the day, threaded in from the quote endpoint. */
   stockChangePercent?: number;
-}): Promise<AnomalyScore[]> {
+  provider?: string;
+}): Promise<{ data: AnomalyScore[]; source: string }> {
   
   if (!filters.symbol) {
-    return [];
+    return { data: [], source: 'yahoo' };
   }
 
-  const { fetchOptionsChainWithFallback } = await import('./optionsFallback.js');
+  const { fetchOptionsChainProviderAware } = await import('./providerService.js');
   const { getDTE } = await import('./tradingCalendar.js');
 
   const symbol = filters.symbol;
@@ -293,8 +294,8 @@ export async function getUnusualActivity(filters: {
   }
 
   // 1. Fetch available expirations
-  const { expirations } = await fetchOptionsChainWithFallback(symbol);
-  if (expirations.length === 0) return [];
+  const { expirations, source } = await fetchOptionsChainProviderAware(symbol, undefined, filters.provider);
+  if (expirations.length === 0) return { data: [], source };
 
   // 2. Scan nearest 6 expirations — institutions also build structured positions 60-90 days out.
   // Previously only 4 expirations, which missed LEAPS and 2-3 month positioning.
@@ -302,7 +303,7 @@ export async function getUnusualActivity(filters: {
   let anomalies: AnomalyScore[] = [];
 
   for (const expiry of nearestExpirations) {
-    const { contracts } = await fetchOptionsChainWithFallback(filters.symbol, expiry);
+    const { contracts } = await fetchOptionsChainProviderAware(filters.symbol, expiry, filters.provider);
     const dte = await getDTE(expiry);
 
     for (const c of contracts) {
@@ -418,5 +419,5 @@ export async function getUnusualActivity(filters: {
   // Sort by highest percentile rank
   filtered.sort((a, b) => b.compositeSigma - a.compositeSigma);
 
-  return filtered.slice(0, 50); // Return top 50
+  return { data: filtered.slice(0, 50), source }; // Return top 50
 }

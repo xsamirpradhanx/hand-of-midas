@@ -50,33 +50,47 @@ export const WatchlistItem: React.FC<WatchlistItemProps> = ({
     >
       <div className={styles.itemInfo}>
         <span className={styles.symbol}>{symbol}</span>
-        {quote && <span className={styles.name}>{quote.name || symbol}</span>}
+        {/* Always render name row to keep fixed height — skeleton when loading */}
+        <span className={styles.name}>
+          {quote
+            ? (quote.name && quote.name !== symbol ? quote.name : symbol)
+            : <span className={styles.skeletonText} />}
+        </span>
       </div>
 
-      {quote && displayPrice != null && (
-        <div className={styles.itemData}>
-          <span
-            key={`${symbol}_${displayPrice}`}
-            className={`${styles.price} ${
-              flashDirection === 'up'
-                ? styles.priceFlashUp
-                : flashDirection === 'down'
-                ? styles.priceFlashDown
-                : ''
-            }`}
-          >
-            {formatPrice(displayPrice)}
-          </span>
-          <span className={`${styles.change} ${isPositive ? styles.positive : styles.negative}`}>
-            {isPositive ? '▲' : '▼'} {Math.abs(displayChangePercent || 0).toFixed(2)}%
-          </span>
-          {displayChange != null && (
-            <span className={`${styles.changeDollar} ${isPositive ? styles.positive : styles.negative}`}>
-              {isPositive ? '+' : ''}{displayChange.toFixed(2)}
+      <div className={styles.itemData}>
+        {displayPrice != null ? (
+          <>
+            <span
+              key={`${symbol}_${displayPrice}`}
+              className={`${styles.price} ${
+                flashDirection === 'up'
+                  ? styles.priceFlashUp
+                  : flashDirection === 'down'
+                  ? styles.priceFlashDown
+                  : ''
+              }`}
+            >
+              {formatPrice(displayPrice)}
             </span>
-          )}
-        </div>
-      )}
+            <span className={`${styles.change} ${isPositive ? styles.positive : styles.negative}`}>
+              {isPositive ? '▲' : '▼'} {Math.abs(displayChangePercent || 0).toFixed(2)}%
+            </span>
+            {displayChange != null && (
+              <span className={`${styles.changeDollar} ${isPositive ? styles.positive : styles.negative}`}>
+                {isPositive ? '+' : ''}{displayChange.toFixed(2)}
+              </span>
+            )}
+          </>
+        ) : (
+          /* Skeleton placeholders preserve tile height before data arrives */
+          <>
+            <span className={`${styles.price} ${styles.skeletonPrice}`} />
+            <span className={`${styles.change} ${styles.skeletonChange}`} />
+            <span className={styles.skeletonChangeDollar} />
+          </>
+        )}
+      </div>
 
       <div className={styles.itemActions}>
         <button

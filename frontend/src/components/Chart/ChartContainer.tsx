@@ -185,24 +185,14 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     };
   }, []);
 
-  // Apply timezone formatting
+  // Apply timezone formatting — always ET (market timezone)
   useEffect(() => {
     if (!chartRef.current) return;
-    
-    const tzString = timezone === 'EST' ? 'America/New_York' : 'UTC';
-    
-    const timeFormatter = (time: number | string) => {
-      if (typeof time === 'string') return time;
-      return new Date(time * 1000).toLocaleString('en-US', {
-        timeZone: tzString,
-        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
-      });
-    };
 
     const tickMarkFormatter = (time: number | string, tickMarkType: any) => {
       if (typeof time === 'string') return time;
       const date = new Date(time * 1000);
-      const options: Intl.DateTimeFormatOptions = { timeZone: tzString };
+      const options: Intl.DateTimeFormatOptions = { timeZone: 'America/New_York' };
       if (tickMarkType === 0) options.year = 'numeric';
       else if (tickMarkType === 1) options.month = 'short';
       else if (tickMarkType === 2) options.day = 'numeric';
@@ -211,7 +201,6 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     };
 
     chartRef.current.applyOptions({
-      localization: { timeFormatter },
       timeScale: { tickMarkFormatter }
     });
   }, [timezone]);

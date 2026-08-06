@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { handler } from './index.js';
@@ -6,7 +7,10 @@ import type { APIGatewayProxyEventV2 } from './types.js';
 const app = express();
 const port = 3000;
 
-app.use(cors());
+app.use(cors({ 
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Data-Provider'],
+  exposedHeaders: ['X-Source-Provider']
+}));
 app.use(express.json());
 app.use(express.text());
 app.use(express.urlencoded({ extended: true }));

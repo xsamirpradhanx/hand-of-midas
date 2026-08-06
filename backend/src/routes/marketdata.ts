@@ -3,7 +3,7 @@ import {
   setCachedData,
   timeSeriesCacheKey,
 } from '../services/cache.js';
-import { getTimeSeries } from '../services/twelvedata.js';
+import { getMarketDataProviderAware } from '../services/providerService.js';
 import type {
   APIGatewayProxyResultV2,
   TwelveDataInterval,
@@ -70,6 +70,7 @@ const MAX_OUTPUT_SIZE = 5000;
 export async function getMarketData(
   symbol: string,
   queryParams: Record<string, string | undefined> | undefined,
+  event?: any,
 ): Promise<APIGatewayProxyResultV2> {
   const upperSymbol = symbol.trim().toUpperCase();
   if (!upperSymbol) {
@@ -101,102 +102,65 @@ export async function getMarketData(
   // --- Validate extendedHours ----------------------------------------------
   const extendedHours = queryParams?.['extendedHours'] === 'true';
 
+  // --- Extract Provider ----------------------------------------------------
+  const provider = event?.headers?.['x-data-provider']?.toLowerCase();
+
   // --- Check cache ---------------------------------------------------------
-  const cacheKey = timeSeriesCacheKey(upperSymbol, interval, extendedHours);
-  const cached = await getCachedData<OHLCVDataPoint[]>(cacheKey);
+  const cacheKey = timeSeriesCacheKey(upperSymbol, interval, extendedHours) + (provider ? `#PROV-${provider}` : '');
+  const cached = await getCachedData<{ data: OHLCVDataPoint[]; source: string }>(cacheKey);
 
   if (cached) {
     const body: MarketDataResponse = {
       symbol: upperSymbol,
       interval,
-      data: cached,
+      data: cached.data,
     };
-    return jsonResponse(200, body);
+    return jsonResponse(200, body, { 'X-Source-Provider': cached.source });
   }
 
   // --- Fetch from upstream -------------------------------------------------
-  let raw: { values?: any[] } = {};
+  let rawValues: any[] = [];
+  let source = 'yahoo';
   
   try {
-    if (extendedHours) {
-      throw new Error('Forcing Yahoo Finance for extended hours data');
-    }
-    raw = await getTimeSeries(upperSymbol, interval, outputsize);
+    const res = await getMarketDataProviderAware(upperSymbol, interval, extendedHours, provider);
+    rawValues = res.data;
+    source = res.source;
   } catch (err: any) {
-    if (!extendedHours) {
-      console.warn(`TwelveData failed for ${upperSymbol}, falling back to Yahoo Finance: ${err.message}`);
-    }
-    const { yf } = await import('../services/yahoo.js');
-    
-    // Map TwelveData intervals to Yahoo Finance intervals
-    const intervalMap: Record<string, string> = {
-      '1min': '1m',
-      '5min': '5m',
-      '15min': '15m',
-      '30min': '30m',
-      '1h': '60m',
-      '1day': '1d',
-      '1week': '1wk',
-      '1month': '1mo'
-    };
-    
-    const yfInterval = intervalMap[interval] || '1d';
-    
-    let period1Time = Date.now() - 2 * 365 * 24 * 60 * 60 * 1000; // 2 years default
-    if (yfInterval === '1m') {
-      period1Time = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days max for 1m
-    } else if (yfInterval.endsWith('m') || yfInterval.endsWith('h')) {
-      period1Time = Date.now() - 59 * 24 * 60 * 60 * 1000; // ~60 days max for other intraday
-    }
-    const period1 = new Date(period1Time);
-    
-    try {
-      const yfData = await yf.chart(upperSymbol, { 
-        interval: yfInterval as any, 
-        period1, 
-        includePrePost: extendedHours 
-      });
-      if (yfData && yfData.quotes && yfData.quotes.length > 0) {
-        raw = {
-          values: yfData.quotes.slice(-outputsize).map(q => {
-            // Yahoo returns JS Dates, convert to string
-            let dtStr = '';
-            if (yfInterval.endsWith('m')) {
-              dtStr = q.date.toISOString().replace('T', ' ').substring(0, 19);
-            } else {
-              dtStr = q.date.toISOString().split('T')[0];
-            }
-            return {
-              datetime: dtStr,
-              open: q.open?.toString() || '0',
-              high: q.high?.toString() || '0',
-              low: q.low?.toString() || '0',
-              close: q.close?.toString() || '0',
-              volume: q.volume?.toString() || '0'
-            };
-          }).filter(q => parseFloat(q.open) > 0)
-        };
-      }
-    } catch (yfErr) {
-      console.error('Yahoo Finance fallback also failed:', yfErr);
-    }
+    console.error(`Market data provider fetch failed: ${err.message}`);
   }
 
-  if (!raw.values || raw.values.length === 0) {
+  if (rawValues.length === 0) {
     return jsonResponse(404, {
       error: `No market data found for symbol "${upperSymbol}" with interval "${interval}".`,
     });
   }
 
   // --- Transform to standardised OHLCV format ------------------------------
-  const data: OHLCVDataPoint[] = raw.values.map((v) => ({
-    datetime: v.datetime,
-    open: parseFloat(v.open),
-    high: parseFloat(v.high),
-    low: parseFloat(v.low),
-    close: parseFloat(v.close),
-    volume: parseFloat(v.volume),
-  }));
+  // The provider service already mapped Schwab to the generic shape, or yahoo/twelvedata is handled
+  let data: OHLCVDataPoint[] = [];
+  
+  // Determine if it came from Yahoo/TwelveData or Schwab based on shape
+  if (source === 'schwab') {
+    data = rawValues.map((v) => ({
+      datetime: new Date(v.timestamp).toISOString().replace('T', ' ').substring(0, 19),
+      open: v.open,
+      high: v.high,
+      low: v.low,
+      close: v.close,
+      volume: v.volume,
+    }));
+  } else if (rawValues[0] && rawValues[0].datetime) {
+    // Yahoo/TwelveData
+    data = rawValues.map((v) => ({
+      datetime: v.datetime,
+      open: parseFloat(v.open),
+      high: parseFloat(v.high),
+      low: parseFloat(v.low),
+      close: parseFloat(v.close),
+      volume: parseFloat(v.volume),
+    }));
+  }
 
   // Ensure data is consistently ascending (oldest first)
   data.sort((a, b) => {
@@ -212,7 +176,7 @@ export async function getMarketData(
     : DAILY_TTL_SECONDS;
 
   // Fire-and-forget — we don't want a cache write failure to break the response.
-  void setCachedData(cacheKey, data, ttl).catch((err: unknown) => {
+  void setCachedData(cacheKey, { data, source }, ttl).catch((err: unknown) => {
     console.error('Failed to write market data to cache', err);
   });
 
@@ -222,5 +186,5 @@ export async function getMarketData(
     data,
   };
 
-  return jsonResponse(200, body);
+  return jsonResponse(200, body, { 'X-Source-Provider': source });
 }

@@ -138,6 +138,7 @@ const routes: readonly Route[] = [
       return marketdata.getMarketData(
         params['symbol']!,
         event.queryStringParameters,
+        event,
       );
     },
   },
@@ -146,8 +147,8 @@ const routes: readonly Route[] = [
   {
     method: 'GET',
     pattern: '/api/quote/:symbol',
-    handler: async (_event, params) => {
-      return quote.getQuote(params['symbol']!);
+    handler: async (event, params) => {
+      return quote.getQuote(params['symbol']!, event);
     },
   },
 
