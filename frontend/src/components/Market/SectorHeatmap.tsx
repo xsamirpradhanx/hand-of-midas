@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import type { SectorHeatmapResponse, SectorData } from '../../types';
+import type { SectorHeatmapResponse } from '../../types';
+type SectorData = SectorHeatmapResponse['sectors'][0];
 import styles from './SectorHeatmap.module.css';
 
 export const SectorHeatmap: React.FC = () => {

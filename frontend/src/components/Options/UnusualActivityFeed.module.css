@@ -64,10 +64,17 @@
 }
 
 .methodologyGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: var(--space-md);
   margin-bottom: var(--space-lg);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.methodologyGrid::-webkit-scrollbar {
+  display: none;
 }
 
 .metricCard {
@@ -76,6 +83,7 @@
   border-radius: var(--radius-md);
   padding: var(--space-md);
   transition: border-color 0.2s ease;
+  flex: 0 0 280px;
 }
 
 .metricCard:hover {
@@ -496,34 +504,4 @@
   cursor: default;
 }
 
-/* ── Responsive Methodology Panel (Marquee) ─────────────────────────────────── */
 
-@media (max-width: 1650px) {
-  .methodologyPanel {
-    overflow: hidden;
-  }
-  
-  .methodologyGrid {
-    display: flex;
-    flex-wrap: nowrap;
-    width: max-content;
-    /* 6 cards * 280px + 5 * 16px gap = 1760px */
-    animation: methodologyAutoScroll 15s linear infinite alternate;
-    cursor: pointer;
-  }
-  
-  .methodologyGrid.paused {
-    animation-play-state: paused;
-  }
-  
-  .metricCard {
-    width: 280px;
-    flex-shrink: 0;
-  }
-}
-
-@keyframes methodologyAutoScroll {
-  0% { transform: translateX(0); }
-  /* Approximate scroll distance: total width minus container width (roughly 100vw - 48px padding) */
-  100% { transform: translateX(calc(-1760px + 100vw - 48px)); }
-}
