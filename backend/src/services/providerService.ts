@@ -62,6 +62,23 @@ function normalizeSchwabQuote(data: any, upperSymbol: string): NormalizedQuote {
 }
 
 function normalizeYahooQuote(raw: any, upperSymbol: string): NormalizedQuote {
+  let currentPrice = raw.regularMarketPrice ?? 0;
+  let currentChange = raw.regularMarketChange ?? 0;
+  let currentChangePercent = raw.regularMarketChangePercent ?? 0;
+
+  const isPreMarket = raw.marketState === 'PRE' || raw.marketState === 'PREPRE';
+  const isPostMarket = raw.marketState === 'POST' || raw.marketState === 'POSTPOST' || raw.marketState === 'CLOSED';
+
+  if (isPreMarket && raw.preMarketPrice !== undefined) {
+    currentPrice = raw.preMarketPrice;
+    currentChange = raw.preMarketChange ?? 0;
+    currentChangePercent = raw.preMarketChangePercent ?? 0;
+  } else if (isPostMarket && raw.postMarketPrice !== undefined) {
+    currentPrice = raw.postMarketPrice;
+    currentChange = raw.postMarketChange ?? 0;
+    currentChangePercent = raw.postMarketChangePercent ?? 0;
+  }
+
   return {
     symbol: raw.symbol ?? upperSymbol,
     name: raw.longName ?? raw.shortName ?? upperSymbol,
@@ -70,9 +87,9 @@ function normalizeYahooQuote(raw: any, upperSymbol: string): NormalizedQuote {
     regularMarketPrice: raw.regularMarketPrice ?? 0,
     regularMarketChange: raw.regularMarketChange ?? 0,
     regularMarketChangePercent: raw.regularMarketChangePercent ?? 0,
-    price: raw.regularMarketPrice ?? 0,
-    change: raw.regularMarketChange ?? 0,
-    changePercent: raw.regularMarketChangePercent ?? 0,
+    price: currentPrice,
+    change: currentChange,
+    changePercent: currentChangePercent,
     volume: raw.regularMarketVolume,
     bid: raw.bid,
     ask: raw.ask,
@@ -170,7 +187,7 @@ export async function getQuoteProviderAware(
 export async function getMarketDataProviderAware(
   symbol: string,
   interval: string = '1day',
-  extendedHours: boolean = false,
+  extendedHours: boolean = true,
   provider?: string
 ): Promise<{ data: any[]; source: string }> {
   const isSchwab = provider === 'schwab';
@@ -229,6 +246,65 @@ export async function getMarketDataProviderAware(
           volume: q.volume?.toString() || '0',
         };
       }).filter(q => parseFloat(q.open) > 0);
+      // Synthesize or update today's candle for 1d interval
+      if (yfInterval === '1d' && data.length > 0) {
+        try {
+          const q = await yf.quote(symbol);
+          if (q) {
+            const lastCandle = data[data.length - 1];
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+            
+            if (todayStr > lastCandle.datetime) {
+              // Missing today's candle, synthesize it
+              if ((q.marketState === 'PRE' || q.marketState === 'PREPRE') && !extendedHours) {
+                // If extended hours are off, do not synthesize today's candle until regular market opens
+              } else {
+                let o, h, l, c, v;
+                if (q.marketState === 'PRE' || q.marketState === 'PREPRE') {
+                  o = h = l = c = q.preMarketPrice || q.regularMarketPrice || 0;
+                  v = 0;
+                } else {
+                  o = q.regularMarketOpen || q.regularMarketPrice || 0;
+                  h = q.regularMarketDayHigh || q.regularMarketPrice || 0;
+                  l = q.regularMarketDayLow || q.regularMarketPrice || 0;
+                  c = q.regularMarketPrice || 0;
+                  v = q.regularMarketVolume || 0;
+                  if (extendedHours && (q.marketState === 'POST' || q.marketState === 'CLOSED') && q.postMarketPrice) {
+                    c = q.postMarketPrice;
+                    h = Math.max(h, c);
+                    l = Math.min(l, c);
+                  }
+                }
+                if (c > 0) {
+                  data.push({
+                    datetime: todayStr,
+                    open: o.toString(),
+                    high: h.toString(),
+                    low: l.toString(),
+                    close: c.toString(),
+                    volume: v.toString()
+                  });
+                }
+              }
+            } else if (todayStr === lastCandle.datetime) {
+              // Update today's candle with live data
+              if (q.marketState === 'REGULAR') {
+                 if (q.regularMarketPrice) lastCandle.close = q.regularMarketPrice.toString();
+                 if (q.regularMarketDayHigh) lastCandle.high = Math.max(parseFloat(lastCandle.high), q.regularMarketDayHigh).toString();
+                 if (q.regularMarketDayLow) lastCandle.low = Math.min(parseFloat(lastCandle.low), q.regularMarketDayLow).toString();
+                 if (q.regularMarketVolume) lastCandle.volume = q.regularMarketVolume.toString();
+              } else if (extendedHours && (q.marketState === 'POST' || q.marketState === 'CLOSED') && q.postMarketPrice) {
+                 lastCandle.close = q.postMarketPrice.toString();
+                 lastCandle.high = Math.max(parseFloat(lastCandle.high), q.postMarketPrice).toString();
+                 lastCandle.low = Math.min(parseFloat(lastCandle.low), q.postMarketPrice).toString();
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`Could not synthesize today's candle for ${symbol}:`, e);
+        }
+      }
+
       return { data, source: 'yahoo' };
     }
   } catch (yfErr) {

@@ -151,7 +151,7 @@ export async function getQuoteSchwab(symbol: string): Promise<any> {
   };
 }
 
-export async function getPriceHistorySchwab(symbol: string, interval: string, extendedHours: boolean = false): Promise<any[]> {
+export async function getPriceHistorySchwab(symbol: string, interval: string, extendedHours: boolean = true): Promise<any[]> {
   const accessToken = await auth.getValidAccessToken();
   if (!accessToken) {
     throw new Error('Failed to obtain Schwab access token. User may need to authenticate.');

@@ -12,7 +12,7 @@ import type { CacheItem } from '../types.js';
  * @param interval - Bar interval (e.g. "1day").
  * @returns A deterministic cache key string.
  */
-export function timeSeriesCacheKey(symbol: string, interval: string, extendedHours: boolean = false): string {
+export function timeSeriesCacheKey(symbol: string, interval: string, extendedHours: boolean = true): string {
   return `CACHE#${symbol.toUpperCase()}#${interval}${extendedHours ? '#EXT' : ''}`;
 }
 

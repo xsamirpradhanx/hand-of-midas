@@ -100,7 +100,7 @@ export async function getMarketData(
   }
 
   // --- Validate extendedHours ----------------------------------------------
-  const extendedHours = queryParams?.['extendedHours'] === 'true';
+  const extendedHours = queryParams?.['extendedHours'] ? queryParams['extendedHours'] === 'true' : true;
 
   // --- Extract Provider ----------------------------------------------------
   const provider = event?.headers?.['x-data-provider']?.toLowerCase();

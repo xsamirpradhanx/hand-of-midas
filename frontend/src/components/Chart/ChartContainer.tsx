@@ -122,9 +122,14 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
           ordered.sort((a, b) => parseDt(a.datetime) - parseDt(b.datetime));
 
           if (quoteResult && ordered.length > 0) {
-            const currentPrice = (showExtendedHours && quoteResult.preMarketPrice != null) 
-              ? quoteResult.preMarketPrice 
-              : quoteResult.price;
+            let currentPrice = quoteResult.price;
+            if (showExtendedHours) {
+              if ((quoteResult.marketState === 'PRE' || quoteResult.marketState === 'PREPRE') && quoteResult.preMarketPrice != null) {
+                currentPrice = quoteResult.preMarketPrice;
+              } else if ((quoteResult.marketState === 'POST' || quoteResult.marketState === 'POSTPOST' || quoteResult.marketState === 'CLOSED') && quoteResult.postMarketPrice != null) {
+                currentPrice = quoteResult.postMarketPrice;
+              }
+            }
             const lastBar = { ...ordered[ordered.length - 1] };
             lastBar.close = currentPrice;
             if (currentPrice > lastBar.high) lastBar.high = currentPrice;

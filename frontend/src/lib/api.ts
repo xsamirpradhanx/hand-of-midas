@@ -104,7 +104,7 @@ export const api = {
     fetchWithAuth('/watchlist/reorder', { method: 'PUT', body: JSON.stringify({ symbols }) }),
 
   getMarketData: (symbol: string, interval = '1day', outputsize = '200', extendedHours?: boolean): Promise<{ symbol: string, interval: string, data: OHLCVDataPoint[] }> => 
-    fetchWithAuth(`/market-data/${symbol}?interval=${interval}&outputsize=${outputsize}${extendedHours ? '&extendedHours=true' : ''}`),
+    fetchWithAuth(`/market-data/${symbol}?interval=${interval}&outputsize=${outputsize}${extendedHours !== undefined ? `&extendedHours=${extendedHours}` : ''}`),
 
   getQuote: (symbol: string): Promise<QuoteResponse> => 
     fetchWithAuth(`/quote/${symbol}`),
