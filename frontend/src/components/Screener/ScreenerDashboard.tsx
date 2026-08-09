@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import styles from './ScreenerDashboard.module.css';
 
@@ -52,7 +53,9 @@ function confidenceFillClass(score: number): string {
 }
 
 const ScreenerDashboard: React.FC = () => {
-  const [mode, setMode] = useState<ScreenerMode>('open');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [mode, setMode] = useState<ScreenerMode>(location.state?.mode || 'open');
   const [results, setResults] = useState<ScreenerResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +117,15 @@ const ScreenerDashboard: React.FC = () => {
               onClick={() => setMode('momentum')}
             >
               🔥 Momentum $2–$20
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={styles.modeBtn}
+              onClick={() => navigate('/screener/diagonal')}
+            >
+              📈 Diagonal Spreads
             </button>
           </div>
 

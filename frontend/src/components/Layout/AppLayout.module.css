@@ -208,6 +208,19 @@
   box-shadow: 0 6px 16px rgba(245, 200, 66, 0.2);
 }
 
+.screenerBtnCool {
+  background: linear-gradient(135deg, rgba(245, 200, 66, 0.1) 0%, rgba(200, 134, 10, 0.15) 100%);
+  border: 1px solid rgba(245, 200, 66, 0.4);
+  padding: 10px;
+  box-shadow: 0 0 12px rgba(245, 200, 66, 0.15), inset 0 0 8px rgba(255, 255, 255, 0.05);
+}
+
+.screenerBtnCool:hover {
+  background: linear-gradient(135deg, rgba(245, 200, 66, 0.2) 0%, rgba(200, 134, 10, 0.25) 100%);
+  border-color: rgba(245, 200, 66, 0.6);
+  box-shadow: 0 0 20px rgba(245, 200, 66, 0.3), inset 0 0 12px rgba(255, 255, 255, 0.1);
+}
+
 .screenerBtn:active {
   transform: translateY(0);
 }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import styles from './DiagonalScreener.module.css';
+import dashStyles from './ScreenerDashboard.module.css'; // use shared tab styles
 
 interface DiagonalScreenerResult {
   symbol: string;
@@ -76,6 +78,7 @@ function GreeksChips({ profile }: { profile: DiagonalScreenerResult['greeksProfi
 }
 
 const DiagonalScreener: React.FC = () => {
+  const navigate = useNavigate();
   const [results, setResults] = useState<DiagonalScreenerResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,18 +114,60 @@ const DiagonalScreener: React.FC = () => {
             Surfaces RSI-exhausted names with viable option chains &amp; vol backwardation — optimal for LEAP diagonal (BuCD) setups
           </p>
         </div>
-        <button
-          type="button"
-          className={styles.refreshBtn}
-          onClick={fetchData}
-          disabled={loading}
-        >
-          {loading ? (
-            <><span className={styles.spinner} aria-hidden />Scanning…</>
-          ) : (
-            <>↻ Refresh Scan</>
-          )}
-        </button>
+
+        <div className={dashStyles.headerActions}>
+          <div className={dashStyles.modeToggle} role="tablist" aria-label="Market session">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener', { state: { mode: 'premarket' } })}
+            >
+              Premarket (4A–9:30A)
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener', { state: { mode: 'open' } })}
+            >
+              Open Market
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener', { state: { mode: 'momentum' } })}
+            >
+              🔥 Momentum $2–$20
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={true}
+              className={`${dashStyles.modeBtn} ${styles.modeBtnActiveDiagonal}`}
+              onClick={() => {}}
+            >
+              📈 Diagonal Spreads
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            onClick={fetchData}
+            disabled={loading}
+          >
+            {loading ? (
+              <><span className={styles.spinner} aria-hidden />Scanning…</>
+            ) : (
+              <>↻ Refresh Scan</>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* Methodology bar */}

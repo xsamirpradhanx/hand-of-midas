@@ -623,3 +623,10 @@
     min-width: 1000px;
   }
 }
+
+.modeBtnActiveDiagonal {
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.12);
+}
