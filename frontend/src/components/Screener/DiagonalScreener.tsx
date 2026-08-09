@@ -1,0 +1,305 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { api } from '../../lib/api';
+import styles from './DiagonalScreener.module.css';
+
+interface DiagonalScreenerResult {
+  symbol: string;
+  price: number;
+  drawdownPct: number;
+  rsi14: number | null;
+  isOversold: boolean;
+  selloffDepth5d: number;
+  hasViableChain: boolean;
+  expirations: string[];
+  isBackwardation: boolean;
+  nearTermIV: number | null;
+  farTermIV: number | null;
+  ivRatio: number | null;
+  suggestedSetup: string;
+  longLeg: { strike: number; expiry: string; delta: number } | null;
+  shortLeg: { strike: number; expiry: string; iv: number } | null;
+  breakEven: number | null;
+  greeksProfile: {
+    theta: 'positive' | 'negative' | 'neutral';
+    gamma: 'elevated' | 'moderate' | 'low';
+    vega: 'net-short' | 'net-long' | 'neutral';
+  };
+  setupScore: number;
+  reasons: string[];
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const cls =
+    score >= 75 ? styles.scoreHigh :
+    score >= 55 ? styles.scoreMid :
+    styles.scoreLow;
+  return (
+    <div className={`${styles.scoreBadge} ${cls}`}>
+      <span className={styles.scoreValue}>{score}</span>
+      <span className={styles.scoreLabel}>{score >= 75 ? 'Strong' : score >= 55 ? 'Moderate' : 'Weak'}</span>
+    </div>
+  );
+}
+
+function IVBar({ near, far }: { near: number | null; far: number | null }) {
+  if (near === null || far === null) return <span className={styles.naText}>—</span>;
+  const nearPct = (near * 100).toFixed(0);
+  const farPct = (far * 100).toFixed(0);
+  const isBack = near > far * 1.05;
+  return (
+    <div className={styles.ivBarWrapper}>
+      <div className={`${styles.ivPill} ${isBack ? styles.ivNearBack : styles.ivNear}`}>
+        Near {nearPct}%
+      </div>
+      <span className={styles.ivArrow}>{isBack ? '↓' : '↑'}</span>
+      <div className={`${styles.ivPill} ${styles.ivFar}`}>
+        Far {farPct}%
+      </div>
+    </div>
+  );
+}
+
+function GreeksChips({ profile }: { profile: DiagonalScreenerResult['greeksProfile'] }) {
+  return (
+    <div className={styles.greeksList}>
+      <span className={`${styles.greekChip} ${profile.theta === 'positive' ? styles.greekPos : styles.greekNeg}`}>
+        θ {profile.theta === 'positive' ? '+' : profile.theta === 'negative' ? '−' : '≈'}
+      </span>
+      <span className={`${styles.greekChip} ${profile.gamma === 'elevated' ? styles.greekElev : styles.greekMod}`}>
+        Γ {profile.gamma === 'elevated' ? '↑↑' : profile.gamma === 'moderate' ? '↑' : '↓'}
+      </span>
+      <span className={`${styles.greekChip} ${profile.vega === 'net-long' ? styles.greekPos : profile.vega === 'net-short' ? styles.greekNeg : styles.greekMod}`}>
+        V {profile.vega === 'net-long' ? 'L' : profile.vega === 'net-short' ? 'S' : '≈'}
+      </span>
+    </div>
+  );
+}
+
+const DiagonalScreener: React.FC = () => {
+  const [results, setResults] = useState<DiagonalScreenerResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.getDiagonalScreener();
+      setResults(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load diagonal screener';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.glowA} aria-hidden />
+      <div className={styles.glowB} aria-hidden />
+
+      <header className={styles.header}>
+        <div>
+          <h1 className={styles.title}>Diagonal Spread Scanner</h1>
+          <p className={styles.subtitle}>
+            Surfaces RSI-exhausted names with viable option chains &amp; vol backwardation — optimal for LEAP diagonal (BuCD) setups
+          </p>
+        </div>
+        <button
+          type="button"
+          className={styles.refreshBtn}
+          onClick={fetchData}
+          disabled={loading}
+        >
+          {loading ? (
+            <><span className={styles.spinner} aria-hidden />Scanning…</>
+          ) : (
+            <>↻ Refresh Scan</>
+          )}
+        </button>
+      </header>
+
+      {/* Methodology bar */}
+      <div className={styles.methodBar}>
+        <span className={styles.methodChip}>RSI ≤ 35 or ≥15% 5-day drop</span>
+        <span className={styles.methodSep}>+</span>
+        <span className={styles.methodChip}>Viable options chain (≥2 expirations)</span>
+        <span className={styles.methodSep}>+</span>
+        <span className={styles.methodChip}>Vol backwardation (near IV &gt; far IV)</span>
+        <span className={styles.methodSep}>→</span>
+        <span className={styles.methodResult}>Long deep-ITM LEAP / Short near-term OTM call</span>
+      </div>
+
+      {error && <div className={styles.errorBanner}>{error}</div>}
+
+      <div className={styles.panel}>
+        <div className={styles.tableScroll}>
+          <table className={styles.table}>
+            <thead className={styles.thead}>
+              <tr>
+                <th className={styles.th}>Symbol</th>
+                <th className={styles.th}>Price / Drawdown</th>
+                <th className={styles.th}>RSI / 5d Move</th>
+                <th className={styles.th}>IV Term Structure</th>
+                <th className={styles.th}>Suggested Setup</th>
+                <th className={styles.th}>B/E</th>
+                <th className={styles.th}>Greeks</th>
+                <th className={styles.th}>Score</th>
+              </tr>
+            </thead>
+            <tbody className={styles.tbody}>
+              {results.map(r => (
+                <React.Fragment key={r.symbol}>
+                  <tr
+                    className={`${styles.row} ${expanded === r.symbol ? styles.rowExpanded : ''}`}
+                    onClick={() => setExpanded(prev => prev === r.symbol ? null : r.symbol)}
+                  >
+                    {/* Symbol */}
+                    <td className={styles.td}>
+                      <div className={styles.symbolCell}>
+                        <span className={`${styles.symbolAvatar} ${r.isOversold ? styles.avatarOversold : ''}`}>
+                          {r.symbol.charAt(0)}
+                        </span>
+                        <div>
+                          <div className={styles.symbolTicker}>{r.symbol}</div>
+                          {r.isBackwardation && (
+                            <span className={styles.backwardationBadge}>⚡ Backwardation</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Price / Drawdown */}
+                    <td className={styles.td}>
+                      <div className={styles.priceStack}>
+                        <span className={styles.priceVal}>${r.price.toFixed(2)}</span>
+                        <span className={`${styles.drawdownPill} ${r.drawdownPct >= 30 ? styles.drawdownHigh : styles.drawdownMid}`}>
+                          ↓{r.drawdownPct.toFixed(0)}% from 52w
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* RSI / 5d */}
+                    <td className={styles.td}>
+                      <div className={styles.rsiStack}>
+                        {r.rsi14 !== null ? (
+                          <span className={`${styles.rsiPill} ${r.rsi14 <= 30 ? styles.rsiExtreme : r.rsi14 <= 40 ? styles.rsiOversold : ''}`}>
+                            RSI {r.rsi14}
+                          </span>
+                        ) : (
+                          <span className={styles.naText}>RSI —</span>
+                        )}
+                        <span className={`${styles.movePill} ${r.selloffDepth5d < -10 ? styles.moveDown : ''}`}>
+                          {r.selloffDepth5d >= 0 ? '+' : ''}{r.selloffDepth5d.toFixed(1)}% 5d
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* IV Term Structure */}
+                    <td className={styles.td}>
+                      <IVBar near={r.nearTermIV} far={r.farTermIV} />
+                    </td>
+
+                    {/* Suggested Setup */}
+                    <td className={styles.td}>
+                      <span className={styles.setupText}>{r.suggestedSetup}</span>
+                    </td>
+
+                    {/* B/E */}
+                    <td className={styles.td}>
+                      {r.breakEven !== null ? (
+                        <span className={`${styles.bePill} ${r.breakEven <= 90 ? styles.beGood : r.breakEven <= 95 ? styles.beMid : styles.bePoor}`}>
+                          {r.breakEven}% of price
+                        </span>
+                      ) : (
+                        <span className={styles.naText}>—</span>
+                      )}
+                    </td>
+
+                    {/* Greeks */}
+                    <td className={styles.td}>
+                      <GreeksChips profile={r.greeksProfile} />
+                    </td>
+
+                    {/* Score */}
+                    <td className={styles.td}>
+                      <ScoreBadge score={r.setupScore} />
+                    </td>
+                  </tr>
+
+                  {/* Expanded detail row */}
+                  {expanded === r.symbol && (
+                    <tr className={styles.detailRow}>
+                      <td colSpan={8} className={styles.detailCell}>
+                        <div className={styles.detailGrid}>
+                          <div className={styles.detailSection}>
+                            <h4 className={styles.detailLabel}>📋 Signal Reasons</h4>
+                            <div className={styles.reasonList}>
+                              {r.reasons.map((reason, i) => (
+                                <span key={i} className={styles.reasonChip}>{reason}</span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {r.longLeg && (
+                            <div className={styles.detailSection}>
+                              <h4 className={styles.detailLabel}>📈 Long Leg (LEAP)</h4>
+                              <div className={styles.legDetail}>
+                                <span className={styles.legBadge}>Strike ${r.longLeg.strike}</span>
+                                <span className={styles.legBadge}>Exp {r.longLeg.expiry}</span>
+                                <span className={styles.legBadge}>Δ ≈ {r.longLeg.delta}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {r.shortLeg && (
+                            <div className={styles.detailSection}>
+                              <h4 className={styles.detailLabel}>📉 Short Leg (Near-term)</h4>
+                              <div className={styles.legDetail}>
+                                <span className={styles.legBadge}>Strike ${r.shortLeg.strike}</span>
+                                <span className={styles.legBadge}>Exp {r.shortLeg.expiry}</span>
+                                <span className={styles.legBadge}>IV {r.shortLeg.iv}%</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className={styles.detailSection}>
+                            <h4 className={styles.detailLabel}>📅 Expirations Available</h4>
+                            <div className={styles.legDetail}>
+                              {r.expirations.map(exp => (
+                                <span key={exp} className={styles.expChip}>{exp}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+
+              {results.length === 0 && !loading && (
+                <tr className={styles.emptyRow}>
+                  <td colSpan={8}>
+                    <p className={styles.emptyTitle}>No diagonal setups found</p>
+                    <p className={styles.emptyHint}>
+                      No names currently meet the RSI exhaustion + viable chain + backwardation criteria. Markets may be extended or chains are illiquid. Try refreshing during a market correction.
+                    </p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DiagonalScreener;

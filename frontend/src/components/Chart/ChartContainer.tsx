@@ -190,14 +190,15 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     };
   }, []);
 
-  // Apply timezone formatting — always ET (market timezone)
+  // Apply timezone formatting
   useEffect(() => {
     if (!chartRef.current) return;
 
     const tickMarkFormatter = (time: number | string, tickMarkType: any) => {
       if (typeof time === 'string') return time;
       const date = new Date(time * 1000);
-      const options: Intl.DateTimeFormatOptions = { timeZone: 'America/New_York' };
+      const tzString = timezone === 'EST' ? 'America/New_York' : 'UTC';
+      const options: Intl.DateTimeFormatOptions = { timeZone: tzString };
       if (tickMarkType === 0) options.year = 'numeric';
       else if (tickMarkType === 1) options.month = 'short';
       else if (tickMarkType === 2) options.day = 'numeric';

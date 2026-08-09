@@ -27,9 +27,15 @@ export const AppLayout: React.FC = () => {
 
         <div className={styles.userMenu}>
           <ProviderSelector />
-          <Link to="/screener" className={styles.screenerBtn} title="Screener">
+          <Link to="/screener" className={styles.screenerBtn} title="Quantitative Screener">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.icon}>
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </Link>
+          <Link to="/screener/diagonal" className={styles.screenerBtn} title="Diagonal Spread Scanner" style={{ color: '#c4b5fd' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.icon}>
+              <path d="M3 3l7.5 7.5M16.5 16.5L21 21M21 3l-9 9M12 12l9 9" />
+              <circle cx="12" cy="12" r="3" />
             </svg>
           </Link>
           <AlertsMenu />

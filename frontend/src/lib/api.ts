@@ -177,8 +177,11 @@ export const api = {
     return fetchWithAuth(`/options-analytics/${symbol}${qs ? `?${qs}` : ''}`);
   },
 
-  getScreener: (mode: 'premarket' | 'open'): Promise<any[]> =>
+  getScreener: (mode: 'premarket' | 'open' | 'momentum'): Promise<any[]> =>
     fetchWithAuth(`/screener?mode=${mode}`),
+
+  getDiagonalScreener: (): Promise<any[]> =>
+    fetchWithAuth('/screener/diagonal'),
 
   getMarketInternals: (): Promise<MarketInternalsResponse> =>
     fetchWithAuth('/market-internals'),

@@ -7,8 +7,10 @@ export async function getScreener(
 ): Promise<APIGatewayProxyResultV2> {
   try {
     const modeStr = event.queryStringParameters?.mode;
-    const mode: ScreenerMode = modeStr === 'premarket' ? 'premarket' : 'open';
-    
+    const mode: ScreenerMode =
+      modeStr === 'premarket' ? 'premarket' :
+      modeStr === 'momentum'  ? 'momentum'  : 'open';
+
     const results = await runScreener(mode);
     return jsonResponse(200, results);
   } catch (error: any) {

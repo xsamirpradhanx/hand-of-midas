@@ -132,11 +132,21 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
           </div>
         )}
         <div className={styles.headerActions}>
-          <button onClick={() => setShowAdd(!showAdd)} className={styles.addBtn} title="Add Indicator">
-            {showAdd ? '✕' : '+'}
-          </button>
-          <button onClick={toggleCollapse} className={styles.collapseBtn} title={isCollapsed ? "Expand Indicators" : "Collapse Indicators"}>
-            {isCollapsed ? '«' : '»'}
+          {!isCollapsed && (
+            <button onClick={() => setShowAdd(!showAdd)} className={styles.addBtn} title="Add Indicator">
+              {showAdd ? '✕' : '+'}
+            </button>
+          )}
+          <button onClick={toggleCollapse} className={`${styles.collapseBtn} ${isCollapsed ? styles.collapsedBtn : ''}`} title={isCollapsed ? "Expand Indicators" : "Collapse Indicators"}>
+            {isCollapsed ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            )}
           </button>
         </div>
       </div>

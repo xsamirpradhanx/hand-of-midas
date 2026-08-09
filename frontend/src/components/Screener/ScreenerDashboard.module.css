@@ -112,6 +112,13 @@
   box-shadow: 0 0 16px rgba(0, 212, 170, 0.12);
 }
 
+.modeBtnActiveMomentum {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.12);
+  border-color: rgba(251, 146, 60, 0.35);
+  box-shadow: 0 0 16px rgba(251, 146, 60, 0.12);
+}
+
 .refreshBtn {
   display: inline-flex;
   align-items: center;
@@ -447,6 +454,31 @@
 .catalystCheck {
   color: var(--color-up);
   font-weight: 800;
+}
+
+/* Momentum-specific catalyst badge variants */
+.catalystGap {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.catalystOversold {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.catalystOverbought {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.catalystSqueeze {
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.4);
 }
 
 .emptyRow td {

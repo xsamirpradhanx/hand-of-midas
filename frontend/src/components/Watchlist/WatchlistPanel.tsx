@@ -179,22 +179,34 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ selectedSymbol, 
       <div className={styles.header}>
         {!isCollapsed && <h2>Watchlist</h2>}
         <div className={styles.headerActions}>
-          <div className={styles.sortContainer} ref={sortMenuRef}>
-            <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className={styles.sortBtn} title="Sort Options">
-              ↕
-            </button>
-            {isSortMenuOpen && (
-              <div className={styles.sortMenu}>
-                <div className={styles.sortMenuItem} onClick={() => handleSortOption('name_asc')}>Name (A-Z)</div>
-                <div className={styles.sortMenuItem} onClick={() => handleSortOption('name_desc')}>Name (Z-A)</div>
-                <div className={styles.sortMenuItem} onClick={() => handleSortOption('percent_up')}>% Up (High to Low)</div>
-                <div className={styles.sortMenuItem} onClick={() => handleSortOption('percent_down')}>% Down (Low to High)</div>
+          {!isCollapsed && (
+            <>
+              <div className={styles.sortContainer} ref={sortMenuRef}>
+                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className={styles.sortBtn} title="Sort Options">
+                  ↕
+                </button>
+                {isSortMenuOpen && (
+                  <div className={styles.sortMenu}>
+                    <div className={styles.sortMenuItem} onClick={() => handleSortOption('name_asc')}>Name (A-Z)</div>
+                    <div className={styles.sortMenuItem} onClick={() => handleSortOption('name_desc')}>Name (Z-A)</div>
+                    <div className={styles.sortMenuItem} onClick={() => handleSortOption('percent_up')}>% Up (High to Low)</div>
+                    <div className={styles.sortMenuItem} onClick={() => handleSortOption('percent_down')}>% Down (Low to High)</div>
+                  </div>
+                )}
               </div>
+              <button onClick={() => setIsModalOpen(true)} className={styles.addBtn} title="Add Ticker">+</button>
+            </>
+          )}
+          <button onClick={toggleCollapse} className={`${styles.collapseBtn} ${isCollapsed ? styles.collapsedBtn : ''}`} title={isCollapsed ? "Expand Watchlist" : "Collapse Watchlist"}>
+            {isCollapsed ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
             )}
-          </div>
-          <button onClick={() => setIsModalOpen(true)} className={styles.addBtn} title="Add Ticker">+</button>
-          <button onClick={toggleCollapse} className={styles.collapseBtn} title={isCollapsed ? "Expand Watchlist" : "Collapse Watchlist"}>
-            {isCollapsed ? '»' : '«'}
           </button>
         </div>
       </div>

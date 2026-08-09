@@ -10,10 +10,13 @@ export interface ScreenerResult {
   changePercent: number;
   volume: number;
   rvol: number;
+  rsi14?: number;
+  shortFloatPct?: number;
+  isGapUp?: boolean;
   reasons: string[];
 }
 
-export type ScreenerMode = 'premarket' | 'open';
+export type ScreenerMode = 'premarket' | 'open' | 'momentum';
 
 function formatVolume(volume: number): string {
   if (volume >= 1e9) return `${(volume / 1e9).toFixed(2)}B`;
@@ -23,21 +26,22 @@ function formatVolume(volume: number): string {
 }
 
 function setupBadgeClass(setup: string): string {
-  if (setup.includes('Breakout')) return styles.setupBreakout!;
-  if (setup.includes('Trend') || setup.includes('Momentum')) return styles.setupTrend!;
-  if (setup.includes('Volatility') || setup.includes('Gap')) return styles.setupVolatility!;
-  if (setup.includes('Reversion')) return styles.setupReversion!;
+  if (setup.includes('Breakout') || setup.includes('Gap')) return styles.setupBreakout!;
+  if (setup.includes('Trend') || setup.includes('Momentum') || setup.includes('High RVOL')) return styles.setupTrend!;
+  if (setup.includes('Volatility') || setup.includes('Squeeze')) return styles.setupVolatility!;
+  if (setup.includes('Reversion') || setup.includes('Bounce')) return styles.setupReversion!;
   if (setup.includes('Gamma')) return styles.setupGamma!;
   return styles.setupDefault!;
 }
 
 function setupIcon(setup: string): string {
-  if (setup.includes('Breakout')) return '⚡';
-  if (setup.includes('Trend')) return '🌊';
-  if (setup.includes('Volatility') || setup.includes('Gap')) return '🚀';
-  if (setup.includes('Reversion')) return '🔄';
+  if (setup.includes('Breakout') || setup.includes('Gap')) return '⚡';
+  if (setup.includes('Trend') || setup.includes('High RVOL')) return '🌊';
+  if (setup.includes('Volatility') || setup.includes('Squeeze')) return '🚀';
+  if (setup.includes('Reversion') || setup.includes('Bounce')) return '🔄';
   if (setup.includes('Gamma')) return '🔮';
-  if (setup.includes('Catalyst')) return '💎';
+  if (setup.includes('Catalyst') || setup.includes('News')) return '📎';
+  if (setup.includes('Momentum')) return '🔥';
   return '⭐';
 }
 
@@ -101,6 +105,15 @@ const ScreenerDashboard: React.FC = () => {
               onClick={() => setMode('open')}
             >
               Open Market
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'momentum'}
+              className={`${styles.modeBtn} ${mode === 'momentum' ? styles.modeBtnActiveMomentum : ''}`}
+              onClick={() => setMode('momentum')}
+            >
+              🔥 Momentum $2–$20
             </button>
           </div>
 
@@ -197,6 +210,22 @@ const ScreenerDashboard: React.FC = () => {
                   </td>
                   <td className={`${styles.td} ${styles.catalystCell}`}>
                     <div className={styles.catalystList}>
+                      {result.isGapUp && (
+                        <span className={`${styles.catalystTag} ${styles.catalystGap}`}>
+                          <span className={styles.catalystCheck} aria-hidden>⚡</span>
+                          Gap &amp; Go
+                        </span>
+                      )}
+                      {result.rsi14 != null && (
+                        <span className={`${styles.catalystTag} ${result.rsi14 <= 35 ? styles.catalystOversold : result.rsi14 >= 70 ? styles.catalystOverbought : ''}`}>
+                          RSI {result.rsi14}
+                        </span>
+                      )}
+                      {result.shortFloatPct != null && result.shortFloatPct >= 15 && (
+                        <span className={`${styles.catalystTag} ${styles.catalystSqueeze}`}>
+                          Short {result.shortFloatPct.toFixed(1)}%
+                        </span>
+                      )}
                       {result.reasons.map((reason, idx) => (
                         <span key={`${result.symbol}-${idx}`} className={styles.catalystTag}>
                           <span className={styles.catalystCheck} aria-hidden>

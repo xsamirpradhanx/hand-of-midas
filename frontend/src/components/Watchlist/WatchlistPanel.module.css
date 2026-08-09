@@ -97,6 +97,22 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+.collapsedBtn {
+  width: 32px;
+  height: 32px;
+  background: rgba(184, 120, 10, 0.15);
+  color: var(--gold-mid);
+  border-color: rgba(200, 134, 10, 0.35);
+  box-shadow: 0 0 8px rgba(245, 200, 66, 0.1);
+}
+
+.collapsedBtn:hover {
+  background: rgba(200, 134, 10, 0.4);
+  color: var(--gold-bright);
+  border-color: rgba(245, 200, 66, 0.5);
+  box-shadow: 0 0 14px rgba(245, 200, 66, 0.3);
+}
+
 .sortBtn {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);

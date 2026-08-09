@@ -16,6 +16,7 @@ import * as alerts from './routes/alerts.js';
 import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
 import * as screener from './routes/screener.js';
+import * as diagonalScreener from './routes/diagonalScreener.js';
 import * as marketInternals from './routes/marketInternals.js';
 import * as sectorHeatmap from './routes/sectorHeatmap.js';
 
@@ -276,6 +277,15 @@ const routes: readonly Route[] = [
       const userId = getUserId(event);
       if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
       return screener.getScreener(event);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/screener/diagonal',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return diagonalScreener.getDiagonalScreener(event);
     },
   },
 
