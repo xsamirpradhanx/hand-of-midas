@@ -59,7 +59,11 @@ export const SectorHeatmap: React.FC = () => {
   }, [sectors]);
 
   if (loading && sectors.length === 0) {
-    return <div className={styles.container}><div className={styles.loading}>Loading Sector Heatmap...</div></div>;
+    return (
+      <div className={styles.container}>
+        <div className={styles.loading}>Invoking the Midas Touch</div>
+      </div>
+    );
   }
 
   if (sectors.length === 0) {

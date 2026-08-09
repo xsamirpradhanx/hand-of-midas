@@ -58,7 +58,11 @@ export const MarketInternals: React.FC = () => {
   }, [data]);
 
   if (loading && !data) {
-    return <div className={styles.container}><div className={styles.loading}>Loading Market Internals...</div></div>;
+    return (
+      <div className={styles.container}>
+        <div className={styles.loading}>Consulting the Oracle</div>
+      </div>
+    );
   }
 
   if (!data) {

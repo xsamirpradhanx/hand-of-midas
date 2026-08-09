@@ -17,7 +17,7 @@ export interface ScreenerResult {
   reasons: string[];
 }
 
-export type ScreenerMode = 'premarket' | 'open' | 'momentum';
+export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
 
 function formatVolume(volume: number): string {
   if (volume >= 1e9) return `${(volume / 1e9).toFixed(2)}B`;
@@ -117,6 +117,15 @@ const ScreenerDashboard: React.FC = () => {
               onClick={() => setMode('momentum')}
             >
               🔥 Momentum $2–$20
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'highdemand'}
+              className={`${styles.modeBtn} ${mode === 'highdemand' ? styles.modeBtnActiveHighDemand : ''}`}
+              onClick={() => setMode('highdemand')}
+            >
+              🎯 Top Guns
             </button>
             <button
               type="button"

@@ -127,6 +127,9 @@ export const api = {
   getAlerts: (): Promise<Alert[]> =>
     fetchWithAuth('/alerts'),
 
+  getNews: (): Promise<any[]> =>
+    fetchWithAuth('/news'),
+
   createAlert: (alert: Pick<Alert, 'symbol' | 'message' | 'severity'>): Promise<Alert> =>
     fetchWithAuth('/alerts', { method: 'POST', body: JSON.stringify(alert) }),
 
@@ -177,7 +180,7 @@ export const api = {
     return fetchWithAuth(`/options-analytics/${symbol}${qs ? `?${qs}` : ''}`);
   },
 
-  getScreener: (mode: 'premarket' | 'open' | 'momentum'): Promise<any[]> =>
+  getScreener: (mode: 'premarket' | 'open' | 'momentum' | 'highdemand'): Promise<any[]> =>
     fetchWithAuth(`/screener?mode=${mode}`),
 
   getDiagonalScreener: (): Promise<any[]> =>

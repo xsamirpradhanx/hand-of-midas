@@ -19,6 +19,7 @@ import * as screener from './routes/screener.js';
 import * as diagonalScreener from './routes/diagonalScreener.js';
 import * as marketInternals from './routes/marketInternals.js';
 import * as sectorHeatmap from './routes/sectorHeatmap.js';
+import * as news from './routes/news.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -214,6 +215,13 @@ const routes: readonly Route[] = [
       const userId = getUserId(event);
       if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
       return insights.getOptionsInsights(event, params);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/news',
+    handler: async (event, params) => {
+      return news.getWatchlistNews(event);
     },
   },
   {

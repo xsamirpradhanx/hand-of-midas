@@ -15,30 +15,32 @@ export interface ScreenerResult {
   reasons: string[];
 }
 
-export type ScreenerMode = 'premarket' | 'open' | 'momentum';
+export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
 
-// ── Large-cap / ETF universe (existing premarket + open modes) ──────────────
-const DEFAULT_UNIVERSE = [
-  'SPY', 'QQQ', 'IWM', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META',
-  'GOOGL', 'PLTR', 'NFLX', 'SMCI', 'COIN', 'MSTR', 'MARA', 'RIOT', 'BA', 'DIS',
-  'UBER', 'CRWD', 'PANW', 'ARM', 'MU', 'INTC', 'GME', 'AMC', 'HOOD', 'SOFI',
-];
+async function fetchDynamicUniverse(): Promise<string[]> {
+  const scrIds = ['day_gainers', 'most_actives', 'day_losers'];
+  const symbols = new Set<string>();
 
-// ── $2–$20 small/micro-cap momentum universe ─────────────────────────────────
-// Liquid names with listed options or high retail interest; refreshed periodically.
-const LOW_PRICE_UNIVERSE = [
-  // Biotech / pharma (frequent gap plays)
-  'SOUN', 'ACHR', 'JOBY', 'CLOV', 'MVIS', 'SKLZ', 'IRBT', 'SPCE',
-  'PTRA', 'BLNK', 'IDEX', 'NKLA', 'HYLN', 'RIDE', 'WKHS',
-  // EV / Clean energy
-  'ARVL', 'SOLO', 'AYRO', 'KNDI', 'XPEV', 'NIO', 'LI',
-  // Fintech / digital
-  'OPEN', 'LMND', 'ROOT', 'PSFE', 'SMAR', 'HIMS', 'CURO',
-  // Recent IPOs / SPACs that have come down
-  'IONQ', 'RXRX', 'LIDR', 'ARRY', 'OPAD', 'PRST', 'SLNA',
-  // High retail-interest
-  'BBBY', 'BGFV', 'EXPR', 'NAKD', 'SNDL',
-];
+  try {
+    const promises = scrIds.map(id => yf.screener({ scrIds: id, count: 100 }));
+    const results = await Promise.allSettled(promises);
+    
+    for (const res of results) {
+      if (res.status === 'fulfilled') {
+        const quotes = res.value?.quotes || [];
+        for (const q of quotes) {
+          if (q.symbol) symbols.add(q.symbol);
+        }
+      } else {
+        console.warn('[ScreenerService] Failed to fetch screener ID:', res.reason);
+      }
+    }
+  } catch (err) {
+    console.error('[ScreenerService] Error fetching dynamic universe:', err);
+  }
+
+  return Array.from(symbols);
+}
 
 interface Candidate {
   ticker: string;
@@ -85,7 +87,11 @@ function computeRSI14(closes: number[]): number | null {
 export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]> {
   console.log(`[ScreenerService] Starting scan for mode="${mode}" via Yahoo Finance...`);
 
-  const universe = mode === 'momentum' ? LOW_PRICE_UNIVERSE : DEFAULT_UNIVERSE;
+  const universe = await fetchDynamicUniverse();
+  
+  if (universe.length === 0) {
+    throw new Error('Could not determine dynamic universe from market data.');
+  }
 
   let rawQuotes: Record<string, unknown>[] = [];
   try {
@@ -117,7 +123,9 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
 
     // Price gates per mode
     if (!symbol || price < 2 || volume < 50_000) continue;
-    if (mode === 'momentum' && price > 20) continue;
+    if ((mode === 'momentum' || mode === 'highdemand') && price > 20) continue;
+    // highdemand: hard gate — must already be up ≥10% and have 5x RVOL
+    if (mode === 'highdemand' && (changePercent < 10 || rvol < 5)) continue;
 
     enrichedCandidates.push({
       ticker: symbol,
@@ -135,6 +143,9 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
 
   if (mode === 'premarket') {
     candidates = candidates.filter(c => Math.abs(c.changePercent) >= 1);
+  } else if (mode === 'highdemand') {
+    // Hard gates already applied above; no further filtering needed
+    // (all remaining candidates are ≥10% and ≥5x RVOL in the $2–$20 range)
   } else if (mode === 'momentum') {
     // Higher RVOL bar for small-caps: 1.5x minimum, or big % move
     candidates = candidates.filter(
@@ -166,7 +177,7 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
         let rsi14: number | null = null;
         let shortFloatPct: number | null = null;
 
-        if (mode === 'momentum') {
+        if (mode === 'momentum' || mode === 'highdemand') {
           try {
             const { yf: yfInst } = await import('./yahoo.js');
             const chart = await yfInst.chart(c.ticker, {
@@ -191,8 +202,17 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
             if (stats?.shortPercentOfFloat?.raw != null) {
               shortFloatPct = Number((stats.shortPercentOfFloat.raw * 100).toFixed(1));
             }
-          } catch {
-            // short float is optional
+            // Supply gate: shares outstanding < 20M for highdemand
+            if (mode === 'highdemand') {
+              const sharesOut = stats?.sharesOutstanding?.raw as number | undefined;
+              if (sharesOut != null && sharesOut >= 20_000_000) {
+                // Skip this candidate — too much supply
+                throw new Error(`SUPPLY_SKIP: ${c.ticker} shares outstanding ${sharesOut} >= 20M`);
+              }
+            }
+          } catch (err: any) {
+            if (err?.message?.startsWith('SUPPLY_SKIP')) throw err;
+            // short float / shares data is optional for non-highdemand
           }
         }
 
@@ -225,6 +245,168 @@ function evaluateSetup(
   rsi14: number | null,
   shortFloatPct: number | null,
 ): ScreenerResult | null {
+  // ── highdemand: dedicated scoring path ───────────────────────────────────
+  if (mode === 'highdemand') {
+    const reasons: string[] = [];
+    let setupScore = 0;
+    const factors = engineResult.aiThesis.factors;
+    const thesisBias = engineResult.aiThesis.bias;
+    const engineConviction = Math.round(engineResult.aiThesis.overallConviction * 100);
+    const hasFactor = (keyword: string) =>
+      factors.find(f => f.factorName.toLowerCase().includes(keyword.toLowerCase()));
+    const insider = hasFactor('catalyst');
+
+    // Criterion 1 — Up ≥10% on the day (hard gate already passed, score it)
+    reasons.push(`Up ${candidate.changePercent.toFixed(1)}% today`);
+    setupScore += candidate.changePercent >= 20 ? 25 : candidate.changePercent >= 15 ? 20 : 15;
+
+    // Criterion 2 — 5x RVOL (hard gate already passed, score it)
+    reasons.push(`RVOL ${candidate.rvol.toFixed(1)}x (High Demand)`);
+    setupScore += candidate.rvol >= 10 ? 25 : candidate.rvol >= 7 ? 20 : 15;
+
+    // Criterion 3 — News catalyst (soft bonus)
+    if (insider?.bias === 'bullish') {
+      reasons.push('News / Catalyst Detected');
+      setupScore += 20;
+    }
+
+    // Criterion 4 — Price range $2–$20 already enforced; confirm proximity to low end
+    if (candidate.price < 10) {
+      reasons.push(`Price $${candidate.price.toFixed(2)} (Day-trader sweet spot)`);
+      setupScore += 5;
+    }
+
+    // Criterion 5 — Float already gate-checked; bonus if short interest elevated
+    if (shortFloatPct != null && shortFloatPct >= 15) {
+      reasons.push(`Short Float ${shortFloatPct.toFixed(1)}% — Squeeze Risk`);
+      setupScore += 10;
+    }
+
+    // Gap-up signal
+    const isGapUp = !!(
+      candidate.openPrice &&
+      candidate.prevClose &&
+      candidate.openPrice > candidate.prevClose * 1.05
+    );
+    if (isGapUp) {
+      reasons.push('Gap & Go');
+      setupScore += 10;
+    }
+
+    // RSI momentum range
+    if (rsi14 != null && rsi14 >= 60 && rsi14 < 85) {
+      reasons.push(`RSI ${rsi14} (Momentum zone)`);
+      setupScore += 8;
+    }
+
+    const smf = hasFactor('smart money');
+    if (smf?.bias === 'bullish' && thesisBias !== 'bearish') {
+      reasons.push('Smart Money Accumulation');
+      setupScore += 10;
+    }
+
+    const confidenceScore = Math.min(
+      98,
+      Math.max(0, Math.round(setupScore * 0.70 + engineConviction * 0.30)),
+    );
+
+    if (confidenceScore < 65) return null;
+
+    return {
+      symbol: candidate.ticker,
+      setupType: isGapUp ? 'Gap & Go — High Demand' : 'High Demand Setup',
+      confidenceScore,
+      price: candidate.price,
+      changePercent: candidate.changePercent,
+      volume: candidate.volume,
+      rvol: Number(candidate.rvol.toFixed(2)),
+      rsi14: rsi14 ?? undefined,
+      shortFloatPct: shortFloatPct ?? undefined,
+      isGapUp,
+      reasons,
+    };
+  }
+  // ── highdemand: dedicated scoring path ───────────────────────────────────
+  if (mode === 'highdemand') {
+    const reasons: string[] = [];
+    let setupScore = 0;
+    const factors = engineResult.aiThesis.factors;
+    const thesisBias = engineResult.aiThesis.bias;
+    const engineConviction = Math.round(engineResult.aiThesis.overallConviction * 100);
+    const hasFactor = (keyword: string) =>
+      factors.find(f => f.factorName.toLowerCase().includes(keyword.toLowerCase()));
+    const insider = hasFactor('catalyst');
+
+    // Criterion 1 — Up ≥10% on the day (hard gate already passed, score it)
+    reasons.push(`Up ${candidate.changePercent.toFixed(1)}% today`);
+    setupScore += candidate.changePercent >= 20 ? 25 : candidate.changePercent >= 15 ? 20 : 15;
+
+    // Criterion 2 — 5x RVOL (hard gate already passed, score it)
+    reasons.push(`RVOL ${candidate.rvol.toFixed(1)}x (High Demand)`);
+    setupScore += candidate.rvol >= 10 ? 25 : candidate.rvol >= 7 ? 20 : 15;
+
+    // Criterion 3 — News catalyst (soft bonus)
+    if (insider?.bias === 'bullish') {
+      reasons.push('News / Catalyst Detected');
+      setupScore += 20;
+    }
+
+    // Criterion 4 — Price range $2–$20 already enforced; confirm proximity to low end
+    if (candidate.price < 10) {
+      reasons.push(`Price $${candidate.price.toFixed(2)} (Day-trader sweet spot)`);
+      setupScore += 5;
+    }
+
+    // Criterion 5 — Float already gate-checked; bonus if short interest elevated
+    if (shortFloatPct != null && shortFloatPct >= 15) {
+      reasons.push(`Short Float ${shortFloatPct.toFixed(1)}% — Squeeze Risk`);
+      setupScore += 10;
+    }
+
+    // Gap-up signal
+    const isGapUp = !!(
+      candidate.openPrice &&
+      candidate.prevClose &&
+      candidate.openPrice > candidate.prevClose * 1.05
+    );
+    if (isGapUp) {
+      reasons.push('Gap & Go');
+      setupScore += 10;
+    }
+
+    // RSI momentum range
+    if (rsi14 != null && rsi14 >= 60 && rsi14 < 85) {
+      reasons.push(`RSI ${rsi14} (Momentum zone)`);
+      setupScore += 8;
+    }
+
+    const smf = hasFactor('smart money');
+    if (smf?.bias === 'bullish' && thesisBias !== 'bearish') {
+      reasons.push('Smart Money Accumulation');
+      setupScore += 10;
+    }
+
+    const confidenceScore = Math.min(
+      98,
+      Math.max(0, Math.round(setupScore * 0.70 + engineConviction * 0.30)),
+    );
+
+    if (confidenceScore < 65) return null;
+
+    return {
+      symbol: candidate.ticker,
+      setupType: isGapUp ? 'Gap & Go — High Demand' : 'High Demand Setup',
+      confidenceScore,
+      price: candidate.price,
+      changePercent: candidate.changePercent,
+      volume: candidate.volume,
+      rvol: Number(candidate.rvol.toFixed(2)),
+      rsi14: rsi14 ?? undefined,
+      shortFloatPct: shortFloatPct ?? undefined,
+      isGapUp,
+      reasons,
+    };
+  }
   const factors = engineResult.aiThesis.factors;
   const thesisBias = engineResult.aiThesis.bias;
   const engineConviction = Math.round(engineResult.aiThesis.overallConviction * 100);
@@ -367,6 +549,8 @@ function evaluateSetup(
   // Other modes: 45% rule / 55% engine (original)
   const ruleWeight = mode === 'momentum' ? 0.60 : 0.45;
   const engineWeight = mode === 'momentum' ? 0.40 : 0.55;
+  // (highdemand has its own blend in the dedicated path above)
+  // (highdemand has its own blend in the dedicated path above)
 
   const confidenceScore = Math.min(
     98,

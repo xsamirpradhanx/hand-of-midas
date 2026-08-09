@@ -19,29 +19,60 @@
   align-items: center;
 }
 
+/* ─── Loading State — Midas Δ Glow ─── */
 .loading {
-  color: #00ff41;
-  font-family: 'Courier New', Courier, monospace;
-  font-style: normal;
-  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 20px;
+  color: rgba(245, 200, 66, 0.9);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  letter-spacing: 4px;
-  display: inline-block;
-  overflow: hidden;
   white-space: nowrap;
-  border-right: 4px solid #00ff41;
-  animation: 
-    matrixType 1.5s steps(25, end) infinite alternate,
-    matrixBlink 0.5s step-end infinite;
 }
 
-@keyframes matrixType {
-  from { max-width: 0; }
-  to { max-width: 400px; }
+.loading::before {
+  content: 'Δ';
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 1.1rem;
+  color: transparent;
+  background: linear-gradient(135deg, #c8860a, #f5c842, #ffe082, #e8a020);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 6px rgba(245, 200, 66, 0.65));
+  animation: deltaBreath 1.6s ease-in-out infinite;
+  display: inline-block;
 }
 
-@keyframes matrixBlink {
-  50% { border-color: transparent; }
+.loading::after {
+  content: '';
+  display: inline-block;
+  width: 80px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(200, 134, 10, 0.2),
+    rgba(245, 200, 66, 0.9),
+    rgba(255, 234, 160, 1),
+    rgba(200, 134, 10, 0.2)
+  );
+  background-size: 200% 100%;
+  animation: goldFlow 1.4s ease-in-out infinite;
+}
+
+@keyframes deltaBreath {
+  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 5px rgba(245, 200, 66, 0.5)); }
+  50%       { transform: scale(1.2); filter: drop-shadow(0 0 14px rgba(255, 224, 100, 0.95)); }
+}
+
+@keyframes goldFlow {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .scrollWrapper {
@@ -151,5 +182,3 @@
   height: 20px;
   background: linear-gradient(180deg, transparent, rgba(249, 168, 37, 0.4), transparent);
 }
-
-

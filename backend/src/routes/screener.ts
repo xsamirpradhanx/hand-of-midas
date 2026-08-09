@@ -9,7 +9,8 @@ export async function getScreener(
     const modeStr = event.queryStringParameters?.mode;
     const mode: ScreenerMode =
       modeStr === 'premarket' ? 'premarket' :
-      modeStr === 'momentum'  ? 'momentum'  : 'open';
+      modeStr === 'momentum'  ? 'momentum'  :
+      modeStr === 'highdemand'? 'highdemand' : 'open';
 
     const results = await runScreener(mode);
     return jsonResponse(200, results);

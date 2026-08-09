@@ -119,6 +119,13 @@
   box-shadow: 0 0 16px rgba(251, 146, 60, 0.12);
 }
 
+.modeBtnActiveHighDemand {
+  color: #f472b6;
+  background: rgba(244, 114, 182, 0.12);
+  border-color: rgba(244, 114, 182, 0.35);
+  box-shadow: 0 0 16px rgba(244, 114, 182, 0.12);
+}
+
 .refreshBtn {
   display: inline-flex;
   align-items: center;

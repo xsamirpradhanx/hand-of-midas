@@ -147,6 +147,15 @@ const DiagonalScreener: React.FC = () => {
             <button
               type="button"
               role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener', { state: { mode: 'highdemand' } })}
+            >
+              🎯 Top Guns
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={true}
               className={`${dashStyles.modeBtn} ${styles.modeBtnActiveDiagonal}`}
               onClick={() => {}}
