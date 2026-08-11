@@ -409,16 +409,11 @@ export interface PolygonNewsArticle {
 
 export async function getTickerNews(symbol: string, limit: number = 20): Promise<PolygonNewsArticle[]> {
   const sym = symbol.toUpperCase();
+  
+  // 1. Try Yahoo Finance first (more lenient rate limits for screener)
   try {
-    const url = `${BASE_URL}/v2/reference/news?ticker=${sym}&limit=${limit}&sort=published_utc&order=desc`;
-    const data = await fetchPolygon<{ results: PolygonNewsArticle[] }>(url);
-    return data.results || [];
-  } catch (err) {
-    console.warn(`Polygon news rate limit/error for ${sym}, falling back to Yahoo Finance`, err instanceof Error ? err.message : String(err));
-    try {
-      const result = await yf.search(sym, { newsCount: limit });
-      if (!result.news) return [];
-      
+    const result = await yf.search(sym, { newsCount: limit });
+    if (result.news && result.news.length > 0) {
       return result.news.map((item: any) => ({
         title: item.title || '',
         author: item.publisher || '',
@@ -428,10 +423,19 @@ export async function getTickerNews(symbol: string, limit: number = 20): Promise
         description: item.summary || '',
         keywords: []
       }));
-    } catch (yfErr) {
-      console.error(`Yahoo Finance news fallback also failed for ${sym}:`, yfErr);
-      return [];
     }
+  } catch (yfErr) {
+    console.warn(`Yahoo Finance news failed for ${sym}, falling back to Polygon:`, yfErr instanceof Error ? yfErr.message : String(yfErr));
+  }
+
+  // 2. Fallback to Polygon
+  try {
+    const url = `${BASE_URL}/v2/reference/news?ticker=${sym}&limit=${limit}&sort=published_utc&order=desc`;
+    const data = await fetchPolygon<{ results: PolygonNewsArticle[] }>(url);
+    return data.results || [];
+  } catch (err) {
+    console.error(`Polygon news fallback also failed for ${sym}:`, err instanceof Error ? err.message : String(err));
+    return [];
   }
 }
 
@@ -457,4 +461,14 @@ export async function getEarningsDate(symbol: string): Promise<string | null> {
     // Non-fatal — many tickers don't have events data on free Polygon tiers
     return null;
   }
+}
+
+export async function searchTickers(query: string): Promise<any[]> {
+  const data = await fetchPolygon<any>(`https://api.polygon.io/v3/reference/tickers?search=${encodeURIComponent(query)}&active=true&limit=10`);
+  return (data.results || []).map((q: any) => ({
+    symbol: q.ticker,
+    name: q.name,
+    exchange: q.primary_exchange || '',
+    quoteType: q.market || 'EQUITY',
+  }));
 }

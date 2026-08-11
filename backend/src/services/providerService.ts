@@ -313,3 +313,44 @@ export async function getMarketDataProviderAware(
 
   return { data: [], source: 'yahoo' };
 }
+
+// ---------------------------------------------------------------------------
+// Provider-aware Symbol Search
+// ---------------------------------------------------------------------------
+export async function searchSymbolsProviderAware(
+  query: string,
+  provider?: string
+): Promise<any[]> {
+  const isPolygon = provider === 'polygon';
+  const isTwelveData = provider === 'twelvedata';
+
+  if (isPolygon) {
+    try {
+      const { searchTickers } = await import('./polygon.js');
+      return await searchTickers(query);
+    } catch (e) {
+      console.warn('Polygon search failed, falling back to Yahoo Finance');
+    }
+  }
+
+  if (isTwelveData) {
+    try {
+      const { searchTickers } = await import('./twelvedata.js');
+      return await searchTickers(query);
+    } catch (e) {
+      console.warn('TwelveData search failed, falling back to Yahoo Finance');
+    }
+  }
+
+  // Default / Fallback: Yahoo Finance
+  const result = await yf.search(query, { quotesCount: 10, newsCount: 0 });
+  return (result.quotes || [])
+    .filter((q: any) => q.symbol && q.quoteType !== 'OPTION')
+    .slice(0, 8)
+    .map((q: any) => ({
+      symbol: q.symbol,
+      name: q.longname || q.shortname || q.symbol,
+      exchange: q.exchDisp || q.exchange || '',
+      quoteType: q.quoteType || q.typeDisp || 'EQUITY',
+    }));
+}

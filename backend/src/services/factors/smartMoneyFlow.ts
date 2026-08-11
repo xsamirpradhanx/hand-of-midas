@@ -94,30 +94,32 @@ export class SmartMoneyFlowFactor implements PredictiveFactor {
 
       let bias: 'bullish' | 'bearish' | 'neutral';
       let reasoning: string;
-      let buyTarget: number;
-      let sellTarget: number;
+
+      // Accumulation / Distribution Score 0-100
+      let accDistScore = 50; // Neutral baseline
 
       if (isInstitutionalDominated && isSmartBullish) {
         bias = 'bullish';
-        buyTarget = currentPrice * 0.99;
-        sellTarget = currentPrice * 1.03;
-        reasoning = `Smart Money Flow Ratio = ${smfr.toFixed(1)}x (Institutional ${institutionalTotal.toLocaleString()} OI vs Retail ${retailTotal.toLocaleString()} OI). Smart Call Ratio = ${(smartCallRatio * 100).toFixed(0)}% — INSTITUTIONAL BULLISH positioning dominates. Follow the smart money up.`;
+        reasoning = `Institutions buying near-ATM calls (SMFR: ${smfr.toFixed(1)}, Call Ratio: ${(smartCallRatio * 100).toFixed(0)}%)`;
+        accDistScore = 80 + Math.min(20, smfr * 2);
       } else if (isInstitutionalDominated && isSmartBearish) {
         bias = 'bearish';
-        buyTarget = currentPrice * 0.97;
-        sellTarget = currentPrice * 1.01;
-        reasoning = `Smart Money Flow Ratio = ${smfr.toFixed(1)}x. Smart Call Ratio = ${(smartCallRatio * 100).toFixed(0)}% — INSTITUTIONAL BEARISH put positioning dominates. Smart money hedged/short.`;
-      } else if (isRetailDominated) {
-        // Contrarian: retail dominance often signals a fading opportunity
-        bias = isSmartBullish ? 'bearish' : 'bullish'; // Fade retail direction
-        buyTarget = currentPrice * 0.985;
-        sellTarget = currentPrice * 1.015;
-        reasoning = `Smart Money Flow Ratio = ${smfr.toFixed(1)}x — RETAIL DOMINATED. Small-lot OTM speculation (${retailTotal.toLocaleString()} OI) outpaces institutional (${institutionalTotal.toLocaleString()} OI). Contrarian fade signal.`;
+        reasoning = `Institutions buying near-ATM puts (SMFR: ${smfr.toFixed(1)}, Call Ratio: ${(smartCallRatio * 100).toFixed(0)}%)`;
+        accDistScore = 20 - Math.min(20, smfr * 2);
+      } else if (isRetailDominated && isSmartBullish) {
+        // Retail is overwhelmingly buying calls -> contrarian bearish
+        bias = 'bearish';
+        reasoning = `Retail frenzy in far-OTM calls (SMFR: ${smfr.toFixed(1)}) — Fade potential`;
+        accDistScore = 30;
+      } else if (isRetailDominated && isSmartBearish) {
+        // Retail is overwhelmingly buying puts -> contrarian bullish
+        bias = 'bullish';
+        reasoning = `Retail panic in far-OTM puts (SMFR: ${smfr.toFixed(1)}) — Bounce potential`;
+        accDistScore = 70;
       } else {
         bias = 'neutral';
-        buyTarget = currentPrice * 0.985;
-        sellTarget = currentPrice * 1.015;
-        reasoning = `Smart Money Flow Ratio = ${smfr.toFixed(1)}x. Institutional OI (${institutionalTotal.toLocaleString()}) vs Retail OI (${retailTotal.toLocaleString()}). No clear smart money directional bias. Smart Call Ratio ${(smartCallRatio * 100).toFixed(0)}%.`;
+        reasoning = `Mixed order flow (SMFR: ${smfr.toFixed(1)})`;
+        accDistScore = 50 + (smartCallRatio - 0.5) * 20; // Slight tilt based on call ratio
       }
 
       return {

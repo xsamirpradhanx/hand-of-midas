@@ -1,46 +1,43 @@
+
 import { yf } from './yahoo.js';
 import { getPredictiveZones } from './predictiveEngine.js';
 
 export interface ScreenerResult {
   symbol: string;
   setupType: string;
-  confidenceScore: number;
+  setupStage: 'EARLY' | 'DEVELOPING' | 'BREAKOUT' | 'EXTENDED';
+  midasScore: number;
+  momentumScore: number;
+  probability: number;
+  riskScore: number;
+  subScores: {
+    momentumQuality: number;
+    volumeConfirmation: number;
+    extensionPenalty: number;
+    catalystQuality: number;
+    liquidity: number;
+    riskInverse: number;
+  };
   price: number;
   changePercent: number;
+  relativeStrength?: number;
   volume: number;
   rvol: number;
+  floatTurnover?: number;
   rsi14?: number;
   shortFloatPct?: number;
   isGapUp?: boolean;
+  isExtremeMover?: boolean;
+  dataQuality: 'VERIFIED' | 'CHECK' | 'SUSPICIOUS';
+  yahooSources: string[];
+  yahooConsensus: number;
   reasons: string[];
 }
 
 export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
 
-async function fetchDynamicUniverse(): Promise<string[]> {
-  const scrIds = ['day_gainers', 'most_actives', 'day_losers'];
-  const symbols = new Set<string>();
-
-  try {
-    const promises = scrIds.map(id => yf.screener({ scrIds: id, count: 100 }));
-    const results = await Promise.allSettled(promises);
-    
-    for (const res of results) {
-      if (res.status === 'fulfilled') {
-        const quotes = res.value?.quotes || [];
-        for (const q of quotes) {
-          if (q.symbol) symbols.add(q.symbol);
-        }
-      } else {
-        console.warn('[ScreenerService] Failed to fetch screener ID:', res.reason);
-      }
-    }
-  } catch (err) {
-    console.error('[ScreenerService] Error fetching dynamic universe:', err);
-  }
-
-  return Array.from(symbols);
-}
+import { calculateMidasScore } from './midasModel.js';
+import { buildActiveMarketUniverse } from './universeService.js';
 
 interface Candidate {
   ticker: string;
@@ -48,8 +45,12 @@ interface Candidate {
   changePercent: number;
   volume: number;
   rvol: number;
+  intradayRvol: number;
   openPrice?: number;
   prevClose?: number;
+  yahooSources: string[];
+  yahooConsensus: number;
+  floatTurnover?: number;
 }
 
 function averageDailyVolume(quote: Record<string, unknown>): number {
@@ -61,6 +62,52 @@ function averageDailyVolume(quote: Record<string, unknown>): number {
 function computeRvol(volume: number, adv: number): number {
   if (adv <= 0 || volume <= 0) return 0;
   return volume / adv;
+}
+
+/**
+ * Time-of-day adjusted RVOL proxy.
+ * Estimates what percentage of a standard trading session's volume *should* have
+ * traded by the current minute, and normalizes the denominator.
+ */
+function computeIntradayRvol(volume: number, adv: number): number {
+  if (adv <= 0 || volume <= 0) return 0;
+  
+  // Get current time in New York
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(now);
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value, 10);
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value, 10);
+
+  const currentMinutes = hour * 60 + minute;
+  const openMinutes = 9 * 60 + 30; // 9:30 AM
+  const closeMinutes = 16 * 60;    // 4:00 PM
+
+  let elapsedRatio = 1.0;
+  
+  if (currentMinutes < openMinutes) {
+    // Premarket: extremely early, volume is naturally very low compared to ADV.
+    // We assume by 9:30 AM, premarket usually does ~5-10% of ADV.
+    const premarketStart = 4 * 60; // 4:00 AM
+    const elapsedPre = Math.max(0, currentMinutes - premarketStart);
+    const totalPre = openMinutes - premarketStart;
+    const premarketMaxRatio = 0.08; // 8% of daily volume expected by open
+    elapsedRatio = Math.max(0.01, (elapsedPre / totalPre) * premarketMaxRatio);
+  } else if (currentMinutes < closeMinutes) {
+    // Open market: 390 minutes total
+    const elapsedOpen = currentMinutes - openMinutes;
+    // Volume curve is U-shaped, but linear is a safe conservative proxy
+    elapsedRatio = Math.max(0.1, elapsedOpen / 390);
+  }
+
+  // Normalization: if we are 50% through the day, compare current volume against 50% of ADV
+  const timeAdjustedAdv = adv * elapsedRatio;
+  return volume / timeAdjustedAdv;
 }
 
 /**
@@ -87,15 +134,24 @@ function computeRSI14(closes: number[]): number | null {
 export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]> {
   console.log(`[ScreenerService] Starting scan for mode="${mode}" via Yahoo Finance...`);
 
-  const universe = await fetchDynamicUniverse();
-  
-  if (universe.length === 0) {
+  const universeCandidates = await buildActiveMarketUniverse();
+
+  if (universeCandidates.length === 0) {
     throw new Error('Could not determine dynamic universe from market data.');
   }
 
+  // Build lookup maps for Yahoo Consensus data
+  const yahooSourcesMap = new Map<string, string[]>();
+  const yahooConsensusMap = new Map<string, number>();
+  for (const uc of universeCandidates) {
+    yahooSourcesMap.set(uc.symbol, uc.yahooSources);
+    yahooConsensusMap.set(uc.symbol, uc.yahooConsensus);
+  }
+  const symbols = universeCandidates.map(uc => uc.symbol);
+
   let rawQuotes: Record<string, unknown>[] = [];
   try {
-    const batch = await yf.quote(universe);
+    const batch = await yf.quote(symbols);
     rawQuotes = Array.isArray(batch) ? batch : [batch];
   } catch (error) {
     console.error('Yahoo Finance batch quote error:', error);
@@ -106,20 +162,38 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
     throw new Error('No quote data returned for the predefined universe.');
   }
 
+  // Find SPY for relative strength baseline
+  const spyQuote = rawQuotes.find(q => q['symbol'] === 'SPY');
+  let spyChange = 0;
+  if (spyQuote) {
+    const pPrice = (spyQuote['regularMarketPrice'] as number) ?? 0;
+    const pPrev = (spyQuote['regularMarketPreviousClose'] as number) ?? pPrice;
+    if (pPrev !== 0) spyChange = ((pPrice - pPrev) / pPrev) * 100;
+  }
+
   const enrichedCandidates: Candidate[] = [];
 
   for (const q of rawQuotes) {
     const symbol = q['symbol'] as string | undefined;
-    const price = (q['regularMarketPrice'] as number) ?? 0;
+    let price = (q['regularMarketPrice'] as number) ?? 0;
     const prevClose = (q['regularMarketPreviousClose'] as number) ?? price;
     const openPrice = (q['regularMarketOpen'] as number) ?? price;
-    const change = (q['regularMarketChange'] as number) ?? price - prevClose;
-    const changePercent =
+    let change = (q['regularMarketChange'] as number) ?? price - prevClose;
+    let changePercent =
       (q['regularMarketChangePercent'] as number) ??
       (prevClose !== 0 ? (change / prevClose) * 100 : 0);
+
+    const isPreMarket = q['marketState'] === 'PRE' || q['marketState'] === 'PREPRE' || mode === 'premarket';
+    if (isPreMarket && q['preMarketPrice'] !== undefined) {
+      price = q['preMarketPrice'] as number;
+      change = (q['preMarketChange'] as number) ?? change;
+      changePercent = (q['preMarketChangePercent'] as number) ?? changePercent;
+    }
+
     const volume = (q['regularMarketVolume'] as number) ?? 0;
     const adv = averageDailyVolume(q);
     const rvol = computeRvol(volume, adv);
+    const intradayRvol = computeIntradayRvol(volume, adv);
 
     // Price gates per mode
     if (!symbol || price < 2 || volume < 50_000) continue;
@@ -133,8 +207,11 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
       changePercent,
       volume,
       rvol,
+      intradayRvol,
       openPrice,
       prevClose,
+      yahooSources: yahooSourcesMap.get(symbol) ?? [],
+      yahooConsensus: yahooConsensusMap.get(symbol) ?? 0,
     });
   }
 
@@ -145,9 +222,7 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
     candidates = candidates.filter(c => Math.abs(c.changePercent) >= 1);
   } else if (mode === 'highdemand') {
     // Hard gates already applied above; no further filtering needed
-    // (all remaining candidates are ≥10% and ≥5x RVOL in the $2–$20 range)
   } else if (mode === 'momentum') {
-    // Higher RVOL bar for small-caps: 1.5x minimum, or big % move
     candidates = candidates.filter(
       c => c.rvol >= 1.5 || Math.abs(c.changePercent) >= 5,
     );
@@ -158,9 +233,14 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
     );
   }
 
-  candidates.sort(
-    (a, b) => b.rvol * Math.abs(b.changePercent) - a.rvol * Math.abs(a.changePercent),
-  );
+  // ── Phase 1 sort: blend RVOL * move with Yahoo Consensus ──────────────────
+  // Stocks appearing in more Yahoo screener lists get a ranking boost.
+  // This surfaces tickers with broad market agreement over single-list flukes.
+  candidates.sort((a, b) => {
+    const scoreA = a.rvol * Math.abs(a.changePercent) + a.yahooConsensus * 0.5;
+    const scoreB = b.rvol * Math.abs(b.changePercent) + b.yahooConsensus * 0.5;
+    return scoreB - scoreA;
+  });
 
   const topCandidates = candidates.slice(0, 15);
   console.log(`[ScreenerService] Phase 1: ${topCandidates.length} candidates for deep scan.`);
@@ -202,6 +282,10 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
             if (stats?.shortPercentOfFloat?.raw != null) {
               shortFloatPct = Number((stats.shortPercentOfFloat.raw * 100).toFixed(1));
             }
+            if (stats?.floatShares?.raw != null) {
+              c.floatTurnover = c.volume / stats.floatShares.raw;
+            }
+            
             // Supply gate: shares outstanding < 20M for highdemand
             if (mode === 'highdemand') {
               const sharesOut = stats?.sharesOutstanding?.raw as number | undefined;
@@ -227,104 +311,42 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
         continue;
       }
       const { candidate, engineResult, rsi14, shortFloatPct } = res.value;
-      const screenerResult = evaluateSetup(candidate, engineResult, mode, rsi14, shortFloatPct);
-      if (screenerResult && screenerResult.confidenceScore >= 65) {
+      const screenerResult = await evaluateSetup(candidate, engineResult, mode, rsi14, shortFloatPct, spyChange);
+      const threshold = mode === 'premarket' ? 45 : 60;
+      if (screenerResult && screenerResult.midasScore >= threshold) {
         results.push(screenerResult);
       }
     }
   }
 
-  results.sort((a, b) => b.confidenceScore - a.confidenceScore);
+  results.sort((a, b) => b.midasScore - a.midasScore);
   return results;
 }
 
-function evaluateSetup(
-  candidate: Candidate,
+async function evaluateSetup(
+  candidate: Candidate & { floatTurnover?: number },
   engineResult: Awaited<ReturnType<typeof getPredictiveZones>>,
   mode: ScreenerMode,
   rsi14: number | null,
   shortFloatPct: number | null,
-): ScreenerResult | null {
-  // ── highdemand: dedicated scoring path ───────────────────────────────────
-  if (mode === 'highdemand') {
-    const reasons: string[] = [];
-    let setupScore = 0;
-    const factors = engineResult.aiThesis.factors;
-    const thesisBias = engineResult.aiThesis.bias;
-    const engineConviction = Math.round(engineResult.aiThesis.overallConviction * 100);
-    const hasFactor = (keyword: string) =>
-      factors.find(f => f.factorName.toLowerCase().includes(keyword.toLowerCase()));
-    const insider = hasFactor('catalyst');
+  spyChange: number
+): Promise<ScreenerResult | null> {
+  const relativeStrength = Number((candidate.changePercent - spyChange).toFixed(2));
+  let setupStage: 'EARLY' | 'DEVELOPING' | 'BREAKOUT' | 'EXTENDED' = 'DEVELOPING';
+  
+  if (Math.abs(candidate.changePercent) > 40 || (rsi14 && rsi14 > 80)) {
+    setupStage = 'EXTENDED';
+  } else if (Math.abs(candidate.changePercent) > 15 || (rsi14 && rsi14 > 65)) {
+    setupStage = 'BREAKOUT';
+  } else if (Math.abs(candidate.changePercent) < 5 && (!rsi14 || rsi14 < 50)) {
+    setupStage = 'EARLY';
+  }
 
-    // Criterion 1 — Up ≥10% on the day (hard gate already passed, score it)
-    reasons.push(`Up ${candidate.changePercent.toFixed(1)}% today`);
-    setupScore += candidate.changePercent >= 20 ? 25 : candidate.changePercent >= 15 ? 20 : 15;
-
-    // Criterion 2 — 5x RVOL (hard gate already passed, score it)
-    reasons.push(`RVOL ${candidate.rvol.toFixed(1)}x (High Demand)`);
-    setupScore += candidate.rvol >= 10 ? 25 : candidate.rvol >= 7 ? 20 : 15;
-
-    // Criterion 3 — News catalyst (soft bonus)
-    if (insider?.bias === 'bullish') {
-      reasons.push('News / Catalyst Detected');
-      setupScore += 20;
-    }
-
-    // Criterion 4 — Price range $2–$20 already enforced; confirm proximity to low end
-    if (candidate.price < 10) {
-      reasons.push(`Price $${candidate.price.toFixed(2)} (Day-trader sweet spot)`);
-      setupScore += 5;
-    }
-
-    // Criterion 5 — Float already gate-checked; bonus if short interest elevated
-    if (shortFloatPct != null && shortFloatPct >= 15) {
-      reasons.push(`Short Float ${shortFloatPct.toFixed(1)}% — Squeeze Risk`);
-      setupScore += 10;
-    }
-
-    // Gap-up signal
-    const isGapUp = !!(
-      candidate.openPrice &&
-      candidate.prevClose &&
-      candidate.openPrice > candidate.prevClose * 1.05
-    );
-    if (isGapUp) {
-      reasons.push('Gap & Go');
-      setupScore += 10;
-    }
-
-    // RSI momentum range
-    if (rsi14 != null && rsi14 >= 60 && rsi14 < 85) {
-      reasons.push(`RSI ${rsi14} (Momentum zone)`);
-      setupScore += 8;
-    }
-
-    const smf = hasFactor('smart money');
-    if (smf?.bias === 'bullish' && thesisBias !== 'bearish') {
-      reasons.push('Smart Money Accumulation');
-      setupScore += 10;
-    }
-
-    const confidenceScore = Math.min(
-      98,
-      Math.max(0, Math.round(setupScore * 0.70 + engineConviction * 0.30)),
-    );
-
-    if (confidenceScore < 65) return null;
-
-    return {
-      symbol: candidate.ticker,
-      setupType: isGapUp ? 'Gap & Go — High Demand' : 'High Demand Setup',
-      confidenceScore,
-      price: candidate.price,
-      changePercent: candidate.changePercent,
-      volume: candidate.volume,
-      rvol: Number(candidate.rvol.toFixed(2)),
-      rsi14: rsi14 ?? undefined,
-      shortFloatPct: shortFloatPct ?? undefined,
-      isGapUp,
-      reasons,
-    };
+  let dataQuality: 'VERIFIED' | 'CHECK' | 'SUSPICIOUS' = 'VERIFIED';
+  if (candidate.intradayRvol > 100 || Math.abs(candidate.changePercent) > 200) {
+    dataQuality = 'SUSPICIOUS';
+  } else if (candidate.intradayRvol > 30 || Math.abs(candidate.changePercent) > 50) {
+    dataQuality = 'CHECK';
   }
   // ── highdemand: dedicated scoring path ───────────────────────────────────
   if (mode === 'highdemand') {
@@ -386,27 +408,57 @@ function evaluateSetup(
       setupScore += 10;
     }
 
-    const confidenceScore = Math.min(
+    const legacyConfidenceScore = Math.min(
       98,
       Math.max(0, Math.round(setupScore * 0.70 + engineConviction * 0.30)),
     );
 
-    if (confidenceScore < 65) return null;
+    const isExtremeMover = candidate.intradayRvol > 50 || Math.abs(candidate.changePercent) > 100;
+    if (isExtremeMover) {
+      reasons.unshift('⚠️ Extreme Mover — Verify data / halt risk');
+    }
+
+    const { midasScore, momentumScore, probability, riskScore, subScores } = await calculateMidasScore(
+      candidate.ticker,
+      candidate.price,
+      candidate.changePercent,
+      candidate.rvol,
+      candidate.intradayRvol,
+      legacyConfidenceScore,
+      mode,
+      candidate.volume,
+      candidate.floatTurnover,
+      rsi14
+    );
+
+    if (midasScore < 60 && riskScore < 80 && momentumScore < 80) return null; // Keep high risk or high momentum things so users can see them!
 
     return {
       symbol: candidate.ticker,
       setupType: isGapUp ? 'Gap & Go — High Demand' : 'High Demand Setup',
-      confidenceScore,
+      setupStage,
+      midasScore,
+      momentumScore,
+      probability,
+      riskScore,
+      subScores,
       price: candidate.price,
       changePercent: candidate.changePercent,
+      relativeStrength,
       volume: candidate.volume,
-      rvol: Number(candidate.rvol.toFixed(2)),
+      rvol: Number(candidate.intradayRvol.toFixed(2)),
+      floatTurnover: candidate.floatTurnover ? Number(candidate.floatTurnover.toFixed(2)) : undefined,
       rsi14: rsi14 ?? undefined,
       shortFloatPct: shortFloatPct ?? undefined,
       isGapUp,
+      isExtremeMover,
+      dataQuality,
+      yahooSources: candidate.yahooSources,
+      yahooConsensus: candidate.yahooConsensus,
       reasons,
     };
   }
+
   const factors = engineResult.aiThesis.factors;
   const thesisBias = engineResult.aiThesis.bias;
   const engineConviction = Math.round(engineResult.aiThesis.overallConviction * 100);
@@ -545,31 +597,57 @@ function evaluateSetup(
   }
 
   // ── Blend score ──────────────────────────────────────────────────────────
-  // Momentum mode: 60% rule-based / 40% engine (engine calibrated on large-caps)
-  // Other modes: 45% rule / 55% engine (original)
   const ruleWeight = mode === 'momentum' ? 0.60 : 0.45;
   const engineWeight = mode === 'momentum' ? 0.40 : 0.55;
-  // (highdemand has its own blend in the dedicated path above)
-  // (highdemand has its own blend in the dedicated path above)
 
-  const confidenceScore = Math.min(
+  const legacyConfidenceScore = Math.min(
     98,
     Math.max(0, Math.round(setupScore * ruleWeight + engineConviction * engineWeight)),
   );
 
-  if (confidenceScore < 65) return null;
+  const isExtremeMover = candidate.intradayRvol > 50 || Math.abs(candidate.changePercent) > 100;
+  if (isExtremeMover) {
+    reasons.unshift('⚠️ Extreme Mover — Verify data / halt risk');
+  }
+
+  const { midasScore, momentumScore, probability, riskScore, subScores } = await calculateMidasScore(
+    candidate.ticker,
+    candidate.price,
+    candidate.changePercent,
+    candidate.rvol,
+    candidate.intradayRvol,
+    legacyConfidenceScore,
+    mode,
+    candidate.volume,
+    candidate.floatTurnover,
+    rsi14
+  );
+  
+  const threshold = mode === 'premarket' ? 45 : 60;
+  if (midasScore < threshold && riskScore < 80 && momentumScore < 80) return null;
 
   return {
     symbol: candidate.ticker,
     setupType,
-    confidenceScore,
+    setupStage,
+    midasScore,
+    momentumScore,
+    probability,
+    riskScore,
+    subScores,
     price: candidate.price,
     changePercent: candidate.changePercent,
+    relativeStrength,
     volume: candidate.volume,
-    rvol: Number(candidate.rvol.toFixed(2)),
+    rvol: Number(candidate.intradayRvol.toFixed(2)),
+    floatTurnover: candidate.floatTurnover ? Number(candidate.floatTurnover.toFixed(2)) : undefined,
     rsi14: rsi14 ?? undefined,
     shortFloatPct: shortFloatPct ?? undefined,
     isGapUp,
+    isExtremeMover,
+    dataQuality,
+    yahooSources: candidate.yahooSources,
+    yahooConsensus: candidate.yahooConsensus,
     reasons,
   };
 }

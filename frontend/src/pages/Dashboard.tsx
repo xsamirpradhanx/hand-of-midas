@@ -52,6 +52,15 @@ export const Dashboard: React.FC = () => {
   const [timezone, setTimezone] = useLocalStorage<'EST' | 'GMT'>('dashboard_timezone', 'EST');
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
 
+  useEffect(() => {
+    const handleTickerSelected = (e: Event) => {
+      const symbol = (e as CustomEvent<{ symbol: string }>).detail?.symbol;
+      if (symbol) setSelectedSymbol(symbol);
+    };
+    window.addEventListener('TICKER_SELECTED', handleTickerSelected);
+    return () => window.removeEventListener('TICKER_SELECTED', handleTickerSelected);
+  }, [setSelectedSymbol]);
+
   // Load chart config when symbol changes
   useEffect(() => {
     if (!selectedSymbol) return;

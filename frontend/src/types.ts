@@ -26,6 +26,13 @@ export interface WatchlistEntry {
   readonly addedAt: string;
 }
 
+export interface SymbolSearchResult {
+  readonly symbol: string;
+  readonly name: string;
+  readonly exchange: string;
+  readonly quoteType: string;
+}
+
 export interface IndicatorConfig {
   readonly type: string;
   readonly enabled: boolean;

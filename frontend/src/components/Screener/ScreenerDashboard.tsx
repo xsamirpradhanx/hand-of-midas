@@ -6,14 +6,32 @@ import styles from './ScreenerDashboard.module.css';
 export interface ScreenerResult {
   symbol: string;
   setupType: string;
-  confidenceScore: number;
+  setupStage: 'EARLY' | 'DEVELOPING' | 'BREAKOUT' | 'EXTENDED';
+  midasScore: number;
+  momentumScore: number;
+  probability: number;
+  riskScore: number;
+  subScores: {
+    momentumQuality: number;
+    volumeConfirmation: number;
+    extensionPenalty: number;
+    catalystQuality: number;
+    liquidity: number;
+    riskInverse: number;
+  };
   price: number;
   changePercent: number;
+  relativeStrength?: number;
   volume: number;
   rvol: number;
+  floatTurnover?: number;
   rsi14?: number;
   shortFloatPct?: number;
   isGapUp?: boolean;
+  isExtremeMover?: boolean;
+  dataQuality: 'VERIFIED' | 'CHECK' | 'SUSPICIOUS';
+  yahooSources: string[];
+  yahooConsensus: number;
   reasons: string[];
 }
 
@@ -174,11 +192,14 @@ const ScreenerDashboard: React.FC = () => {
               <tr>
                 <th className={styles.th}>Symbol</th>
                 <th className={styles.th}>Setup Type</th>
-                <th className={styles.th}>Confidence</th>
+                <th className={styles.th}>Stage</th>
+                <th className={styles.th}>Midas</th>
+                <th className={styles.th}>Momentum</th>
                 <th className={styles.thRight}>Price</th>
-                <th className={styles.thRight}>Change %</th>
-                <th className={styles.thRight}>Volume / RVOL</th>
+                <th className={styles.thRight}>Change (vs SPY)</th>
+                <th className={styles.thRight}>Volume / Turnover</th>
                 <th className={styles.th}>Key Catalysts</th>
+                <th className={styles.th}>Risk</th>
               </tr>
             </thead>
             <tbody className={styles.tbody}>
@@ -200,12 +221,28 @@ const ScreenerDashboard: React.FC = () => {
                     </span>
                   </td>
                   <td className={styles.td}>
-                    <div className={styles.confidenceCell}>
-                      <span className={styles.confidencePct}>{result.confidenceScore}%</span>
+                    <span className={`${styles.stageBadge} ${styles['stage' + result.setupStage]}`}>
+                      {result.setupStage}
+                    </span>
+                  </td>
+                  <td className={styles.td}>
+                    <div className={styles.confidenceCell} title={`Probability: ${result.probability}%\nMom. Quality: ${result.subScores.momentumQuality}\nVol. Conf: ${result.subScores.volumeConfirmation}\nExt. Penalty: ${result.subScores.extensionPenalty}\nCat. Quality: ${result.subScores.catalystQuality}\nLiquidity: ${result.subScores.liquidity}\nRisk Inverse: ${result.subScores.riskInverse}`}>
+                      <span className={styles.confidencePct}>{result.midasScore}</span>
                       <div className={styles.confidenceBar}>
                         <div
-                          className={`${styles.confidenceFill} ${confidenceFillClass(result.confidenceScore)}`}
-                          style={{ width: `${result.confidenceScore}%` }}
+                          className={`${styles.confidenceFill} ${confidenceFillClass(result.midasScore)}`}
+                          style={{ width: `${result.midasScore}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                  <td className={styles.td}>
+                    <div className={styles.confidenceCell}>
+                      <span className={styles.confidencePct}>{result.momentumScore}</span>
+                      <div className={styles.confidenceBar}>
+                        <div
+                          className={`${styles.confidenceFill} ${styles.momentumGradient}`}
+                          style={{ width: `${result.momentumScore}%` }}
                         />
                       </div>
                     </div>
@@ -214,23 +251,59 @@ const ScreenerDashboard: React.FC = () => {
                     <span className={styles.priceValue}>${result.price.toFixed(2)}</span>
                   </td>
                   <td className={styles.tdRight}>
-                    <span
-                      className={`${styles.changePill} ${
-                        result.changePercent >= 0 ? styles.changeUp : styles.changeDown
-                      }`}
-                    >
-                      {result.changePercent >= 0 ? '+' : ''}
-                      {result.changePercent.toFixed(2)}%
-                    </span>
+                    <div className={styles.changeStack}>
+                      <span
+                        className={`${styles.changePill} ${
+                          result.changePercent >= 0 ? styles.changeUp : styles.changeDown
+                        }`}
+                      >
+                        {result.changePercent >= 0 ? '+' : ''}
+                        {result.changePercent.toFixed(2)}%
+                      </span>
+                      {result.relativeStrength !== undefined && (
+                        <span className={`${styles.relativeStrength} ${result.relativeStrength >= 0 ? styles.rsUp : styles.rsDown}`}>
+                          RS {result.relativeStrength >= 0 ? '+' : ''}{result.relativeStrength.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className={styles.tdRight}>
                     <div className={styles.volumeStack}>
                       <span className={styles.volumeMain}>{formatVolume(result.volume)}</span>
                       <span className={styles.volumeRvol}>{result.rvol.toFixed(1)}x RVOL</span>
+                      {result.floatTurnover && (
+                        <span className={styles.volumeTurnover}>{result.floatTurnover.toFixed(1)}x Float</span>
+                      )}
                     </div>
                   </td>
                   <td className={`${styles.td} ${styles.catalystCell}`}>
                     <div className={styles.catalystList}>
+                      {result.dataQuality === 'SUSPICIOUS' && (
+                        <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
+                          <span className={styles.catalystCheck} aria-hidden>🔴</span>
+                          Data: SUSPICIOUS
+                        </span>
+                      )}
+                      {result.dataQuality === 'CHECK' && (
+                        <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
+                          <span className={styles.catalystCheck} aria-hidden>🟡</span>
+                          Data: CHECK
+                        </span>
+                      )}
+                      {result.isExtremeMover && (
+                        <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
+                          <span className={styles.catalystCheck} aria-hidden>⚠️</span>
+                          Extreme Mover
+                        </span>
+                      )}
+                      {result.yahooSources.length > 0 && result.yahooConsensus > 0 && (
+                        <span className={`${styles.catalystTag} ${styles.catalystConsensus}`}
+                          title={`Yahoo Consensus: ${result.yahooSources.length}\n${result.yahooSources.join('\n')}`}
+                        >
+                          <span className={styles.catalystCheck} aria-hidden>📊</span>
+                          {result.yahooSources.filter(s => s !== 'essential_etf').length} Lists
+                        </span>
+                      )}
                       {result.isGapUp && (
                         <span className={`${styles.catalystTag} ${styles.catalystGap}`}>
                           <span className={styles.catalystCheck} aria-hidden>⚡</span>
@@ -255,6 +328,13 @@ const ScreenerDashboard: React.FC = () => {
                           {reason}
                         </span>
                       ))}
+                    </div>
+                  </td>
+                  <td className={styles.td}>
+                    <div className={`${styles.riskCell} ${result.riskScore > 80 ? styles.riskHigh : result.riskScore > 50 ? styles.riskMed : styles.riskLow}`}>
+                      <span className={styles.riskValue}>{result.riskScore}</span>
+                      {result.riskScore > 80 && <span title="Extreme Risk">🔴</span>}
+                      {result.riskScore <= 80 && result.riskScore > 50 && <span title="Elevated Risk">🟡</span>}
                     </div>
                   </td>
                 </tr>

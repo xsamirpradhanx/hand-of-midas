@@ -20,6 +20,7 @@ import * as diagonalScreener from './routes/diagonalScreener.js';
 import * as marketInternals from './routes/marketInternals.js';
 import * as sectorHeatmap from './routes/sectorHeatmap.js';
 import * as news from './routes/news.js';
+import * as search from './routes/search.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -142,6 +143,15 @@ const routes: readonly Route[] = [
         event.queryStringParameters,
         event,
       );
+    },
+  },
+
+  // ── Symbol Search ──────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    pattern: '/api/search/symbols',
+    handler: async (event) => {
+      return search.searchSymbols(event);
     },
   },
 

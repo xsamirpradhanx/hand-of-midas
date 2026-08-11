@@ -164,3 +164,17 @@ export async function getProfile(
 ): Promise<TwelveDataProfileResponse> {
   return fetchTwelveData<TwelveDataProfileResponse>('/profile', { symbol });
 }
+
+export async function getOptionsMetrics(symbol: string): Promise<any> {
+  throw new Error('getOptionsMetrics not implemented for twelvedata');
+}
+
+export async function searchTickers(query: string): Promise<any[]> {
+  const data = await fetchTwelveData<any>('/symbol_search', { symbol: query, outputsize: 10 });
+  return (data.data || []).map((q: any) => ({
+    symbol: q.symbol,
+    name: q.instrument_name,
+    exchange: q.exchange,
+    quoteType: q.instrument_type || 'EQUITY',
+  }));
+}

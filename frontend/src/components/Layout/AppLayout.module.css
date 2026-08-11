@@ -9,9 +9,10 @@
 }
 
 .topbar {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 480px) 1fr;
   align-items: center;
+  gap: 16px;
   height: var(--topbar-height, 64px);
   padding: 0 28px;
   background:
@@ -62,6 +63,7 @@
   align-items: center;
   gap: 16px;
   cursor: pointer;
+  justify-self: start;
 }
 
 .logoGlow {
@@ -138,11 +140,12 @@
   line-height: 1;
 }
 
-/* Center Section Market Status Pill */
 .centerSection {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  justify-self: center;
 }
 
 .marketStatusPill {
@@ -184,6 +187,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  justify-self: end;
 }
 
 .screenerBtn {
@@ -312,7 +316,9 @@
 }
 
 @media (max-width: 820px) {
-  .centerSection {
-    display: none;
+  .topbar {
+    grid-template-columns: auto 1fr auto;
+    padding: 0 16px;
+    gap: 12px;
   }
 }

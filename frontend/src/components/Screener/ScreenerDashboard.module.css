@@ -384,6 +384,10 @@
   background: linear-gradient(90deg, #e11d48, #fb7185);
 }
 
+.momentumGradient {
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+}
+
 .priceValue {
   font-family: var(--font-mono);
   font-weight: 700;
@@ -487,6 +491,91 @@
   background: rgba(139, 92, 246, 0.15);
   border-color: rgba(139, 92, 246, 0.4);
 }
+
+.catalystWarning {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.catalystConsensus {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.stageBadge {
+  display: inline-block;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stageEARLY {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.stageDEVELOPING {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.stageBREAKOUT {
+  color: #f9a8d4;
+  background: rgba(236, 72, 153, 0.15);
+}
+
+.stageEXTENDED {
+  color: #fecdd3;
+  background: rgba(225, 29, 72, 0.15);
+}
+
+.changeStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.relativeStrength {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.rsUp {
+  color: var(--color-up);
+}
+
+.rsDown {
+  color: var(--color-down);
+}
+
+.volumeTurnover {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #a78bfa;
+}
+
+.riskCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.riskHigh { color: #f43f5e; }
+.riskMed { color: #fbbf24; }
+.riskLow { color: #34d399; }
+
 
 .emptyRow td {
   padding: 48px 24px;

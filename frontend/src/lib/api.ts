@@ -14,6 +14,7 @@ import type {
   OptionsAnalyticsResponse,
   MarketInternalsResponse,
   SectorHeatmapResponse,
+  SymbolSearchResult,
 } from '../types';
 
 import { userPool } from '../contexts/AuthContext';
@@ -108,6 +109,11 @@ export const api = {
 
   getQuote: (symbol: string): Promise<QuoteResponse> => 
     fetchWithAuth(`/quote/${symbol}`),
+
+  searchSymbols: async (query: string): Promise<SymbolSearchResult[]> => {
+    const res = await fetchWithAuth(`/search/symbols?q=${encodeURIComponent(query)}`);
+    return res?.results || [];
+  },
 
   getChartConfig: (symbol: string): Promise<ChartConfigResponse> => 
     fetchWithAuth(`/chart-config/${symbol}`),
