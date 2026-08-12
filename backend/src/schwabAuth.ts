@@ -20,6 +20,7 @@ export class SchwabAuth {
   private clientId: string;
   private clientSecret: string;
   private redirectUri: string;
+  private currentToken: SchwabTokenInfo | null = null;
   
   constructor() {
     this.clientId = process.env.SCHWAB_CLIENT_ID || '';
@@ -91,18 +92,45 @@ export class SchwabAuth {
   }
 
   saveToken(tokenInfo: SchwabTokenInfo) {
-    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenInfo, null, 2), 'utf-8');
+    this.currentToken = tokenInfo;
+    try {
+      fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenInfo, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('⚠️ Could not save Schwab token to file. Token will remain in memory only.');
+    }
   }
 
   loadToken(): SchwabTokenInfo | null {
+    if (this.currentToken) {
+      return this.currentToken;
+    }
+
     if (fs.existsSync(TOKEN_PATH)) {
       try {
-        return JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf-8'));
+        const token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf-8'));
+        this.currentToken = token;
+        return token;
       } catch (e) {
         console.error('Failed to parse saved token', e);
-        return null;
       }
     }
+
+    // Support for serverless/deployed environments where the file isn't present
+    if (process.env.SCHWAB_REFRESH_TOKEN) {
+      const token: SchwabTokenInfo = {
+        access_token: '',
+        refresh_token: process.env.SCHWAB_REFRESH_TOKEN,
+        id_token: '',
+        expires_in: 0,
+        refresh_token_expires_in: 0,
+        token_type: 'Bearer',
+        scope: '',
+        timestamp: 0 // Force immediate refresh
+      };
+      this.currentToken = token;
+      return token;
+    }
+
     return null;
   }
 
