@@ -37,6 +37,30 @@ export interface ScreenerResult {
   yahooSources: string[];
   yahooConsensus: number;
   reasons: string[];
+  
+  // P1 Engine Updates
+  tradeScore: number;
+  opportunityScore: number;
+  location: string;
+  sentimentScore?: number; // optional, placeholder for future logic
+  tradePlan?: {
+    bias: 'LONG' | 'SHORT' | 'NO TRADE';
+    archetype: string;
+    trigger: number;
+    entryZone: string;
+    chasePrice: number;
+    expectedMove: number;
+    majorResistance: number;
+    stretchTarget: number;
+    stop: number;
+    rewardRisk: number;
+    roomToResistance: number;
+    roomToSupport: number;
+    confirmation: string;
+    invalidation: string;
+    whyNow: string;
+    confidence: number;
+  };
 }
 
 export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
@@ -267,25 +291,61 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
       c => c.intradayRvol >= 2 || Math.abs(c.changePercent) >= 1.5 || c.volume >= 1_000_000,
     );
   }
-
-  // Early Signal Ranking: volume leads price. Weight intradayRvol heavily,
-  // cap changePercent contribution so already-extended movers don't dominate,
-  // and boost stocks showing volume acceleration (institutional entry).
+   // Phase 1: Cheap first-pass ranking (volume leads price)
   candidates.sort((a, b) => {
-    const volAccelA = a.volumeAcceleration ?? 0;
-    const volAccelB = b.volumeAcceleration ?? 0;
-    const scoreA = Math.pow(a.intradayRvol, 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10)
-      + volAccelA * 3
-      + a.yahooConsensus * 0.3;
-    const scoreB = Math.pow(b.intradayRvol, 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10)
-      + volAccelB * 3
-      + b.yahooConsensus * 0.3;
+    const scoreA = Math.pow(a.intradayRvol, 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) + a.yahooConsensus * 0.3;
+    const scoreB = Math.pow(b.intradayRvol, 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) + b.yahooConsensus * 0.3;
     return scoreB - scoreA;
   });
 
-  const topCandidates = candidates.slice(0, 20);
-  console.log(`[ScreenerService] Phase 1: ${topCandidates.length} candidates for deep scan.`);
+  const phase1Candidates = candidates.slice(0, 50);
+  console.log(`[ScreenerService] Phase 1: ${phase1Candidates.length} candidates advanced.`);
 
+  // Phase 2: Fetch 1m intraday data to calculate volume acceleration and VWAP distance
+  const phase2Candidates: (Candidate & { pmVwap: number | null, pmHigh: number | null, pmLow: number | null, volumeAcceleration: number })[] = [];
+  const BATCH_SIZE_P2 = 10;
+  
+  for (let i = 0; i < phase1Candidates.length; i += BATCH_SIZE_P2) {
+    const batch = phase1Candidates.slice(i, i + BATCH_SIZE_P2);
+    const batchResults = await Promise.allSettled(
+      batch.map(async c => {
+        let pmVwap: number | null = null;
+        let pmHigh: number | null = null;
+        let pmLow: number | null = null;
+        let volumeAcceleration = 0;
+
+        try {
+          const chart1m = await yf.chart(c.ticker, { interval: '1m', range: '1d', includePrePost: true } as any);
+          const metrics = calculateIntradayMetrics(chart1m);
+          pmVwap = metrics.pmVwap;
+          pmHigh = metrics.pmHigh;
+          pmLow = metrics.pmLow;
+          volumeAcceleration = metrics.volumeAcceleration;
+        } catch {
+          // ignore intraday chart failure
+        }
+        return { ...c, pmVwap, pmHigh, pmLow, volumeAcceleration };
+      })
+    );
+
+    for (const res of batchResults) {
+      if (res.status === 'fulfilled') {
+        phase2Candidates.push(res.value);
+      }
+    }
+  }
+
+  // Phase 2 Ranking: Now we actually have volume acceleration!
+  phase2Candidates.sort((a, b) => {
+    const scoreA = Math.pow(a.intradayRvol, 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) + a.volumeAcceleration * 3 + a.yahooConsensus * 0.3;
+    const scoreB = Math.pow(b.intradayRvol, 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) + b.volumeAcceleration * 3 + b.yahooConsensus * 0.3;
+    return scoreB - scoreA;
+  });
+
+  const topCandidates = phase2Candidates.slice(0, 20);
+  console.log(`[ScreenerService] Phase 2: ${topCandidates.length} candidates advanced to Deep Scan.`);
+
+  // Phase 3: Deep Analysis (Options, Factors, Predictive Engine)
   const results: ScreenerResult[] = [];
   const BATCH_SIZE = 5;
 
@@ -296,28 +356,8 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
       batch.map(async c => {
         let rsi14: number | null = null;
         let shortFloatPct: number | null = null;
-        let pmVwap: number | null = null;
-        let pmHigh: number | null = null;
-        let pmLow: number | null = null;
 
-        let volumeAcceleration = 0;
-        try {
-          const chart1m = await yf.chart(c.ticker, {
-            interval: '1m',
-            range: '1d',
-            includePrePost: true
-          });
-          const metrics = calculateIntradayMetrics(chart1m);
-          pmVwap = metrics.pmVwap;
-          pmHigh = metrics.pmHigh;
-          pmLow = metrics.pmLow;
-          volumeAcceleration = metrics.volumeAcceleration;
-          c.volumeAcceleration = volumeAcceleration;
-        } catch {
-          // ignore intraday chart failure
-        }
-
-        // Compute RSI for ALL modes — extension penalty needs RSI regardless of mode
+        // Compute RSI
         try {
           const chart1d = await yf.chart(c.ticker, {
             period1: (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; })(),
@@ -355,14 +395,26 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
         }
 
         const engineResult = await getPredictiveZones(c.ticker);
-        return { candidate: c, engineResult, rsi14, shortFloatPct, pmVwap, pmHigh, pmLow, volumeAcceleration };
-      }),
+        return { candidate: c, engineResult, rsi14, shortFloatPct };
+      })
     );
 
     for (const res of batchResults) {
       if (res.status !== 'fulfilled') continue;
-      const { candidate, engineResult, rsi14, shortFloatPct, pmVwap, pmHigh, pmLow, volumeAcceleration } = res.value;
-      const screenerResult = await evaluateSetup(candidate, engineResult, mode, rsi14, shortFloatPct, pmVwap, pmHigh, pmLow, spyChange, volumeAcceleration);
+      const { candidate, engineResult, rsi14, shortFloatPct } = res.value;
+      const screenerResult = await evaluateSetup(
+        candidate, 
+        engineResult, 
+        mode, 
+        rsi14, 
+        shortFloatPct, 
+        candidate.pmVwap, 
+        candidate.pmHigh, 
+        candidate.pmLow, 
+        spyChange, 
+        candidate.volumeAcceleration
+      );
+      
       const threshold = mode === 'premarket' ? 45 : 60;
       if (screenerResult && screenerResult.midasScore >= threshold) {
         results.push(screenerResult);
@@ -506,6 +558,82 @@ async function evaluateSetup(
   const threshold = mode === 'premarket' ? 45 : 60;
   if (midasScore < threshold && riskScore < 80 && Math.max(longMomentum, shortMomentum) < 80) return null;
 
+  // ── P0: Calculate Trade Score ──
+  let tsTrend = Math.min(100, Math.max(0, subScores.momentumQuality));
+  let tsVolume = Math.min(100, candidate.intradayRvol * 15);
+  let tsRS = Math.min(100, Math.max(0, 50 + relativeStrength * 10));
+  let tsCatalyst = insider?.bias !== 'neutral' ? 100 : smf ? 80 : 50;
+  let tsLiquidity = Math.min(100, candidate.dollarVolume / 1_000_000);
+  
+  let tsStructure = engineResult.aiThesis.tradePlan?.bias !== 'NO TRADE' ? 90 : 30;
+  let tsLocation = 50;
+  let tsRR = 0;
+  
+  const tp = engineResult.aiThesis.tradePlan;
+  if (tp) {
+    if (tp.rewardRisk >= 3) tsRR = 100;
+    else if (tp.rewardRisk >= 2) tsRR = 80;
+    else if (tp.rewardRisk >= 1.5) tsRR = 60;
+    else tsRR = 0;
+    
+    if (pmVwap) {
+      const vwapDist = Math.abs(candidate.price - pmVwap) / pmVwap;
+      if (vwapDist < 0.01) tsLocation = 95;
+      else if (vwapDist < 0.02) tsLocation = 80;
+      else if (vwapDist < 0.05) tsLocation = 40;
+      else tsLocation = 20;
+    }
+  }
+
+  const tradeScore = Math.round(
+    tsTrend * 0.15 +
+    tsVolume * 0.15 +
+    tsRS * 0.10 +
+    tsStructure * 0.20 +
+    tsLocation * 0.15 +
+    tsRR * 0.15 +
+    tsCatalyst * 0.05 +
+    tsLiquidity * 0.05
+  );
+
+  let locationStrParts = [];
+  if (pmVwap) {
+    const vwapDistPct = (((candidate.price - pmVwap) / pmVwap) * 100).toFixed(1);
+    locationStrParts.push(`${Math.abs(Number(vwapDistPct))}% ${candidate.price > pmVwap ? 'above' : 'below'} VWAP`);
+  }
+  if (pmHigh && candidate.price < pmHigh) {
+    const pmHighDist = (((pmHigh - candidate.price) / candidate.price) * 100).toFixed(1);
+    locationStrParts.push(`${pmHighDist}% below PM high`);
+  }
+  if (tp && tp.roomToResistance > 0) {
+    locationStrParts.push(`${tp.roomToResistance}% below resistance`);
+  }
+  let locationStr = locationStrParts.length > 0 ? locationStrParts.join(', ') : 'Consolidating';
+
+  // P1 Trade Opportunity Score
+  let oppScore = Math.round(
+    tradeScore * 0.25 +
+    tsRR * 0.20 +
+    tsLocation * 0.15 +
+    Math.max(longMomentum, shortMomentum) * 0.15 +
+    Math.min(100, candidate.intradayRvol * 10) * 0.10 +
+    Math.min(100, Math.max(0, 50 + relativeStrength * 5)) * 0.10 +
+    50 * 0.05 // default sentiment score placeholder
+  );
+
+  // Apply Hard Penalties
+  if (tp && tp.rewardRisk < 1.0) oppScore -= 30;
+  if (isExtremeMover || (tp && tp.roomToSupport > 15)) oppScore -= 20;
+  if (tp && tp.bias === 'LONG' && pmVwap && candidate.price < pmVwap) oppScore -= 10;
+  if (candidate.dollarVolume < 2_000_000) oppScore -= 15;
+
+  const opportunityScore = Math.max(0, Math.min(100, oppScore));
+
+  if (tp && tp.bias === 'NO TRADE') {
+    // Demote setup type for UI clarity
+    setupType = '⚠️ ' + setupType;
+  }
+
   return {
     symbol: candidate.ticker,
     direction,
@@ -535,5 +663,9 @@ async function evaluateSetup(
     yahooSources: candidate.yahooSources,
     yahooConsensus: candidate.yahooConsensus,
     reasons,
+    tradeScore,
+    opportunityScore,
+    location: locationStr,
+    tradePlan: tp,
   };
 }

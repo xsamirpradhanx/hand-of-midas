@@ -243,7 +243,12 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
 
         <label className={`${styles.toggleLabel} ${styles.aiZoneToggle}`}>
           <div className={styles.labelInfo}>
-            <span className={styles.labelText}>🎯 AI Zones</span>
+            <span className={styles.labelText}>
+              🎯 AI Zones
+              <span className={styles.infoIcon} data-tooltip="Highlights statistically probable support/resistance bands derived from options implied volatility and dealer gamma exposure.">
+                ⓘ
+              </span>
+            </span>
           </div>
           <input
             type="checkbox"
@@ -253,9 +258,14 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
           />
         </label>
 
-        <label className={`${styles.toggleLabel} ${styles.volSignalToggle}`} title="Options Market Volatility Signals (IV Term Structure & Risk Reversal Skew)">
+        <label className={`${styles.toggleLabel} ${styles.volSignalToggle}`}>
           <div className={styles.labelInfo}>
-            <span className={styles.labelText}>🐋 Options Vol Signals</span>
+            <span className={styles.labelText}>
+              🐋 Options Vol Signals
+              <span className={styles.infoIcon} data-tooltip="Institutional footprint detector. Highlights massive relative volume spikes or aggressive premium buying in the options chain.">
+                ⓘ
+              </span>
+            </span>
           </div>
           <input
             type="checkbox"

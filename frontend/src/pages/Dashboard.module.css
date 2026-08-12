@@ -138,11 +138,44 @@
   transform: translateY(0);
 }
 
+.activeSplit {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(249, 168, 37, 0.8), rgba(240, 140, 10, 0.9));
+  box-shadow: 0 4px 12px rgba(249, 168, 37, 0.25);
+  transform: translateY(-1px);
+}
+
 .contentArea {
   flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.splitContainer {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.rightPane {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-main);
+}
+
+.resizer {
+  width: 6px;
+  background: var(--border-color);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+  z-index: 10;
+}
+
+.resizer:hover, .resizer:active {
+  background: var(--accent-main);
 }
 
 .emptyContainer {
@@ -172,5 +205,23 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+@media (max-width: 768px) {
+  .splitContainer {
+    flex-direction: column;
+  }
+  
+  .chartArea, .rightPane {
+    width: 100% !important;
+  }
+  
+  .resizer {
+    display: none;
+  }
+  
+  .splitToggleWrapper {
+    display: none !important;
+  }
 }
 

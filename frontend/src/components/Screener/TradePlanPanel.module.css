@@ -1,0 +1,238 @@
+.panel {
+  padding: 24px;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-medium);
+  height: 100%;
+  overflow-y: auto;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.biasBadge {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.biasBadge.long {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.biasBadge.short {
+  color: #f43f5e;
+  background: rgba(225, 29, 72, 0.15);
+  border: 1px solid rgba(225, 29, 72, 0.3);
+}
+.biasBadge.neutral {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.planGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.levelsSection, .triggersSection, .synthesisSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-medium);
+  padding-bottom: 6px;
+}
+
+.levelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+}
+
+.levelLabel {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.levelValueTarget {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--color-bullish);
+}
+
+.levelValueEntry {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.levelValueStop {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--color-bearish);
+}
+
+.triggerItem {
+  display: flex;
+  gap: 12px;
+  background: var(--bg-secondary);
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-medium);
+}
+
+.triggerIcon {
+  font-size: 1.2rem;
+  padding-top: 2px;
+}
+
+.triggerContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.triggerTitle {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.triggerContent p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.summaryText {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-medium);
+  font-family: monospace;
+}
+
+.loading, .error, .empty {
+  padding: 48px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--color-bearish);
+}
+
+.divider {
+  border: 0;
+  border-top: 1px solid var(--border-medium);
+  margin: 4px 0;
+}
+
+.zonesSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zoneCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zoneHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.zoneLabelBuy {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--color-up);
+}
+
+.zoneLabelSell {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--color-down);
+}
+
+.zonePrice {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.zoneConfluence {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+}

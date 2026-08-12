@@ -39,6 +39,22 @@ export interface ScreenerResult {
   yahooSources: string[];
   yahooConsensus: number;
   reasons: string[];
+
+  // P0 Engine Updates
+  tradeScore: number;
+  location: string;
+  tradePlan?: {
+    bias: 'LONG' | 'SHORT' | 'NO TRADE';
+    archetype: string;
+    entryZone: string;
+    target1: number;
+    target2?: number;
+    stop: number;
+    rewardRisk: number;
+    confirmation: string;
+    avoidIf: string;
+    confidence: number;
+  };
 }
 
 export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
@@ -195,53 +211,82 @@ const ScreenerDashboard: React.FC = () => {
 
       {error && <div className={styles.errorBanner}>{error}</div>}
 
+      {!loading && results.length > 0 && (
+        <div className={styles.topTradesContainer}>
+          <div className={styles.topTradesSection}>
+            <h2 className={styles.sectionTitle}>🏆 Today's Best Risk-Adjusted Setups</h2>
+            <div className={styles.cardsGrid}>
+              {results.filter(r => r.tradePlan && r.tradePlan.bias !== 'NO TRADE').slice(0, 3).map((result, idx) => (
+                <div key={result.symbol} className={styles.tradeCard} onClick={() => handleRowClick(result.symbol)}>
+                  <div className={styles.cardHeader}>
+                    <span className={styles.cardRank}>{['🥇', '🥈', '🥉'][idx]} {result.symbol}</span>
+                    <span className={styles.cardScore}>{result.opportunityScore} Opportunity</span>
+                  </div>
+                  <div className={styles.cardBody}>
+                    <div>{result.setupType}</div>
+                    <div style={{ color: 'var(--color-bullish)' }}>{result.tradePlan?.rewardRisk}R theoretical</div>
+                    <div style={{ color: 'var(--color-text-dim)' }}>{result.tradePlan?.whyNow}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className={styles.avoidSection}>
+            <h2 className={styles.sectionTitle}>🚫 Avoid</h2>
+            <div className={styles.avoidList}>
+              {results.filter(r => r.tradePlan && r.tradePlan.bias === 'NO TRADE').slice(0, 3).map(result => (
+                <div key={result.symbol} className={styles.avoidItem}>
+                  <strong>{result.symbol}</strong> — <span style={{ color: 'var(--color-text-dim)' }}>{result.tradePlan?.whyNow || 'No trade condition met.'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <div className={styles.panel}>
         <div className={styles.tableScroll}>
           <table className={styles.table}>
             <colgroup>
               <col className={styles.colSymbol} />
-              <col className={styles.colDirection} />
               <col className={styles.colSetup} />
               <col className={styles.colConfidence} />
-              <col className={styles.colChange} />
-              <col className={styles.colVolume} />
-              <col className={styles.colVolume} />
+              <col className={styles.colSetup} />
               <col className={styles.colPrice} />
               <col className={styles.colPrice} />
-              <col className={styles.colCatalysts} />
+              <col className={styles.colPrice} />
               <col className={styles.colConfidence} />
+              <col className={styles.colVolume} />
+              <col className={styles.colChange} />
+              <col className={styles.colDirection} />
             </colgroup>
             <thead className={styles.thead}>
               <tr>
-                <th className={styles.th}>Symbol</th>
-                <th className={styles.th}>Direction</th>
+                <th className={styles.th}>Ticker</th>
                 <th className={styles.th}>Setup</th>
-                <th className={styles.th}>Midas</th>
-                <th className={styles.thRight}>PM Gap</th>
-                <th className={styles.thRight}>PM RVOL</th>
-                <th className={styles.thRight}>$Vol</th>
-                <th className={styles.thRight}>PM VWAP</th>
-                <th className={styles.thRight}>PM High</th>
-                <th className={styles.th}>Catalyst</th>
-                <th className={styles.th}>Risk</th>
+                <th className={styles.th}>Opportunity</th>
+                <th className={styles.thRight}>Entry</th>
+                <th className={styles.thRight}>Stop</th>
+                <th className={styles.thRight}>T1</th>
+                <th className={styles.thRight}>R:R</th>
+                <th className={styles.th}>Location</th>
+                <th className={styles.thRight}>RVOL</th>
+                <th className={styles.thRight}>RS (vs SPY)</th>
+                <th className={styles.th}>Sentiment</th>
               </tr>
             </thead>
             <tbody className={styles.tbody}>
-              {results.map(result => (
+              {results.map(result => {
+                const isNoTrade = result.tradePlan?.bias === 'NO TRADE';
+                return (
                 <tr 
                   key={result.symbol} 
                   onClick={() => handleRowClick(result.symbol)}
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: 'pointer', opacity: isNoTrade ? 0.4 : 1.0 }}
                 >
                   <td className={styles.td}>
                     <div className={styles.symbolCell}>
-                      <span className={styles.symbolTicker}>{result.symbol}</span>
+                      <span className={styles.symbolTicker} style={{ textDecoration: isNoTrade ? 'line-through' : 'none' }}>{result.symbol}</span>
                     </div>
-                  </td>
-                  <td className={styles.td}>
-                    <span className={`${styles.directionBadge} ${result.direction === 'LONG' ? styles.directionLong : result.direction === 'SHORT' ? styles.directionShort : styles.directionNeutral}`}>
-                      {result.direction === 'LONG' ? '🟢 LONG' : result.direction === 'SHORT' ? '🔴 SHORT' : '⚪ NEUTRAL'}
-                    </span>
                   </td>
                   <td className={styles.td}>
                     <span
@@ -253,88 +298,44 @@ const ScreenerDashboard: React.FC = () => {
                     </span>
                   </td>
                   <td className={styles.td}>
-                    <div className={styles.confidenceCell} title={`Probability: ${result.probability}%\nMom. Quality: ${result.subScores.momentumQuality}\nVol. Conf: ${result.subScores.volumeConfirmation}\nExt. Penalty: ${result.subScores.extensionPenalty}\nCat. Quality: ${result.subScores.catalystQuality}\nLiquidity: ${result.subScores.liquidity}\nRisk Inverse: ${result.subScores.riskInverse}`}>
-                      <span className={styles.confidencePct}>{result.midasScore}</span>
-                      <div className={styles.confidenceBar}>
-                        <div
-                          className={`${styles.confidenceFill} ${confidenceFillClass(result.midasScore)}`}
-                          style={{ width: `${result.midasScore}%` }}
-                        />
-                      </div>
-                    </div>
+                    <span className={styles.confidencePct}>{result.opportunityScore || '-'}</span>
                   </td>
                   <td className={styles.tdRight}>
-                    <div className={styles.changeStack}>
-                      <span
-                        className={`${styles.changePill} ${
-                          result.changePercent >= 0 ? styles.changeUp : styles.changeDown
-                        }`}
-                      >
-                        {result.changePercent >= 0 ? '+' : ''}
-                        {result.changePercent.toFixed(2)}%
-                      </span>
-                    </div>
+                    <span className={styles.priceValue}>{isNoTrade ? '—' : result.tradePlan ? result.tradePlan.entryZone : '-'}</span>
+                  </td>
+                  <td className={styles.tdRight}>
+                    <span className={styles.priceValue} style={{ color: 'var(--color-bearish)' }}>
+                      {isNoTrade ? '—' : result.tradePlan?.stop ? `$${result.tradePlan.stop}` : '-'}
+                    </span>
+                  </td>
+                  <td className={styles.tdRight}>
+                    <span className={styles.priceValue} style={{ color: 'var(--color-bullish)' }}>
+                      {isNoTrade ? '—' : result.tradePlan?.majorResistance ? `$${result.tradePlan.majorResistance}` : '-'}
+                    </span>
+                  </td>
+                  <td className={styles.tdRight}>
+                    <span className={styles.volumeMain}>
+                      {result.tradePlan?.rewardRisk ? `${result.tradePlan.rewardRisk}R` : '-'}
+                    </span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.locationText}>{result.location || '-'}</span>
                   </td>
                   <td className={styles.tdRight}>
                     <span className={styles.volumeRvol}>{result.rvol.toFixed(1)}x</span>
                   </td>
                   <td className={styles.tdRight}>
-                    <span className={styles.volumeMain}>{formatCurrency(result.dollarVolume)}</span>
-                  </td>
-                  <td className={styles.tdRight}>
-                    <div className={styles.vwapStack}>
-                      <span className={styles.priceValue}>{result.pmVwap ? `$${result.pmVwap.toFixed(2)}` : '-'}</span>
-                      {result.pmVwap && (
-                        <span className={styles.vwapStatus}>
-                          {result.price > result.pmVwap ? '(Above)' : '(Below)'}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className={styles.tdRight}>
-                    <span className={styles.priceValue}>{result.pmHigh ? `$${result.pmHigh.toFixed(2)}` : '-'}</span>
-                  </td>
-                  <td className={`${styles.td} ${styles.catalystCell}`}>
-                    <div className={styles.catalystList}>
-                      {result.dataQuality === 'SUSPICIOUS' && (
-                        <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
-                          <span className={styles.catalystCheck} aria-hidden>🔴</span>
-                          Data: SUSPICIOUS
-                        </span>
-                      )}
-                      {result.yahooSources.length > 0 && result.yahooConsensus > 0 && (
-                        <span className={`${styles.catalystTag} ${styles.catalystConsensus}`}
-                          title={`Yahoo Consensus: ${result.yahooSources.length}\n${result.yahooSources.join('\n')}`}
-                        >
-                          <span className={styles.catalystCheck} aria-hidden>📊</span>
-                          {result.yahooSources.filter(s => s !== 'essential_etf').length} Lists
-                        </span>
-                      )}
-                      {result.isGapUp && (
-                        <span className={`${styles.catalystTag} ${styles.catalystGap}`}>
-                          <span className={styles.catalystCheck} aria-hidden>⚡</span>
-                          Gap &amp; Go
-                        </span>
-                      )}
-                      {result.reasons.map((reason, idx) => (
-                        <span key={`${result.symbol}-${idx}`} className={styles.catalystTag}>
-                          <span className={styles.catalystCheck} aria-hidden>
-                            ✓
-                          </span>
-                          {reason}
-                        </span>
-                      ))}
-                    </div>
+                    <span className={`${styles.changeMain} ${result.relativeStrength && result.relativeStrength >= 0 ? styles.positive : styles.negative}`}>
+                      {result.relativeStrength !== undefined 
+                        ? `${result.relativeStrength > 0 ? '+' : ''}${result.relativeStrength.toFixed(1)}%` 
+                        : '-'}
+                    </span>
                   </td>
                   <td className={styles.td}>
-                    <div className={`${styles.riskCell} ${result.riskScore > 80 ? styles.riskHigh : result.riskScore > 50 ? styles.riskMed : styles.riskLow}`}>
-                      <span className={styles.riskValue}>{result.riskScore}</span>
-                      {result.riskScore > 80 && <span title="Extreme Risk">🔴</span>}
-                      {result.riskScore <= 80 && result.riskScore > 50 && <span title="Elevated Risk">🟡</span>}
-                    </div>
+                    <span className={styles.locationText}>{result.sentimentScore ? `🟢 ${result.sentimentScore}` : '-'}</span>
                   </td>
                 </tr>
-              ))}
+              )})}
 
               {results.length === 0 && !loading && (
                 <tr className={styles.emptyRow}>

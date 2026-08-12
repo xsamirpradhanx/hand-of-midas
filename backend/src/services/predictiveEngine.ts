@@ -2,22 +2,7 @@ import { getTickerNews, PolygonNewsArticle } from './polygon.js';
 import { getTimeSeriesYahoo } from './yahoo.js';
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import type { FactorResult, FactorInput, PredictiveFactor } from './factors/types.js';
-import { VolumeProfileFactor } from './factors/volumeProfile.js';
-import { AtrVolatilityFactor } from './factors/atrVolatility.js';
-import { DealerHedgingFactor } from './factors/dealerHedging.js';
-import { AnchoredVwapFactor } from './factors/anchoredVwap.js';
-import { EstimatedCvdFactor } from './factors/estimatedCvd.js';
-import { HvlrSupportFactor } from './factors/hvlrSupport.js';
-import { OptionsSqueezeFactor } from './factors/squeezeScore.js';
-import { RiskReversalSkewFactor } from './factors/riskReversalSkew.js';
-import { TermStructureFactor } from './factors/termStructure.js';
-import { HurstExponentFactor } from './factors/hurstExponent.js';
-import { KamaZScoreFactor } from './factors/kamaZScore.js';
-import { InsiderCatalystFactor } from './factors/insiderCatalyst.js';
-import { IvRvRatioFactor } from './factors/ivRvRatio.js';
-import { MaxPainDriftFactor } from './factors/maxPainDrift.js';
-import { VannaDeltaPressureFactor } from './factors/vannaDeltaPressure.js';
-import { SmartMoneyFlowFactor } from './factors/smartMoneyFlow.js';
+import { getFactors } from './factors/factorRegistry.js';
 import { CompositeScoreAgent } from './compositeScore.js';
 
 export interface PredictiveZone {
@@ -25,6 +10,7 @@ export interface PredictiveZone {
   priceTop: number;
   priceBottom: number;
   convictionScore: number;
+  confluence: string[];
 }
 
 export interface PredictiveEngineResult {
@@ -36,6 +22,24 @@ export interface PredictiveEngineResult {
     bias: 'bullish' | 'bearish' | 'neutral';
     overallConviction: number;
     factors: FactorResult[];
+    tradePlan?: {
+      bias: 'LONG' | 'SHORT' | 'NO TRADE';
+      archetype: string;
+      trigger: number;
+      entryZone: string;
+      chasePrice: number;
+      expectedMove: number;
+      majorResistance: number;
+      stretchTarget: number;
+      stop: number;
+      rewardRisk: number;
+      roomToResistance: number;
+      roomToSupport: number;
+      confirmation: string;
+      invalidation: string;
+      whyNow: string;
+      confidence: number;
+    };
   };
 }
 
@@ -43,29 +47,7 @@ const aiAgent = new CompositeScoreAgent();
 
 // Complete Registry of 16 modular quantitative factor plugins
 // (12 original + 4 new institutional alpha factors from the quant audit)
-const registeredFactors: PredictiveFactor[] = [
-  // ── Price Action & Volume ──────────────────────────────────────────────────
-  new VolumeProfileFactor(),
-  new AnchoredVwapFactor(),
-  new EstimatedCvdFactor(),
-  new HvlrSupportFactor(),
-  new AtrVolatilityFactor(),
-  // ── Regime & Momentum ─────────────────────────────────────────────────────
-  new HurstExponentFactor(),
-  new KamaZScoreFactor(),
-  // ── Options & Dealer Dynamics ─────────────────────────────────────────────
-  new DealerHedgingFactor(),        // Multi-expiry GEX + interpolated flip
-  new OptionsSqueezeFactor(),
-  new RiskReversalSkewFactor(),
-  new TermStructureFactor(),
-  // ── New Institutional Alpha Factors ───────────────────────────────────────
-  new IvRvRatioFactor(),            // IV/RV ratio — volatility premium edge
-  new MaxPainDriftFactor(),         // Max pain gravitational drift near OpEx
-  new VannaDeltaPressureFactor(),   // Vanna-driven MM spot hedging pressure
-  new SmartMoneyFlowFactor(),       // Smart money vs retail flow decoupling
-  // ── News & Catalyst ───────────────────────────────────────────────────────
-  new InsiderCatalystFactor(),
-];
+const registeredFactors: PredictiveFactor[] = getFactors();
 
 export async function getPredictiveZones(symbol: string): Promise<PredictiveEngineResult> {
   const sym = symbol.toUpperCase();
@@ -120,16 +102,18 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
   const zones: PredictiveZone[] = [
     {
       type: 'buy',
-      priceTop: synthesis.buyZone.top,
-      priceBottom: synthesis.buyZone.bottom,
+      priceTop: synthesis.demandZone.top,
+      priceBottom: synthesis.demandZone.bottom,
       convictionScore: synthesis.overallConviction,
+      confluence: synthesis.demandZone.confluence,
     },
     {
       type: 'sell',
-      priceTop: synthesis.sellZone.top,
-      priceBottom: synthesis.sellZone.bottom,
+      priceTop: synthesis.supplyZone.top,
+      priceBottom: synthesis.supplyZone.bottom,
       // Previously artificially halved — both zones now reflect the same underlying conviction
       convictionScore: synthesis.overallConviction,
+      confluence: synthesis.supplyZone.confluence,
     },
   ];
 
@@ -142,6 +126,7 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
       bias: synthesis.bias,
       overallConviction: synthesis.overallConviction,
       factors: activeFactors,
+      tradePlan: synthesis.tradePlan,
     },
   };
 }

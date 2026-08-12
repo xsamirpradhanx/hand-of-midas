@@ -8,12 +8,13 @@ import { IndicatorPanel } from '../components/Indicators/IndicatorPanel';
 import { OptionsDashboard } from '../components/Options/OptionsDashboard';
 import { UnusualActivityFeed } from '../components/Options/UnusualActivityFeed';
 import { PortfolioDashboard } from './PortfolioDashboard';
+import { TradePlanPanel } from '../components/Screener/TradePlanPanel';
 
 import { api } from '../lib/api';
 import type { IndicatorConfig } from '../types';
 import styles from './Dashboard.module.css';
 
-type Tab = 'chart' | 'options' | 'unusual' | 'portfolio' | 'market';
+type Tab = 'chart' | 'options' | 'unusual' | 'portfolio' | 'market' | 'trade_plan';
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -49,6 +50,10 @@ export const Dashboard: React.FC = () => {
   const [timezone, setTimezone] = useLocalStorage<'EST' | 'GMT'>('dashboard_timezone', 'EST');
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
   const [companyName, setCompanyName] = useState<string>('');
+  
+  // Split View State
+  const [isSplitView, setIsSplitView] = useLocalStorage<boolean>('dashboard_splitView', false);
+  const [splitWidth, setSplitWidth] = useLocalStorage<number>('dashboard_splitWidth', 50); // percentage
 
   useEffect(() => {
     const handleTickerSelected = (e: Event) => {
@@ -122,7 +127,7 @@ export const Dashboard: React.FC = () => {
                 </span>
               )}
             </div>
-            {activeTab === 'chart' && (
+            {(activeTab === 'chart' || isSplitView) && (
               <div className={styles.headerControlsContainer}>
                 <div className={styles.headerControls}>
                   <ChartTypeBar chartType={chartType} onChange={setChartType} />
@@ -142,10 +147,30 @@ export const Dashboard: React.FC = () => {
         )}
 
         <div className={styles.tabBar}>
-          <button className={`${styles.tab} ${activeTab === 'chart' ? styles.active : ''}`} onClick={() => setActiveTab('chart')}>Chart</button>
-          <button className={`${styles.tab} ${activeTab === 'options' ? styles.active : ''}`} onClick={() => setActiveTab('options')}>Options Chain</button>
-          <button className={`${styles.tab} ${activeTab === 'unusual' ? styles.active : ''}`} onClick={() => setActiveTab('unusual')}>🐋 Whale Flow</button>
-          <button className={`${styles.tab} ${activeTab === 'portfolio' ? styles.active : ''}`} onClick={() => setActiveTab('portfolio')}>Portfolio</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className={`${styles.tab} ${activeTab === 'chart' ? styles.active : ''}`} onClick={() => setActiveTab('chart')}>Chart</button>
+            <button className={`${styles.tab} ${activeTab === 'options' ? styles.active : ''}`} onClick={() => setActiveTab('options')}>Options Chain</button>
+            <button className={`${styles.tab} ${activeTab === 'unusual' ? styles.active : ''}`} onClick={() => setActiveTab('unusual')}>🐋 Whale Flow</button>
+            <button className={`${styles.tab} ${activeTab === 'trade_plan' ? styles.active : ''}`} onClick={() => setActiveTab('trade_plan')}>🤖 AI Trade Plan</button>
+            {/* Portfolio hidden for now */}
+          </div>
+          
+          {activeTab !== 'chart' && (
+            <div className={styles.splitToggleWrapper} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+              <button 
+                className={`${styles.tab} ${isSplitView ? styles.activeSplit : ''}`} 
+                onClick={() => setIsSplitView(!isSplitView)}
+                title="Toggle Chart Visibility"
+                style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M12 3v18" />
+                </svg>
+                Show Chart
+              </button>
+            </div>
+          )}
         </div>
 
         <div className={styles.contentArea}>
@@ -155,9 +180,66 @@ export const Dashboard: React.FC = () => {
               <p>Select a ticker from your watchlist to view the chart</p>
             </div>
           ) : (
-            <>
-              {activeTab === 'chart' && selectedSymbol && (
-                <div className={styles.chartArea}>
+            <div className={styles.splitContainer} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+              
+              {/* Left Pane: Active Tab */}
+              {(activeTab !== 'chart' || !selectedSymbol) && (
+                <div 
+                  className={styles.rightPane} 
+                  style={{ 
+                    width: isSplitView && selectedSymbol && activeTab !== 'portfolio' ? `${splitWidth}%` : '100%',
+                    height: '100%',
+                    overflow: 'auto',
+                    display: activeTab === 'chart' && selectedSymbol ? 'none' : 'block'
+                  }}
+                >
+                  {activeTab === 'trade_plan' && selectedSymbol && (
+                    <TradePlanPanel symbol={selectedSymbol} />
+                  )}
+                  {activeTab === 'options' && selectedSymbol && (
+                    <OptionsDashboard symbol={selectedSymbol} />
+                  )}
+                  {activeTab === 'unusual' && (
+                    <UnusualActivityFeed initialSymbol={selectedSymbol || undefined} />
+                  )}
+                  {activeTab === 'portfolio' && (
+                    <PortfolioDashboard />
+                  )}
+                </div>
+              )}
+
+              {/* Resizer Handle */}
+              {isSplitView && selectedSymbol && activeTab !== 'chart' && activeTab !== 'portfolio' && (
+                <div 
+                  className={styles.resizer}
+                  onMouseDown={(e) => {
+                    const startX = e.clientX;
+                    const startWidth = splitWidth;
+                    
+                    const onMouseMove = (moveEvent: MouseEvent) => {
+                      const delta = moveEvent.clientX - startX;
+                      const parentWidth = window.innerWidth - 300; // approximate parent width
+                      const newWidth = Math.min(Math.max(startWidth + (delta / parentWidth) * 100, 20), 80);
+                      setSplitWidth(newWidth);
+                    };
+                    
+                    const onMouseUp = () => {
+                      document.removeEventListener('mousemove', onMouseMove);
+                      document.removeEventListener('mouseup', onMouseUp);
+                    };
+                    
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                  }}
+                />
+              )}
+
+              {/* Right Pane: Chart (Always visible if in split mode or chart tab) */}
+              {(activeTab === 'chart' || (isSplitView && selectedSymbol && activeTab !== 'portfolio')) && selectedSymbol && (
+                <div 
+                  className={styles.chartArea} 
+                  style={{ width: isSplitView && activeTab !== 'chart' ? `${100 - splitWidth}%` : '100%' }}
+                >
                   <ChartContainer
                     key={selectedSymbol}
                     symbol={selectedSymbol}
@@ -173,16 +255,7 @@ export const Dashboard: React.FC = () => {
                   )}
                 </div>
               )}
-              {activeTab === 'options' && selectedSymbol && (
-                <OptionsDashboard symbol={selectedSymbol} />
-              )}
-              {activeTab === 'unusual' && (
-                <UnusualActivityFeed initialSymbol={selectedSymbol || undefined} />
-              )}
-              {activeTab === 'portfolio' && (
-                <PortfolioDashboard />
-              )}
-            </>
+            </div>
           )}
         </div>
           </div>

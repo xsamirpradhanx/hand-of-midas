@@ -102,9 +102,27 @@ export interface AISynthesisResult {
   summary: string;
   bias: 'bullish' | 'bearish' | 'neutral';
   overallConviction: number;
-  buyZone: { top: number; bottom: number };
-  sellZone: { top: number; bottom: number };
+  demandZone: { top: number; bottom: number; confluence: string[] };
+  supplyZone: { top: number; bottom: number; confluence: string[] };
   keyFactors: FactorResult[];
+  tradePlan?: {
+    bias: 'LONG' | 'SHORT' | 'NO TRADE';
+    archetype: string;
+    trigger: number;
+    entryZone: string;
+    chasePrice: number;
+    expectedMove: number;
+    majorResistance: number;
+    stretchTarget: number;
+    stop: number;
+    rewardRisk: number;
+    roomToResistance: number;
+    roomToSupport: number;
+    confirmation: string;
+    invalidation: string;
+    whyNow: string;
+    confidence: number;
+  };
 }
 
 /**
@@ -141,8 +159,8 @@ export class CompositeScoreAgent {
         summary: `Insufficient factor inputs to run AI synthesis for ${symbol}.`,
         bias: 'neutral',
         overallConviction: 0.5,
-        buyZone: { top: Number((currentPrice * 0.99).toFixed(2)), bottom: Number((currentPrice * 0.97).toFixed(2)) },
-        sellZone: { top: Number((currentPrice * 1.03).toFixed(2)), bottom: Number((currentPrice * 1.01).toFixed(2)) },
+        demandZone: { top: Number((currentPrice * 0.99).toFixed(2)), bottom: Number((currentPrice * 0.97).toFixed(2)), confluence: [] },
+        supplyZone: { top: Number((currentPrice * 1.03).toFixed(2)), bottom: Number((currentPrice * 1.01).toFixed(2)), confluence: [] },
         keyFactors: [],
       };
     }
@@ -162,10 +180,6 @@ export class CompositeScoreAgent {
     const activeWeightTotal = regimeAdjustedWeights.reduce((sum, { adjustedWeight }) => sum + adjustedWeight, 0);
     const normalizeWeight = (w: number) => (activeWeightTotal > 0 ? w / activeWeightTotal : 1 / factors.length);
 
-    let weightedBuySum = 0;
-    let buyWeightTotal = 0;
-    let weightedSellSum = 0;
-    let sellWeightTotal = 0;
     let bullishWeight = 0;
     let bearishWeight = 0;
 
@@ -173,51 +187,180 @@ export class CompositeScoreAgent {
       const nw = normalizeWeight(adjustedWeight);
       if (f.bias === 'bullish') bullishWeight += nw;
       if (f.bias === 'bearish') bearishWeight += nw;
-
-      if (f.buyTarget !== undefined && f.buyTarget > 0) {
-        weightedBuySum += f.buyTarget * nw;
-        buyWeightTotal += nw;
-      }
-      if (f.sellTarget !== undefined && f.sellTarget > 0) {
-        weightedSellSum += f.sellTarget * nw;
-        sellWeightTotal += nw;
-      }
     }
 
-    const rawBuyCenter = buyWeightTotal > 0 ? (weightedBuySum / buyWeightTotal) : (currentPrice * 0.98);
-    const rawSellCenter = sellWeightTotal > 0 ? (weightedSellSum / sellWeightTotal) : (currentPrice * 1.02);
-
-    // ── 2. Loosen hard clamp: allow zones up to ±8% from current price ────────
-    // Previously clamped at ±1.5%, which destroyed any zone placed at real
-    // support/resistance levels (VPVR VAL, HVLR clusters, etc.).
-    // We still enforce a minimum distance (0.5%) so zones never sit ON the price.
-    const buyCenter = Math.min(currentPrice * 0.995, Math.max(currentPrice * 0.92, rawBuyCenter));
-    const sellCenter = Math.max(currentPrice * 1.005, Math.min(currentPrice * 1.08, rawSellCenter));
-
-    // ── 3. ATR-adaptive zone spread ───────────────────────────────────────────
-    // Previously a fixed 1.2% regardless of stock volatility.
-    // Now we use 50% of the 14-day ATR%, clamped between 0.8% (stable stocks)
-    // and 4.0% (highly volatile stocks like NVDA, TSLA).
-    const atrPct = computeAtrPercent(bars ?? [], currentPrice);
-    const spreadPct = Math.max(0.008, Math.min(0.04, atrPct * 0.5));
-    const spread = currentPrice * spreadPct;
-
-    const buyZone = {
-      top: Number((buyCenter + spread / 2).toFixed(2)),
-      bottom: Number(Math.max(0, buyCenter - spread / 2).toFixed(2)),
-    };
-
-    const sellZone = {
-      top: Number((sellCenter + spread / 2).toFixed(2)),
-      bottom: Number(Math.max(0, sellCenter - spread / 2).toFixed(2)),
-    };
-
-    // ── 4. Bias & conviction ──────────────────────────────────────────────────
     const bias: 'bullish' | 'bearish' | 'neutral' =
       bullishWeight > bearishWeight ? 'bullish' : bearishWeight > bullishWeight ? 'bearish' : 'neutral';
 
-    const netRatio = Math.abs(bullishWeight - bearishWeight); // already normalized, sums to 1
+    const netRatio = Math.abs(bullishWeight - bearishWeight);
     const overallConviction = Number(Math.min(0.98, Math.max(0.45, 0.5 + netRatio * 0.45)).toFixed(2));
+
+    // ── 5. Market Structure Clustering ──────────────────────────────────────────
+    const levels: { price: number; weight: number; source: string }[] = [];
+    
+    for (const { factor: f, adjustedWeight } of regimeAdjustedWeights) {
+      if (f.buyTarget !== undefined && f.buyTarget > 0) {
+        levels.push({ price: f.buyTarget, weight: adjustedWeight, source: f.factorName });
+      }
+      if (f.sellTarget !== undefined && f.sellTarget > 0) {
+        levels.push({ price: f.sellTarget, weight: adjustedWeight, source: f.factorName });
+      }
+    }
+
+    // Sort levels ascending
+    levels.sort((a, b) => a.price - b.price);
+
+    const atrPct = computeAtrPercent(bars ?? [], currentPrice);
+    const clusterThreshold = Math.max(currentPrice * 0.0025, currentPrice * atrPct * 0.20);
+    
+    const clusters: { center: number; min: number; max: number; weight: number; sources: string[] }[] = [];
+    
+    for (const lvl of levels) {
+      if (clusters.length === 0) {
+        clusters.push({ center: lvl.price, min: lvl.price, max: lvl.price, weight: lvl.weight, sources: [lvl.source] });
+      } else {
+        const currentCluster = clusters[clusters.length - 1];
+        if (lvl.price - currentCluster.max <= clusterThreshold) {
+          const newWeight = currentCluster.weight + lvl.weight;
+          currentCluster.center = (currentCluster.center * currentCluster.weight + lvl.price * lvl.weight) / newWeight;
+          currentCluster.weight = newWeight;
+          currentCluster.max = lvl.price;
+          if (!currentCluster.sources.includes(lvl.source)) currentCluster.sources.push(lvl.source);
+        } else {
+          clusters.push({ center: lvl.price, min: lvl.price, max: lvl.price, weight: lvl.weight, sources: [lvl.source] });
+        }
+      }
+    }
+
+    const significantClusters = clusters.filter(c => c.weight >= 0.1);
+    const supports = significantClusters.filter(c => c.center < currentPrice).sort((a, b) => b.center - a.center);
+    const resistances = significantClusters.filter(c => c.center > currentPrice).sort((a, b) => a.center - b.center);
+
+    const defaultSpread = currentPrice * Math.max(0.005, Math.min(0.02, atrPct * 0.3));
+    
+    // Construct Demand Zone
+    let demandZone = { 
+      top: Number((currentPrice - defaultSpread).toFixed(2)), 
+      bottom: Number((currentPrice - defaultSpread * 2).toFixed(2)),
+      confluence: ['Estimated Support']
+    };
+    if (supports.length > 0) {
+      const s1 = supports[0];
+      demandZone = { top: Number(s1.max.toFixed(2)), bottom: Number(s1.min.toFixed(2)), confluence: s1.sources };
+    }
+
+    // Construct Supply Zone
+    let supplyZone = { 
+      top: Number((currentPrice + defaultSpread * 2).toFixed(2)), 
+      bottom: Number((currentPrice + defaultSpread).toFixed(2)),
+      confluence: ['Estimated Resistance']
+    };
+    if (resistances.length > 0) {
+      const r1 = resistances[0];
+      supplyZone = { top: Number(r1.max.toFixed(2)), bottom: Number(r1.min.toFixed(2)), confluence: r1.sources };
+    }
+
+    let tradeBias: 'LONG' | 'SHORT' | 'NO TRADE' = 'NO TRADE';
+    let archetype = regime === 'trending' ? 'Trend Continuation' : regime === 'high_volatility' ? 'Volatility Reversion' : 'Mean Reversion';
+    
+    // Initialize defaults
+    let trigger = currentPrice;
+    let entryZoneStr = 'N/A';
+    let chasePrice = currentPrice;
+    let stop = currentPrice;
+    let expectedMove = 0;
+    let majorResistance = supplyZone.bottom;
+    let stretchTarget = resistances.length > 1 ? resistances[1].min : supplyZone.top * 1.02;
+    let roomToResistance = 0;
+    let roomToSupport = 0;
+    let rr = 0;
+    let confirmation = 'N/A';
+    let invalidation = 'N/A';
+    let whyNow = 'N/A';
+
+    if (bias === 'bullish') {
+      trigger = Number(demandZone.top.toFixed(2));
+      entryZoneStr = `$${Number((demandZone.top * 0.995).toFixed(2))}–$${Number((demandZone.top * 1.005).toFixed(2))}`;
+      chasePrice = Number((demandZone.top + currentPrice * atrPct * 0.3).toFixed(2));
+      stop = Number((demandZone.bottom - currentPrice * 0.005).toFixed(2));
+      
+      majorResistance = Number(supplyZone.bottom.toFixed(2));
+      stretchTarget = Number(supplyZone.top.toFixed(2));
+      if (resistances.length > 1) stretchTarget = Number(resistances[1].min.toFixed(2));
+      
+      expectedMove = majorResistance - trigger;
+      roomToResistance = ((majorResistance - currentPrice) / currentPrice) * 100;
+      roomToSupport = ((currentPrice - demandZone.top) / currentPrice) * 100;
+
+      const risk = trigger - stop;
+      const reward = majorResistance - trigger;
+      rr = risk > 0 ? Number((reward / risk).toFixed(1)) : 0;
+
+      if (currentPrice > chasePrice) {
+        tradeBias = 'NO TRADE';
+        whyNow = `Price is overextended (${roomToSupport.toFixed(1)}% above support).`;
+      } else if (rr < 1.0) {
+        tradeBias = 'NO TRADE';
+        whyNow = `Reward:Risk is ${rr}R (< 1.0R minimum).`;
+      } else {
+        tradeBias = 'LONG';
+        whyNow = `${archetype} near Demand Zone (${demandZone.confluence.length} confluences).`;
+      }
+      
+      confirmation = `Hold $${trigger} and show increasing volume into $${majorResistance}.`;
+      invalidation = `15m close below $${stop} on high volume.`;
+      
+    } else if (bias === 'bearish') {
+      trigger = Number(supplyZone.bottom.toFixed(2));
+      entryZoneStr = `$${Number((supplyZone.bottom * 0.995).toFixed(2))}–$${Number((supplyZone.bottom * 1.005).toFixed(2))}`;
+      chasePrice = Number((supplyZone.bottom - currentPrice * atrPct * 0.3).toFixed(2));
+      stop = Number((supplyZone.top + currentPrice * 0.005).toFixed(2));
+      
+      majorResistance = Number(demandZone.top.toFixed(2));
+      stretchTarget = Number(demandZone.bottom.toFixed(2));
+      if (supports.length > 1) stretchTarget = Number(supports[1].max.toFixed(2));
+      
+      expectedMove = trigger - majorResistance;
+      roomToResistance = ((currentPrice - majorResistance) / currentPrice) * 100; // Downside room
+      roomToSupport = ((supplyZone.bottom - currentPrice) / currentPrice) * 100;
+
+      const risk = stop - trigger;
+      const reward = trigger - majorResistance;
+      rr = risk > 0 ? Number((reward / risk).toFixed(1)) : 0;
+
+      if (currentPrice < chasePrice) {
+        tradeBias = 'NO TRADE';
+        whyNow = `Price is overextended (${roomToSupport.toFixed(1)}% below resistance).`;
+      } else if (rr < 1.0) {
+        tradeBias = 'NO TRADE';
+        whyNow = `Reward:Risk is ${rr}R (< 1.0R minimum).`;
+      } else {
+        tradeBias = 'SHORT';
+        whyNow = `${archetype} near Supply Zone (${supplyZone.confluence.length} confluences).`;
+      }
+
+      confirmation = `Reject $${trigger} on increasing volume.`;
+      invalidation = `15m close above $${stop} on high volume.`;
+    }
+
+    const tradePlan = {
+      bias: tradeBias,
+      archetype,
+      trigger,
+      entryZone: entryZoneStr,
+      chasePrice,
+      expectedMove: Number(expectedMove.toFixed(2)),
+      majorResistance,
+      stretchTarget,
+      stop,
+      rewardRisk: rr,
+      roomToResistance: Number(roomToResistance.toFixed(1)),
+      roomToSupport: Number(roomToSupport.toFixed(1)),
+      confirmation,
+      invalidation,
+      whyNow,
+      confidence: Math.round(overallConviction * 100)
+    };
 
     const topFactorDetails = factors
       .map(f => `• [${f.factorName}] (${f.bias.toUpperCase()}): ${f.reasoning}`)
@@ -227,17 +370,17 @@ export class CompositeScoreAgent {
     const summary =
       `[AI INVESTMENT COMMITTEE REPORT for ${symbol}]\n` +
       `Regime: ${regimeLabel} | Consensus: ${bias.toUpperCase()} (${(overallConviction * 100).toFixed(0)}% Conviction).\n` +
-      `Evaluated ${factors.length} quantitative factor vectors (regime-adjusted weight total: ${activeWeightTotal.toFixed(2)}):\n` +
-      `Zone spread: ±${(spreadPct * 100).toFixed(2)}% (ATR-adaptive, raw ATR%: ${(atrPct * 100).toFixed(2)}%)\n` +
+      `Detected ${clusters.length} Liquidity Clusters from factors.\n` +
       topFactorDetails;
 
     return {
       summary,
       bias,
       overallConviction,
-      buyZone,
-      sellZone,
+      demandZone,
+      supplyZone,
       keyFactors: factors,
+      tradePlan
     };
   }
 }
