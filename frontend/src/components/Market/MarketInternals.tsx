@@ -112,7 +112,7 @@ export const MarketInternals: React.FC = () => {
       {data.commodities.map((item) => (
         <React.Fragment key={`${item.symbol}-${keySuffix}`}>
           <a href={`https://finance.yahoo.com/quote/${item.symbol}`} target="_blank" rel="noopener noreferrer" className={`${styles.item} ${getColorClass(item.changePercent)}`}>
-            <span className={styles.symbol}>{item.name === 'Gold' || item.symbol === 'GC=F' ? 'Gold' : item.name === 'Silver' || item.symbol === 'SI=F' ? 'Silver' : item.name === 'Crude Oil' || item.symbol === 'CL=F' ? 'Oil' : item.symbol === 'KC=F' ? 'Coffee' : item.symbol}</span>
+            <span className={styles.symbol}>{item.name === 'Gold' || item.symbol === 'GC=F' ? 'Gold' : item.name === 'Silver' || item.symbol === 'SI=F' ? 'Silver' : item.name === 'Crude Oil' || item.symbol === 'CL=F' ? 'Oil' : item.symbol === 'KC=F' ? 'Coffee' : item.symbol === 'NG=F' ? 'Gas' : item.symbol}</span>
             <span className={styles.price}>{item.price.toFixed(2)}</span>
             <span className={styles.change}>
               {formatPercent(item.changePercent)}

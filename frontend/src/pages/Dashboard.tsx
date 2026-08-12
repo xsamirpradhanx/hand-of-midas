@@ -8,8 +8,6 @@ import { IndicatorPanel } from '../components/Indicators/IndicatorPanel';
 import { OptionsDashboard } from '../components/Options/OptionsDashboard';
 import { UnusualActivityFeed } from '../components/Options/UnusualActivityFeed';
 import { PortfolioDashboard } from './PortfolioDashboard';
-import { MarketInternals } from '../components/Market/MarketInternals';
-import { SectorHeatmap } from '../components/Market/SectorHeatmap';
 
 import { api } from '../lib/api';
 import type { IndicatorConfig } from '../types';
@@ -41,7 +39,6 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
   return [storedValue, setValue];
 }
 export const Dashboard: React.FC = () => {
-  const [isMarketOverviewOpen, setIsMarketOverviewOpen] = useLocalStorage<boolean>('dashboard_marketOverviewOpen', true);
   const [selectedSymbol, setSelectedSymbol] = useLocalStorage<string | null>('dashboard_selectedSymbol', null);
   const [activeTab, setActiveTab] = useLocalStorage<Tab>('dashboard_activeTab', 'chart');
   const [interval, setInterval] = useLocalStorage<string>('dashboard_interval', '1day');
@@ -51,6 +48,7 @@ export const Dashboard: React.FC = () => {
   const [showInstitutionalSignals, setShowInstitutionalSignals] = useLocalStorage<boolean>('dashboard_showInstitutionalSignals', true);
   const [timezone, setTimezone] = useLocalStorage<'EST' | 'GMT'>('dashboard_timezone', 'EST');
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
+  const [companyName, setCompanyName] = useState<string>('');
 
   useEffect(() => {
     const handleTickerSelected = (e: Event) => {
@@ -61,9 +59,14 @@ export const Dashboard: React.FC = () => {
     return () => window.removeEventListener('TICKER_SELECTED', handleTickerSelected);
   }, [setSelectedSymbol]);
 
-  // Load chart config when symbol changes
+  // Load chart config and company name when symbol changes
   useEffect(() => {
     if (!selectedSymbol) return;
+
+    // Fetch company name
+    api.getQuote(selectedSymbol)
+      .then(res => setCompanyName(res?.name || ''))
+      .catch(() => setCompanyName(''));
 
     api.getChartConfig(selectedSymbol)
       .then(res => {
@@ -101,22 +104,6 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className={styles.appLayout}>
-      <div className={styles.marketOverviewWrapper}>
-        {isMarketOverviewOpen && (
-          <div className={styles.marketOverviewStrip}>
-            <MarketInternals />
-            <SectorHeatmap />
-          </div>
-        )}
-        <button 
-          className={styles.marketToggleBtn}
-          onClick={() => setIsMarketOverviewOpen(!isMarketOverviewOpen)}
-          title="Toggle Market Overview"
-        >
-          {isMarketOverviewOpen ? '▲' : '▼'}
-        </button>
-      </div>
-
       <div className={styles.dashboard}>
           <WatchlistPanel
             selectedSymbol={selectedSymbol}
@@ -129,6 +116,11 @@ export const Dashboard: React.FC = () => {
           <div className={styles.chartHeader}>
             <div className={styles.symbolTitle}>
               <h2>{selectedSymbol}</h2>
+              {companyName && (
+                <span style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                  {companyName}
+                </span>
+              )}
             </div>
             {activeTab === 'chart' && (
               <div className={styles.headerControlsContainer}>

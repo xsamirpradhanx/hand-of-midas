@@ -12,6 +12,12 @@ function selectTicker(symbol: string, navigate: ReturnType<typeof useNavigate>) 
 
   window.localStorage.setItem(SELECTED_SYMBOL_KEY, JSON.stringify(upper));
   window.dispatchEvent(new CustomEvent('TICKER_SELECTED', { detail: { symbol: upper } }));
+  
+  // If we are on the sentiment page, stay there and just update the ticker.
+  if (window.location.pathname.startsWith('/sentiment')) {
+    return;
+  }
+  
   navigate('/');
 }
 
@@ -148,7 +154,7 @@ export const TickerSearchBar: React.FC = () => {
           onChange={(e) => setQuery(e.target.value.toUpperCase())}
           onFocus={() => query.trim() && results.length > 0 && setIsOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Consult the Oracle…"
+          placeholder="Consult the Oracle 🔮"
           className={styles.input}
           autoComplete="off"
           spellCheck={false}

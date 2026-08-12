@@ -31,7 +31,7 @@ const inputStyle = {
   background: 'rgba(0,0,0,0.3)',
   border: '1px solid var(--border-color)',
   color: 'var(--text-primary)',
-  width: '40px',
+  width: '54px',
   borderRadius: '4px',
   padding: '2px 4px',
   textAlign: 'center' as const

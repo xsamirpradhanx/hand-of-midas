@@ -1,5 +1,5 @@
 .panel {
-  width: 300px;
+  width: var(--sidebar-width);
   background: rgba(8, 6, 18, 0.55);
   border-right: 1px solid rgba(184, 120, 10, 0.2);
   display: flex;
@@ -261,7 +261,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
+  padding: 8px 12px;
   border-radius: 8px;
   margin-bottom: 4px;
   cursor: grab;

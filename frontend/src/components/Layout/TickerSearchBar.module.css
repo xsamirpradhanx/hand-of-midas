@@ -10,65 +10,73 @@
   align-items: center;
 }
 
-.searchIcon {
-  position: absolute;
-  left: 14px;
-  color: rgba(245, 200, 66, 0.75);
-  pointer-events: none;
-  filter: drop-shadow(0 0 4px rgba(245, 200, 66, 0.4));
-  z-index: 1;
-  transition: all 0.3s ease;
-}
-
 .input {
   width: 100%;
-  height: 42px;
-  padding: 0 72px 0 44px;
-  background: 
-    linear-gradient(135deg, rgba(20, 18, 12, 0.8), rgba(8, 6, 2, 0.95));
-  border: 1px solid rgba(245, 200, 66, 0.3);
-  border-radius: 21px;
+  height: 44px;
+  padding: 0 72px 0 48px;
+  background: rgba(15, 12, 8, 0.4);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+  border: 1px solid rgba(245, 200, 66, 0.2);
+  border-radius: 22px;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 500;
   letter-spacing: 0.5px;
   outline: none;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
   box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 12px rgba(245, 200, 66, 0.02);
 }
 
 .input::placeholder {
-  color: rgba(245, 200, 66, 0.4);
+  color: rgba(245, 200, 66, 0.45);
   font-family: 'Cinzel', Georgia, serif;
   font-size: 0.85rem;
   font-weight: 500;
   letter-spacing: 0.8px;
   text-transform: none;
-  transition: opacity 0.3s ease;
+  transition: all 0.4s ease;
 }
 
 .input:focus {
-  border-color: rgba(245, 200, 66, 0.9);
-  background: 
-    linear-gradient(135deg, rgba(30, 25, 15, 0.9), rgba(12, 9, 3, 0.98));
+  background: rgba(20, 16, 10, 0.65);
+  border-color: rgba(245, 200, 66, 0.6);
   box-shadow:
-    0 0 0 3px rgba(245, 200, 66, 0.2),
-    0 8px 30px rgba(245, 200, 66, 0.15),
+    0 0 0 4px rgba(245, 200, 66, 0.1),
+    0 12px 32px rgba(245, 200, 66, 0.15),
     0 4px 16px rgba(0, 0, 0, 0.6),
     inset 0 1px 1px rgba(255, 234, 160, 0.2);
+  transform: translateY(-1px);
+}
+
+.input:hover:not(:focus) {
+  border-color: rgba(245, 200, 66, 0.35);
+  background: rgba(20, 18, 14, 0.5);
 }
 
 .input:focus::placeholder {
-  opacity: 0.5;
+  opacity: 0.3;
+  transform: translateX(4px);
+}
+
+.searchIcon {
+  position: absolute;
+  left: 16px;
+  color: rgba(245, 200, 66, 0.6);
+  pointer-events: none;
+  filter: drop-shadow(0 0 2px rgba(245, 200, 66, 0.2));
+  z-index: 1;
+  transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
 .input:focus + .searchIcon {
-  color: rgba(245, 200, 66, 1);
-  transform: scale(1.1);
-  filter: drop-shadow(0 0 8px rgba(245, 200, 66, 0.8));
+  color: rgba(255, 220, 100, 1);
+  transform: scale(1.15) rotate(4deg);
+  filter: drop-shadow(0 0 10px rgba(245, 200, 66, 0.9));
 }
 
 .shortcut {
@@ -76,25 +84,28 @@
   right: 14px;
   display: flex;
   align-items: center;
-  padding: 3px 8px;
-  border-radius: 8px;
-  background: rgba(245, 200, 66, 0.15);
-  border: 1px solid rgba(245, 200, 66, 0.3);
-  color: rgba(245, 200, 66, 0.9);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(245, 200, 66, 0.1);
+  border: 1px solid rgba(245, 200, 66, 0.25);
+  color: rgba(245, 200, 66, 0.8);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.5px;
   pointer-events: none;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .input:focus ~ .shortcut {
-  background: rgba(245, 200, 66, 0.25);
-  border-color: rgba(245, 200, 66, 0.6);
-  color: #fff;
-  box-shadow: 0 0 10px rgba(245, 200, 66, 0.3);
+  background: linear-gradient(135deg, rgba(245, 200, 66, 0.2), rgba(245, 200, 66, 0.1));
+  border-color: rgba(245, 200, 66, 0.7);
+  color: rgba(255, 230, 140, 1);
+  box-shadow: 
+    0 0 12px rgba(245, 200, 66, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: scale(0.95);
 }
 
 .dropdown {
@@ -105,15 +116,15 @@
   margin: 0;
   padding: 8px;
   list-style: none;
-  background: rgba(12, 10, 6, 0.85);
-  border: 1px solid rgba(245, 200, 66, 0.3);
+  background: rgba(12, 10, 6, 0.65);
+  border: 1px solid rgba(245, 200, 66, 0.2);
   border-radius: 16px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(32px) saturate(150%);
+  -webkit-backdrop-filter: blur(32px) saturate(150%);
   box-shadow:
     0 20px 40px rgba(0, 0, 0, 0.8),
-    0 0 30px rgba(245, 200, 66, 0.08),
-    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+    0 0 30px rgba(245, 200, 66, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 0.08);
   z-index: 200;
   max-height: 340px;
   overflow-y: auto;

@@ -22,7 +22,7 @@ export async function getMarketInternals(): Promise<APIGatewayProxyResultV2> {
     'NVDA', 'AAPL', 'MSFT',
     'BTC-USD', 'ETH-USD',
     'GC=F', 'SI=F', 'CL=F', 'NG=F',
-    'DX-Y.NYB', 'EURUSD=X', 'JPY=X', 'GBPUSD=X', 'AUDUSD=X',
+    'DX-Y.NYB', 'EURUSD=X', 'USDJPY=X', 'GBPUSD=X', 'AUDUSD=X', 'USDNPR=X', 'USDRUB=X',
     '^IRX', '^FVX', '^TNX', '^TYX',
   ];
 
@@ -47,12 +47,12 @@ export async function getMarketInternals(): Promise<APIGatewayProxyResultV2> {
   const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null && r.regularMarketPrice !== undefined);
 
   const vixRaw = validResults.find(r => r.symbol === '^VIX');
-  
+
   const indicesSymbols = ['SPY', 'QQQ', 'DIA', 'IWM'];
   const leadersSymbols = ['NVDA', 'AAPL', 'MSFT'];
   const cryptoSymbols = ['BTC-USD', 'ETH-USD'];
   const commoditySymbols = ['GC=F', 'SI=F', 'CL=F', 'NG=F'];
-  const forexSymbols = ['DX-Y.NYB', 'EURUSD=X', 'JPY=X', 'GBPUSD=X', 'AUDUSD=X'];
+  const forexSymbols = ['DX-Y.NYB', 'EURUSD=X', 'USDJPY=X', 'GBPUSD=X', 'AUDUSD=X', 'USDNPR=X', 'USDRUB=X'];
   const bondSymbols = ['^IRX', '^FVX', '^TNX', '^TYX'];
 
   const mapData = (syms: string[]) => syms.map(sym => {

@@ -36,3 +36,4 @@ cdk.context.json
 
 # Test
 coverage/
+/backend/.schwab_token.json

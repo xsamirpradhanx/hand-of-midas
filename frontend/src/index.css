@@ -99,9 +99,9 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
 
   /* Layout */
-  --sidebar-width: 300px;
+  --sidebar-width: 260px;
   --topbar-height: 56px;
-  --indicator-panel-width: 280px;
+  --indicator-panel-width: 260px;
 }
 
 /* ─── Reset & Base ─── */

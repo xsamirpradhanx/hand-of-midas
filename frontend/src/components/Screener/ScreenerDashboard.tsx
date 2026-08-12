@@ -5,10 +5,12 @@ import styles from './ScreenerDashboard.module.css';
 
 export interface ScreenerResult {
   symbol: string;
+  direction: 'LONG' | 'SHORT' | 'NEUTRAL';
   setupType: string;
-  setupStage: 'EARLY' | 'DEVELOPING' | 'BREAKOUT' | 'EXTENDED';
+  setupStage: 'EARLY' | 'DEVELOPING' | 'BREAKOUT' | 'EXTENDED' | 'BREAKDOWN';
   midasScore: number;
-  momentumScore: number;
+  longMomentum: number;
+  shortMomentum: number;
   probability: number;
   riskScore: number;
   subScores: {
@@ -23,7 +25,11 @@ export interface ScreenerResult {
   changePercent: number;
   relativeStrength?: number;
   volume: number;
+  dollarVolume: number;
   rvol: number;
+  pmVwap?: number | null;
+  pmHigh?: number | null;
+  pmLow?: number | null;
   floatTurnover?: number;
   rsi14?: number;
   shortFloatPct?: number;
@@ -37,27 +43,31 @@ export interface ScreenerResult {
 
 export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
 
-function formatVolume(volume: number): string {
-  if (volume >= 1e9) return `${(volume / 1e9).toFixed(2)}B`;
-  if (volume >= 1e6) return `${(volume / 1e6).toFixed(2)}M`;
-  if (volume >= 1e3) return `${(volume / 1e3).toFixed(1)}K`;
-  return String(volume);
+
+
+function formatCurrency(val: number): string {
+  if (val >= 1e9) return `$${(val / 1e9).toFixed(2)}B`;
+  if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
+  if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}K`;
+  return `$${val.toFixed(0)}`;
 }
 
 function setupBadgeClass(setup: string): string {
   if (setup.includes('Breakout') || setup.includes('Gap')) return styles.setupBreakout!;
-  if (setup.includes('Trend') || setup.includes('Momentum') || setup.includes('High RVOL')) return styles.setupTrend!;
+  if (setup.includes('Breakdown')) return styles.setupBreakdown!;
+  if (setup.includes('Trend') || setup.includes('Momentum') || setup.includes('High RVOL') || setup.includes('Continuation')) return styles.setupTrend!;
   if (setup.includes('Volatility') || setup.includes('Squeeze')) return styles.setupVolatility!;
-  if (setup.includes('Reversion') || setup.includes('Bounce')) return styles.setupReversion!;
+  if (setup.includes('Reversion') || setup.includes('Bounce') || setup.includes('Base')) return styles.setupReversion!;
   if (setup.includes('Gamma')) return styles.setupGamma!;
   return styles.setupDefault!;
 }
 
 function setupIcon(setup: string): string {
   if (setup.includes('Breakout') || setup.includes('Gap')) return '⚡';
-  if (setup.includes('Trend') || setup.includes('High RVOL')) return '🌊';
+  if (setup.includes('Breakdown')) return '📉';
+  if (setup.includes('Trend') || setup.includes('High RVOL') || setup.includes('Continuation')) return '🌊';
   if (setup.includes('Volatility') || setup.includes('Squeeze')) return '🚀';
-  if (setup.includes('Reversion') || setup.includes('Bounce')) return '🔄';
+  if (setup.includes('Reversion') || setup.includes('Bounce') || setup.includes('Base')) return '🔄';
   if (setup.includes('Gamma')) return '🔮';
   if (setup.includes('Catalyst') || setup.includes('News')) return '📎';
   if (setup.includes('Momentum')) return '🔥';
@@ -65,9 +75,12 @@ function setupIcon(setup: string): string {
 }
 
 function confidenceFillClass(score: number): string {
-  if (score >= 80) return styles.confidenceHigh!;
-  if (score >= 70) return styles.confidenceMid!;
-  return styles.confidenceLow!;
+  if (score >= 90) return styles.midasGold!;
+  if (score >= 70) return styles.midasSilver!;
+  if (score >= 50) return styles.midasBronze!;
+  if (score >= 30) return styles.midasRedLight!;
+  if (score >= 15) return styles.midasRedMedium!;
+  return styles.midasRedDeep!;
 }
 
 const ScreenerDashboard: React.FC = () => {
@@ -95,6 +108,12 @@ const ScreenerDashboard: React.FC = () => {
   useEffect(() => {
     fetchScreenerData(mode);
   }, [mode, fetchScreenerData]);
+
+  const handleRowClick = useCallback((symbol: string) => {
+    window.localStorage.setItem('dashboard_selectedSymbol', JSON.stringify(symbol));
+    window.dispatchEvent(new CustomEvent('TICKER_SELECTED', { detail: { symbol } }));
+    navigate('/');
+  }, [navigate]);
 
   return (
     <div className={styles.page}>
@@ -181,48 +200,56 @@ const ScreenerDashboard: React.FC = () => {
           <table className={styles.table}>
             <colgroup>
               <col className={styles.colSymbol} />
+              <col className={styles.colDirection} />
               <col className={styles.colSetup} />
               <col className={styles.colConfidence} />
-              <col className={styles.colPrice} />
               <col className={styles.colChange} />
               <col className={styles.colVolume} />
+              <col className={styles.colVolume} />
+              <col className={styles.colPrice} />
+              <col className={styles.colPrice} />
               <col className={styles.colCatalysts} />
+              <col className={styles.colConfidence} />
             </colgroup>
             <thead className={styles.thead}>
               <tr>
                 <th className={styles.th}>Symbol</th>
-                <th className={styles.th}>Setup Type</th>
-                <th className={styles.th}>Stage</th>
+                <th className={styles.th}>Direction</th>
+                <th className={styles.th}>Setup</th>
                 <th className={styles.th}>Midas</th>
-                <th className={styles.th}>Momentum</th>
-                <th className={styles.thRight}>Price</th>
-                <th className={styles.thRight}>Change (vs SPY)</th>
-                <th className={styles.thRight}>Volume / Turnover</th>
-                <th className={styles.th}>Key Catalysts</th>
+                <th className={styles.thRight}>PM Gap</th>
+                <th className={styles.thRight}>PM RVOL</th>
+                <th className={styles.thRight}>$Vol</th>
+                <th className={styles.thRight}>PM VWAP</th>
+                <th className={styles.thRight}>PM High</th>
+                <th className={styles.th}>Catalyst</th>
                 <th className={styles.th}>Risk</th>
               </tr>
             </thead>
             <tbody className={styles.tbody}>
               {results.map(result => (
-                <tr key={result.symbol}>
+                <tr 
+                  key={result.symbol} 
+                  onClick={() => handleRowClick(result.symbol)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <td className={styles.td}>
                     <div className={styles.symbolCell}>
-                      <span className={styles.symbolAvatar}>{result.symbol.charAt(0)}</span>
                       <span className={styles.symbolTicker}>{result.symbol}</span>
                     </div>
                   </td>
                   <td className={styles.td}>
-                    <span
-                      className={`${styles.setupBadge} ${setupBadgeClass(result.setupType)}`}
-                      title={result.setupType}
-                    >
-                      <span aria-hidden>{setupIcon(result.setupType)}</span>
-                      {result.setupType}
+                    <span className={`${styles.directionBadge} ${result.direction === 'LONG' ? styles.directionLong : result.direction === 'SHORT' ? styles.directionShort : styles.directionNeutral}`}>
+                      {result.direction === 'LONG' ? '🟢 LONG' : result.direction === 'SHORT' ? '🔴 SHORT' : '⚪ NEUTRAL'}
                     </span>
                   </td>
                   <td className={styles.td}>
-                    <span className={`${styles.stageBadge} ${styles['stage' + result.setupStage]}`}>
-                      {result.setupStage}
+                    <span
+                      className={`${styles.setupBadge} ${setupBadgeClass(result.setupType)}`}
+                      title={result.setupStage}
+                    >
+                      <span aria-hidden>{setupIcon(result.setupType)}</span>
+                      {result.setupType}
                     </span>
                   </td>
                   <td className={styles.td}>
@@ -236,20 +263,6 @@ const ScreenerDashboard: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                  <td className={styles.td}>
-                    <div className={styles.confidenceCell}>
-                      <span className={styles.confidencePct}>{result.momentumScore}</span>
-                      <div className={styles.confidenceBar}>
-                        <div
-                          className={`${styles.confidenceFill} ${styles.momentumGradient}`}
-                          style={{ width: `${result.momentumScore}%` }}
-                        />
-                      </div>
-                    </div>
-                  </td>
-                  <td className={styles.tdRight}>
-                    <span className={styles.priceValue}>${result.price.toFixed(2)}</span>
-                  </td>
                   <td className={styles.tdRight}>
                     <div className={styles.changeStack}>
                       <span
@@ -260,21 +273,26 @@ const ScreenerDashboard: React.FC = () => {
                         {result.changePercent >= 0 ? '+' : ''}
                         {result.changePercent.toFixed(2)}%
                       </span>
-                      {result.relativeStrength !== undefined && (
-                        <span className={`${styles.relativeStrength} ${result.relativeStrength >= 0 ? styles.rsUp : styles.rsDown}`}>
-                          RS {result.relativeStrength >= 0 ? '+' : ''}{result.relativeStrength.toFixed(1)}%
+                    </div>
+                  </td>
+                  <td className={styles.tdRight}>
+                    <span className={styles.volumeRvol}>{result.rvol.toFixed(1)}x</span>
+                  </td>
+                  <td className={styles.tdRight}>
+                    <span className={styles.volumeMain}>{formatCurrency(result.dollarVolume)}</span>
+                  </td>
+                  <td className={styles.tdRight}>
+                    <div className={styles.vwapStack}>
+                      <span className={styles.priceValue}>{result.pmVwap ? `$${result.pmVwap.toFixed(2)}` : '-'}</span>
+                      {result.pmVwap && (
+                        <span className={styles.vwapStatus}>
+                          {result.price > result.pmVwap ? '(Above)' : '(Below)'}
                         </span>
                       )}
                     </div>
                   </td>
                   <td className={styles.tdRight}>
-                    <div className={styles.volumeStack}>
-                      <span className={styles.volumeMain}>{formatVolume(result.volume)}</span>
-                      <span className={styles.volumeRvol}>{result.rvol.toFixed(1)}x RVOL</span>
-                      {result.floatTurnover && (
-                        <span className={styles.volumeTurnover}>{result.floatTurnover.toFixed(1)}x Float</span>
-                      )}
-                    </div>
+                    <span className={styles.priceValue}>{result.pmHigh ? `$${result.pmHigh.toFixed(2)}` : '-'}</span>
                   </td>
                   <td className={`${styles.td} ${styles.catalystCell}`}>
                     <div className={styles.catalystList}>
@@ -282,18 +300,6 @@ const ScreenerDashboard: React.FC = () => {
                         <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
                           <span className={styles.catalystCheck} aria-hidden>🔴</span>
                           Data: SUSPICIOUS
-                        </span>
-                      )}
-                      {result.dataQuality === 'CHECK' && (
-                        <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
-                          <span className={styles.catalystCheck} aria-hidden>🟡</span>
-                          Data: CHECK
-                        </span>
-                      )}
-                      {result.isExtremeMover && (
-                        <span className={`${styles.catalystTag} ${styles.catalystWarning}`}>
-                          <span className={styles.catalystCheck} aria-hidden>⚠️</span>
-                          Extreme Mover
                         </span>
                       )}
                       {result.yahooSources.length > 0 && result.yahooConsensus > 0 && (
@@ -308,16 +314,6 @@ const ScreenerDashboard: React.FC = () => {
                         <span className={`${styles.catalystTag} ${styles.catalystGap}`}>
                           <span className={styles.catalystCheck} aria-hidden>⚡</span>
                           Gap &amp; Go
-                        </span>
-                      )}
-                      {result.rsi14 != null && (
-                        <span className={`${styles.catalystTag} ${result.rsi14 <= 35 ? styles.catalystOversold : result.rsi14 >= 70 ? styles.catalystOverbought : ''}`}>
-                          RSI {result.rsi14}
-                        </span>
-                      )}
-                      {result.shortFloatPct != null && result.shortFloatPct >= 15 && (
-                        <span className={`${styles.catalystTag} ${styles.catalystSqueeze}`}>
-                          Short {result.shortFloatPct.toFixed(1)}%
                         </span>
                       )}
                       {result.reasons.map((reason, idx) => (
@@ -342,7 +338,7 @@ const ScreenerDashboard: React.FC = () => {
 
               {results.length === 0 && !loading && (
                 <tr className={styles.emptyRow}>
-                  <td colSpan={7}>
+                  <td colSpan={11}>
                     <p className={styles.emptyTitle}>No setups found</p>
                     <p className={styles.emptyHint}>
                       No names met the confidence threshold for this session. Try premarket mode or refresh

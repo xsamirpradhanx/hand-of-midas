@@ -17,15 +17,16 @@ interface DiagonalScreenerResult {
   nearTermIV: number | null;
   farTermIV: number | null;
   ivRatio: number | null;
-  suggestedSetup: string;
-  longLeg: { strike: number; expiry: string; delta: number } | null;
-  shortLeg: { strike: number; expiry: string; iv: number } | null;
+  historicalVol1y: number | null;
+  ivRankProxy: number | null;
+  
+  longLeg: { strike: number; expiry: string; delta: number; ask: number; dte: number } | null;
+  shortLeg: { strike: number; expiry: string; iv: number; bid: number; dte: number } | null;
+  netDebit: number | null;
+  strikeWidth: number | null;
+  debitWidthRatio: number | null;
   breakEven: number | null;
-  greeksProfile: {
-    theta: 'positive' | 'negative' | 'neutral';
-    gamma: 'elevated' | 'moderate' | 'low';
-    vega: 'net-short' | 'net-long' | 'neutral';
-  };
+  
   setupScore: number;
   reasons: string[];
 }
@@ -61,18 +62,13 @@ function IVBar({ near, far }: { near: number | null; far: number | null }) {
   );
 }
 
-function GreeksChips({ profile }: { profile: DiagonalScreenerResult['greeksProfile'] }) {
+function RatioBadge({ ratio }: { ratio: number | null }) {
+  if (ratio === null) return <span className={styles.naText}>—</span>;
+  const isGood = ratio <= 0.8;
+  const isPoor = ratio >= 1.0;
   return (
-    <div className={styles.greeksList}>
-      <span className={`${styles.greekChip} ${profile.theta === 'positive' ? styles.greekPos : styles.greekNeg}`}>
-        θ {profile.theta === 'positive' ? '+' : profile.theta === 'negative' ? '−' : '≈'}
-      </span>
-      <span className={`${styles.greekChip} ${profile.gamma === 'elevated' ? styles.greekElev : styles.greekMod}`}>
-        Γ {profile.gamma === 'elevated' ? '↑↑' : profile.gamma === 'moderate' ? '↑' : '↓'}
-      </span>
-      <span className={`${styles.greekChip} ${profile.vega === 'net-long' ? styles.greekPos : profile.vega === 'net-short' ? styles.greekNeg : styles.greekMod}`}>
-        V {profile.vega === 'net-long' ? 'L' : profile.vega === 'net-short' ? 'S' : '≈'}
-      </span>
+    <div className={`${styles.ratioBadge} ${isGood ? styles.ratioGood : isPoor ? styles.ratioPoor : styles.ratioMid}`}>
+      {ratio.toFixed(2)}
     </div>
   );
 }
@@ -97,6 +93,12 @@ const DiagonalScreener: React.FC = () => {
       setLoading(false);
     }
   }, []);
+
+  const handleRowClick = useCallback((symbol: string) => {
+    window.localStorage.setItem('dashboard_selectedSymbol', JSON.stringify(symbol));
+    window.dispatchEvent(new CustomEvent('TICKER_SELECTED', { detail: { symbol } }));
+    navigate('/');
+  }, [navigate]);
 
   useEffect(() => {
     fetchData();
@@ -201,9 +203,10 @@ const DiagonalScreener: React.FC = () => {
                 <th className={styles.th}>Price / Drawdown</th>
                 <th className={styles.th}>RSI / 5d Move</th>
                 <th className={styles.th}>IV Term Structure</th>
-                <th className={styles.th}>Suggested Setup</th>
+                <th className={styles.th}>Long Leg (LEAP)</th>
+                <th className={styles.th}>Short Leg (Near)</th>
+                <th className={styles.th}>Debit/Width</th>
                 <th className={styles.th}>B/E</th>
-                <th className={styles.th}>Greeks</th>
                 <th className={styles.th}>Score</th>
               </tr>
             </thead>
@@ -220,8 +223,8 @@ const DiagonalScreener: React.FC = () => {
                         <span className={`${styles.symbolAvatar} ${r.isOversold ? styles.avatarOversold : ''}`}>
                           {r.symbol.charAt(0)}
                         </span>
-                        <div>
-                          <div className={styles.symbolTicker}>{r.symbol}</div>
+                        <div onClick={(e) => { e.stopPropagation(); handleRowClick(r.symbol); }} style={{ cursor: 'pointer' }}>
+                          <div className={styles.symbolTicker} style={{ textDecoration: 'underline' }}>{r.symbol}</div>
                           {r.isBackwardation && (
                             <span className={styles.backwardationBadge}>⚡ Backwardation</span>
                           )}
@@ -260,9 +263,29 @@ const DiagonalScreener: React.FC = () => {
                       <IVBar near={r.nearTermIV} far={r.farTermIV} />
                     </td>
 
-                    {/* Suggested Setup */}
+                    {/* Long Leg */}
                     <td className={styles.td}>
-                      <span className={styles.setupText}>{r.suggestedSetup}</span>
+                      {r.longLeg ? (
+                        <div className={styles.legStack}>
+                          <span className={styles.legPrimary}>{r.longLeg.expiry} ${r.longLeg.strike}c</span>
+                          <span className={styles.legSecondary}>Ask ${r.longLeg.ask} | Δ {r.longLeg.delta}</span>
+                        </div>
+                      ) : <span className={styles.naText}>—</span>}
+                    </td>
+
+                    {/* Short Leg */}
+                    <td className={styles.td}>
+                      {r.shortLeg ? (
+                        <div className={styles.legStack}>
+                          <span className={styles.legPrimary}>{r.shortLeg.expiry} ${r.shortLeg.strike}c</span>
+                          <span className={styles.legSecondary}>Bid ${r.shortLeg.bid} | {r.shortLeg.dte} DTE</span>
+                        </div>
+                      ) : <span className={styles.naText}>—</span>}
+                    </td>
+
+                    {/* Debit / Width Ratio */}
+                    <td className={styles.td}>
+                      <RatioBadge ratio={r.debitWidthRatio} />
                     </td>
 
                     {/* B/E */}
@@ -274,11 +297,6 @@ const DiagonalScreener: React.FC = () => {
                       ) : (
                         <span className={styles.naText}>—</span>
                       )}
-                    </td>
-
-                    {/* Greeks */}
-                    <td className={styles.td}>
-                      <GreeksChips profile={r.greeksProfile} />
                     </td>
 
                     {/* Score */}
@@ -307,6 +325,7 @@ const DiagonalScreener: React.FC = () => {
                               <div className={styles.legDetail}>
                                 <span className={styles.legBadge}>Strike ${r.longLeg.strike}</span>
                                 <span className={styles.legBadge}>Exp {r.longLeg.expiry}</span>
+                                <span className={styles.legBadge}>Ask ${r.longLeg.ask}</span>
                                 <span className={styles.legBadge}>Δ ≈ {r.longLeg.delta}</span>
                               </div>
                             </div>
@@ -318,6 +337,7 @@ const DiagonalScreener: React.FC = () => {
                               <div className={styles.legDetail}>
                                 <span className={styles.legBadge}>Strike ${r.shortLeg.strike}</span>
                                 <span className={styles.legBadge}>Exp {r.shortLeg.expiry}</span>
+                                <span className={styles.legBadge}>Bid ${r.shortLeg.bid}</span>
                                 <span className={styles.legBadge}>IV {r.shortLeg.iv}%</span>
                               </div>
                             </div>

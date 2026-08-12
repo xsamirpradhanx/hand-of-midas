@@ -21,6 +21,7 @@ import * as marketInternals from './routes/marketInternals.js';
 import * as sectorHeatmap from './routes/sectorHeatmap.js';
 import * as news from './routes/news.js';
 import * as search from './routes/search.js';
+import * as sentiment from './routes/sentiment.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -152,6 +153,15 @@ const routes: readonly Route[] = [
     pattern: '/api/search/symbols',
     handler: async (event) => {
       return search.searchSymbols(event);
+    },
+  },
+
+  // ── Sentiment ──────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    pattern: '/api/sentiment/:symbol',
+    handler: async (event, params) => {
+      return sentiment.getSentiment(event, params);
     },
   },
 

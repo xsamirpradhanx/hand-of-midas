@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styles from './MaxPainModal.module.css';
 
 interface VolumeOIByStrike {
@@ -16,6 +16,54 @@ interface Props {
 
 export const MaxPainModal: React.FC<Props> = ({ symbol: _symbol, maxPainStrike, optionsData, children }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const maxPainRef = useRef<HTMLDivElement>(null);
+
+  const scrollInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Scroll to Max Pain when opened
+  useEffect(() => {
+    if (isOpen && maxPainRef.current) {
+      setTimeout(() => {
+        maxPainRef.current?.scrollIntoView({ behavior: 'auto', block: 'center' });
+      }, 50);
+    }
+  }, [isOpen]);
+
+  const stopScroll = () => {
+    if (scrollInterval.current) {
+      clearInterval(scrollInterval.current);
+      scrollInterval.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => stopScroll();
+  }, []);
+
+  const startScrollUp = () => {
+    if (listRef.current) {
+      listRef.current.scrollBy({ top: -45, behavior: 'smooth' });
+    }
+    stopScroll();
+    scrollInterval.current = setInterval(() => {
+      if (listRef.current) {
+        listRef.current.scrollBy({ top: -45, behavior: 'smooth' });
+      }
+    }, 150);
+  };
+
+  const startScrollDown = () => {
+    if (listRef.current) {
+      listRef.current.scrollBy({ top: 45, behavior: 'smooth' });
+    }
+    stopScroll();
+    scrollInterval.current = setInterval(() => {
+      if (listRef.current) {
+        listRef.current.scrollBy({ top: 45, behavior: 'smooth' });
+      }
+    }, 150);
+  };
 
   // Close on Escape
   useEffect(() => {
@@ -56,8 +104,22 @@ export const MaxPainModal: React.FC<Props> = ({ symbol: _symbol, maxPainStrike, 
               This is the strike price where the highest number of options contracts will expire worthless, minimizing the payout by option sellers and maximizing the "pain" (loss) for option buyers.
             </div>
 
-            <div className={styles.dataList}>
-              {(() => {
+            <div className={styles.scrollContainer}>
+              <button 
+                className={styles.scrollBtn} 
+                onMouseDown={startScrollUp}
+                onMouseUp={stopScroll}
+                onMouseLeave={stopScroll}
+                onTouchStart={startScrollUp}
+                onTouchEnd={stopScroll}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="18 15 12 9 6 15"></polyline>
+                </svg>
+              </button>
+              
+              <div className={styles.dataList} ref={listRef}>
+                {(() => {
                 if (!optionsData || optionsData.length === 0) return <div>No data available</div>;
                 
                 // Get unique strikes
@@ -72,10 +134,8 @@ export const MaxPainModal: React.FC<Props> = ({ symbol: _symbol, maxPainStrike, 
                    , 0);
                 }
 
-                // Get 3 strikes below and 3 strikes above
-                const startIdx = Math.max(0, centerIdx - 3);
-                const endIdx = Math.min(strikes.length - 1, centerIdx + 3);
-                const displayStrikes = strikes.slice(startIdx, endIdx + 1);
+                // Show all calculated strike prices
+                const displayStrikes = strikes;
 
                 return displayStrikes.map(s => {
                   let totalPain = 0;
@@ -93,7 +153,11 @@ export const MaxPainModal: React.FC<Props> = ({ symbol: _symbol, maxPainStrike, 
                   const isMaxPain = s === maxPainStrike;
 
                   return (
-                    <div key={s} className={`${styles.dataRow} ${isMaxPain ? styles.maxPain : ''}`}>
+                    <div 
+                      key={s} 
+                      className={`${styles.dataRow} ${isMaxPain ? styles.maxPain : ''}`}
+                      ref={isMaxPain ? maxPainRef : null}
+                    >
                       <span className={styles.strike}>
                         Strike ${s.toFixed(2)}
                         {isMaxPain && <span className={styles.badge} style={{marginLeft: '8px'}}>Max Pain</span>}
@@ -104,7 +168,21 @@ export const MaxPainModal: React.FC<Props> = ({ symbol: _symbol, maxPainStrike, 
                     </div>
                   );
                 });
-              })()}
+                })()}
+              </div>
+
+              <button 
+                className={styles.scrollBtn} 
+                onMouseDown={startScrollDown}
+                onMouseUp={stopScroll}
+                onMouseLeave={stopScroll}
+                onTouchStart={startScrollDown}
+                onTouchEnd={stopScroll}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
             </div>
           </div>
         </div>

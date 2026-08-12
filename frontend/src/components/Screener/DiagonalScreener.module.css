@@ -630,3 +630,51 @@
   border-color: rgba(139, 92, 246, 0.35);
   box-shadow: 0 0 16px rgba(139, 92, 246, 0.12);
 }
+
+/* Leg Stack */
+.legStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legPrimary {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.legSecondary {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Ratio Badge */
+.ratioBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.ratioGood {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.ratioMid {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.ratioPoor {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}

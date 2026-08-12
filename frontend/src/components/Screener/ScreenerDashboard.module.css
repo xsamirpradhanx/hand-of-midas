@@ -372,16 +372,29 @@
   transition: width 0.6s ease;
 }
 
-.confidenceHigh {
-  background: linear-gradient(90deg, #059669, #34d399);
+.midasGold {
+  background: linear-gradient(90deg, #b8860b, #ffd700, #ffeb3b);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
 }
 
-.confidenceMid {
-  background: linear-gradient(90deg, #d97706, #fbbf24);
+.midasSilver {
+  background: linear-gradient(90deg, #9ca3af, #e5e7eb, #f9fafb);
 }
 
-.confidenceLow {
-  background: linear-gradient(90deg, #e11d48, #fb7185);
+.midasBronze {
+  background: linear-gradient(90deg, #8b4513, #cd7f32, #d2b48c);
+}
+
+.midasRedLight {
+  background: linear-gradient(90deg, #9f1239, #e11d48); /* Soft red for 30-50 */
+}
+
+.midasRedMedium {
+  background: linear-gradient(90deg, #be123c, #f43f5e); /* Brighter red for 15-30 */
+}
+
+.midasRedDeep {
+  background: linear-gradient(90deg, #e11d48, #ff1744); /* Bright/deep red for < 15 */
 }
 
 .momentumGradient {
@@ -625,4 +638,51 @@
   .table {
     min-width: 960px;
   }
+}
+
+.colDirection { width: 9%; }
+
+.directionBadge {
+  display: inline-block;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.directionLong {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.directionShort {
+  color: #f43f5e;
+  background: rgba(225, 29, 72, 0.15);
+  border: 1px solid rgba(225, 29, 72, 0.3);
+}
+.directionNeutral {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.setupBreakdown {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.stageBREAKDOWN {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.vwapStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.vwapStatus {
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }

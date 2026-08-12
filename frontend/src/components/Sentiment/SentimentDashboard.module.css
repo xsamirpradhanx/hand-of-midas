@@ -1,0 +1,287 @@
+.container {
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  color: var(--text-primary);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  margin-bottom: var(--space-md);
+}
+
+.gaugesContainer {
+  display: flex;
+  gap: var(--space-xl);
+  flex-wrap: wrap;
+}
+
+.gaugeCard {
+  flex: 1;
+  min-width: 300px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gaugeCard h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: var(--space-lg);
+  color: var(--text-secondary);
+}
+
+.gaugeVisual {
+  width: 100%;
+  height: 12px;
+  background: linear-gradient(90deg, #ff1744, #ef4444); /* Base is bearish/red */
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.gaugeFill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #059669); /* Fill is bullish/green */
+  border-radius: var(--radius-full);
+  transition: width 0.6s ease;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+  float: right; /* Animate from right if you want, but default left-to-right is fine. Actually, if Red is left and Green is right, standard is Green on right. */
+}
+
+/* Let's redo gauge logic: 
+   Container is red. 
+   Fill is green, starts from the right? Or container is grey, fill is a gradient?
+   Let's do: left is red, right is green. 
+   Actually, it's easier: container is red. Fill is green, width = bull%.
+   If bull% is 80%, fill takes 80% from left. Wait, that implies green is on the left.
+   Let's make container red, and float the fill to the right!
+*/
+.gaugeFill {
+  float: right;
+}
+
+.gaugeLabels {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: var(--space-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.bearLabel {
+  color: #ff4d4d;
+}
+
+.bullLabel {
+  color: #10b981;
+}
+
+.summaryText {
+  margin-top: var(--space-md);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.feedContainer {
+  display: flex;
+  gap: var(--space-xl);
+  flex-wrap: wrap;
+}
+
+.feedSection {
+  flex: 1;
+  min-width: 350px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.feedSection h2 {
+  font-size: 1.25rem;
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.messagesList, .articlesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  overflow-y: auto;
+  max-height: 600px;
+  padding-right: var(--space-sm);
+}
+
+.messageCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.messageHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.username {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.sentimentBadge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badgeBull {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badgeBear {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.messageBody {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  margin-bottom: var(--space-sm);
+}
+
+.timestamp {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.articleCard {
+  display: block;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  transition: all 0.2s ease;
+}
+
+.articleCard:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 215, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+.articleHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
+  font-size: 0.8rem;
+}
+
+.source {
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+.articleTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+/* Custom Scrollbar for lists */
+.messagesList::-webkit-scrollbar, .articlesList::-webkit-scrollbar {
+  width: 6px;
+}
+.messagesList::-webkit-scrollbar-track, .articlesList::-webkit-scrollbar-track {
+  background: transparent;
+}
+.messagesList::-webkit-scrollbar-thumb, .articlesList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.loading, .error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.error {
+  color: #ff4d4d;
+}
+
+.retailMeta {
+  display: flex;
+  gap: var(--space-lg);
+  margin-top: var(--space-md);
+  width: 100%;
+  justify-content: space-around;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-md);
+}
+
+.metaItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.metaItem strong {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+
+.up {
+  color: #10b981 !important;
+}
+
+.down {
+  color: #ef4444 !important;
+}
+
+.followers {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
