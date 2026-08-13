@@ -4,6 +4,8 @@ import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import type { FactorResult, FactorInput, PredictiveFactor } from './factors/types.js';
 import { getFactors } from './factors/factorRegistry.js';
 import { CompositeScoreAgent } from './compositeScore.js';
+import { putItem, getItem } from './dynamodb.js';
+import type { PredictionItem, FactorStatsItem } from '../types.js';
 
 export interface PredictiveZone {
   type: 'buy' | 'sell';
@@ -95,9 +97,18 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
 
   const activeFactors = factorEvaluations.filter((res): res is FactorResult => res !== null);
 
-  // 5. Run AI Synthesis Agent over all factor outputs
+  // 5. Fetch Factor Stats
+  let factorStats: Record<string, { wins: number; losses: number; score: number; tries: number }> | undefined;
+  try {
+    const factorStatsItem = await getItem<FactorStatsItem>('SYSTEM', 'FACTOR_STATS');
+    if (factorStatsItem) factorStats = factorStatsItem.stats;
+  } catch (err) {
+    console.warn(`[PredictiveEngine] Could not fetch FACTOR_STATS:`, err);
+  }
+
+  // 6. Run AI Synthesis Agent over all factor outputs
   // Pass `bars` so the agent can compute ATR-adaptive zone spread
-  const synthesis = aiAgent.synthesize(sym, currentPrice, activeFactors, bars);
+  const synthesis = aiAgent.synthesize(sym, currentPrice, activeFactors, bars, factorStats);
 
   const zones: PredictiveZone[] = [
     {
@@ -117,7 +128,7 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
     },
   ];
 
-  return {
+  const result: PredictiveEngineResult = {
     symbol: sym,
     currentPrice,
     zones,
@@ -129,4 +140,22 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
       tradePlan: synthesis.tradePlan,
     },
   };
+
+  try {
+    const timestamp = new Date().toISOString();
+    const predictionItem: PredictionItem = {
+      pk: `PREDICTION#${sym}`,
+      sk: `TIMESTAMP#${timestamp}`,
+      symbol: sym,
+      currentPrice,
+      zones,
+      aiThesis: result.aiThesis,
+      createdAt: timestamp,
+    };
+    await putItem(predictionItem);
+  } catch (err) {
+    console.error(`[PredictiveEngine] Failed to persist prediction for ${sym}:`, err);
+  }
+
+  return result;
 }

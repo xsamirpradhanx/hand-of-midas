@@ -9,6 +9,9 @@ const __dirname = path.dirname(__filename);
 const FACTORS_DIR = path.join(__dirname, '../services/factors');
 const REGISTRY_PATH = path.join(FACTORS_DIR, 'factorRegistry.ts');
 
+import { getItem } from '../services/dynamodb.js';
+import type { FactorStatsItem } from '../types.js';
+
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 async function runAIQuant() {
@@ -55,11 +58,31 @@ export class MyNovelFactor implements PredictiveFactor {
 Generate ONLY the markdown code block with the complete, valid TypeScript code. No other text.
 `;
 
+  let statsContext = '';
+  try {
+    const factorStatsItem = await getItem<FactorStatsItem>('SYSTEM', 'FACTOR_STATS');
+    if (factorStatsItem && factorStatsItem.stats) {
+      const stats = factorStatsItem.stats;
+      statsContext = '\nHere is the historical performance of our active factors:\n';
+      for (const [fname, st] of Object.entries(stats)) {
+        if (st.tries > 0) {
+          const accuracy = ((st.score / st.tries) * 100).toFixed(1);
+          statsContext += `- ${fname}: ${accuracy}% accuracy (${st.wins} wins, ${st.losses} losses, ${st.tries} tries)\n`;
+        }
+      }
+      statsContext += '\nPlease invent a novel factor that targets edges missed by the top performers and avoids the pitfalls of the worst performers.\n';
+    }
+  } catch (e) {
+    console.warn('[AI Quant] Could not fetch FACTOR_STATS for context.');
+  }
+
+  const finalPrompt = prompt + statsContext;
+
   try {
     console.log('[AI Quant] 🧠 Hypothesizing edge via Gemini...');
     const response = await ai.models.generateContent({
       model: 'gemini-flash-latest',
-      contents: prompt,
+      contents: finalPrompt,
     });
 
     const text = response.text || '';

@@ -7,7 +7,8 @@
     "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outdir=dist --format=esm --external:@aws-sdk/*",
     "dev": "tsx watch src/local.ts",
     "test": "vitest run",
-    "ai-quant": "tsx src/scripts/aiQuant.ts"
+    "ai-quant": "tsx src/scripts/aiQuant.ts",
+    "evaluate-quant": "tsx src/scripts/evaluateQuant.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.1091.0",

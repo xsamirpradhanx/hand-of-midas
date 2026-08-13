@@ -88,14 +88,32 @@ const REGIME_MULTIPLIERS: Record<MarketRegime, Record<string, number>> = {
  * Apply regime multipliers to a factor's base weight.
  * Matches factor name by substring so partial names work (e.g. "KAMA" matches "KAMA & Z-Score Distance").
  */
-function applyRegimeMultiplier(factorName: string, baseWeight: number, regime: MarketRegime): number {
+function applyRegimeMultiplier(
+  factorName: string, 
+  baseWeight: number, 
+  regime: MarketRegime,
+  factorStats?: Record<string, { wins: number; losses: number; score: number; tries: number }>
+): number {
+  let multiplier = 1.0;
+
   const multipliers = REGIME_MULTIPLIERS[regime];
-  for (const [key, multiplier] of Object.entries(multipliers)) {
+  for (const [key, regMult] of Object.entries(multipliers)) {
     if (factorName.includes(key)) {
-      return baseWeight * multiplier;
+      multiplier = regMult;
+      break;
     }
   }
-  return baseWeight; // No match → unchanged
+
+  if (factorStats && factorStats[factorName]) {
+    const stats = factorStats[factorName];
+    if (stats.tries >= 3) {
+      const accuracy = stats.score / stats.tries;
+      const accMult = Math.max(0.2, accuracy / 0.5);
+      multiplier *= accMult;
+    }
+  }
+
+  return baseWeight * multiplier;
 }
 
 export interface AISynthesisResult {
@@ -153,6 +171,7 @@ export class CompositeScoreAgent {
     currentPrice: number,
     factors: FactorResult[],
     bars?: OHLCVDataPoint[],
+    factorStats?: Record<string, { wins: number; losses: number; score: number; tries: number }>
   ): AISynthesisResult {
     if (!factors || factors.length === 0) {
       return {
@@ -175,7 +194,7 @@ export class CompositeScoreAgent {
     // Regime multipliers are applied before normalization so they influence bias/conviction.
     const regimeAdjustedWeights = factors.map(f => ({
       factor: f,
-      adjustedWeight: applyRegimeMultiplier(f.factorName, f.weight, regime),
+      adjustedWeight: applyRegimeMultiplier(f.factorName, f.weight, regime, factorStats),
     }));
     const activeWeightTotal = regimeAdjustedWeights.reduce((sum, { adjustedWeight }) => sum + adjustedWeight, 0);
     const normalizeWeight = (w: number) => (activeWeightTotal > 0 ? w / activeWeightTotal : 1 / factors.length);

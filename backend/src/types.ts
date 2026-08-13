@@ -76,6 +76,35 @@ export interface CacheItem extends DynamoDBBaseItem {
   readonly modelVersion?: string;
 }
 
+/** A quant prediction result stored in DynamoDB. */
+export interface PredictionItem extends DynamoDBBaseItem {
+  readonly symbol: string;
+  readonly currentPrice: number;
+  readonly zones: any[];
+  readonly aiThesis: any;
+  readonly createdAt: string;
+}
+
+/** A graded evaluation of a past prediction. */
+export interface EvaluationItem extends DynamoDBBaseItem {
+  readonly symbol: string;
+  readonly predictionTimestamp: string;
+  readonly evaluatedAt: string;
+  readonly bias: string;
+  readonly score: number;
+  readonly hitStop: boolean;
+  readonly hitTarget: boolean;
+  readonly maxExcursion: number;
+}
+
+/** Aggregated historical accuracy for all factors. */
+export interface FactorStatsItem extends DynamoDBBaseItem {
+  readonly stats: Record<string, { wins: number; losses: number; score: number; tries: number }>;
+  readonly updatedAt: string;
+}
+
+
+
 // ─── Indicator / Chart Config Types ────────────────────────────────────────────
 
 /** Configuration for a single chart indicator. */
