@@ -89,6 +89,8 @@ async function fetchWithAuth(path: string, options: RequestInit = {}) {
   return response.json();
 }
 
+const screenerCache = new Map<string, { timestamp: number; data: any }>();
+
 export const api = {
   getWatchlist: async (): Promise<WatchlistEntry[]> => {
     const res = await fetchWithAuth('/watchlist');
@@ -186,8 +188,19 @@ export const api = {
     return fetchWithAuth(`/options-analytics/${symbol}${qs ? `?${qs}` : ''}`);
   },
 
-  getScreener: (mode: 'premarket' | 'open' | 'momentum' | 'highdemand'): Promise<any[]> =>
-    fetchWithAuth(`/screener?mode=${mode}`),
+  getScreener: async (mode: 'premarket' | 'open' | 'momentum' | 'highdemand'): Promise<any[]> => {
+    const now = Date.now();
+    const cacheKey = `SCREENER_${mode}`;
+    const cached = screenerCache.get(cacheKey);
+    if (cached && now - cached.timestamp < 15000) {
+      console.log(`[Frontend Cache] Serving screener ${mode} from memory.`);
+      return cached.data;
+    }
+
+    const data = await fetchWithAuth(`/screener?mode=${mode}`);
+    screenerCache.set(cacheKey, { timestamp: now, data });
+    return data;
+  },
 
   getDiagonalScreener: (): Promise<any[]> =>
     fetchWithAuth('/screener/diagonal'),

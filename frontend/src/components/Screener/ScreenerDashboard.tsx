@@ -40,19 +40,27 @@ export interface ScreenerResult {
   yahooConsensus: number;
   reasons: string[];
 
-  // P0 Engine Updates
+  // P1 Engine Updates
   tradeScore: number;
+  opportunityScore: number;
   location: string;
+  sentimentScore?: number;
   tradePlan?: {
     bias: 'LONG' | 'SHORT' | 'NO TRADE';
     archetype: string;
+    trigger: number;
     entryZone: string;
-    target1: number;
-    target2?: number;
+    chasePrice: number;
+    expectedMove: number;
+    majorResistance: number;
+    stretchTarget: number;
     stop: number;
     rewardRisk: number;
+    roomToResistance: number;
+    roomToSupport: number;
     confirmation: string;
-    avoidIf: string;
+    invalidation: string;
+    whyNow: string;
     confidence: number;
   };
 }
@@ -61,12 +69,7 @@ export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
 
 
 
-function formatCurrency(val: number): string {
-  if (val >= 1e9) return `$${(val / 1e9).toFixed(2)}B`;
-  if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
-  if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}K`;
-  return `$${val.toFixed(0)}`;
-}
+
 
 function setupBadgeClass(setup: string): string {
   if (setup.includes('Breakout') || setup.includes('Gap')) return styles.setupBreakout!;
@@ -90,14 +93,7 @@ function setupIcon(setup: string): string {
   return '⭐';
 }
 
-function confidenceFillClass(score: number): string {
-  if (score >= 90) return styles.midasGold!;
-  if (score >= 70) return styles.midasSilver!;
-  if (score >= 50) return styles.midasBronze!;
-  if (score >= 30) return styles.midasRedLight!;
-  if (score >= 15) return styles.midasRedMedium!;
-  return styles.midasRedDeep!;
-}
+
 
 const ScreenerDashboard: React.FC = () => {
   const navigate = useNavigate();

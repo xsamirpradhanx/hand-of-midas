@@ -1,7 +1,7 @@
 .container {
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: 10px 24px;
   background: linear-gradient(135deg, rgba(13, 15, 17, 0.95), rgba(20, 24, 28, 0.98));
   height: 100%;
   font-family: var(--font-mono);
