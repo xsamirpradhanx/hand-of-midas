@@ -399,7 +399,8 @@ export class CompositeScoreAgent {
       }
       
       confirmation = `Hold $${trigger} and show increasing volume into $${majorResistance}.`;
-      invalidation = `15m close below $${stop} on high volume.`;
+      // TODO(PR2): switch to "15m close" once multi-TF fetch is live. Today the engine only has daily bars.
+      invalidation = `daily close below $${stop} on high volume.`;
       
     } else if (bias === 'bearish') {
       trigger = Number(supplyZone.bottom.toFixed(2));
@@ -445,7 +446,8 @@ export class CompositeScoreAgent {
       }
 
       confirmation = `Reject $${trigger} on increasing volume.`;
-      invalidation = `15m close above $${stop} on high volume.`;
+      // TODO(PR2): switch to "15m close" once multi-TF fetch is live.
+      invalidation = `daily close above $${stop} on high volume.`;
     }
 
     const tradePlan = {

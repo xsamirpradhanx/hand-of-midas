@@ -91,9 +91,11 @@ export class VannaDeltaPressureFactor implements PredictiveFactor {
         }
       }
 
-      // Vanna flow estimate: how much spot the MM must trade as IV changes by deltaIV
-      // Flow (in $ notional) = netVanna * currentPrice * deltaIV * 100 (contracts)
-      const flowNotional = netVanna * currentPrice * deltaIVEstimate;
+      // Vanna flow estimate: how much spot the MM must trade as IV changes by deltaIV.
+      // Flow (in $ notional) = netVanna * currentPrice * deltaIV * 100 (contract multiplier).
+      // The x100 multiplier was previously omitted, understating the dollar exposure by 2 orders of magnitude.
+      const CONTRACT_MULTIPLIER = 100;
+      const flowNotional = netVanna * currentPrice * deltaIVEstimate * CONTRACT_MULTIPLIER;
       const flowMillions = flowNotional / 1_000_000;
 
       // Classify signal
@@ -116,7 +118,7 @@ export class VannaDeltaPressureFactor implements PredictiveFactor {
         weight: 0.20,
         bucket: 'OPTIONS',
         correlationGroup: 'GEX_COMPLEX',
-        reasoning: `Net Vanna Exposure: ${normalizedVanna > 0 ? '+' : ''}${normalizedVanna.toFixed(1)} (per 1000 OI). As IV ${deltaIVEstimate > 0 ? 'changes ±' + (deltaIVEstimate * 100).toFixed(1) + '%' : 'shifts'}, dealers will ${netVanna > 0 ? 'BUY' : 'SELL'} ~$${Math.abs(flowMillions).toFixed(1)}M of spot to re-hedge delta. ${bias.toUpperCase()} Vanna-driven flow pressure.`,
+        reasoning: `Net Vanna Exposure: ${normalizedVanna > 0 ? '+' : ''}${normalizedVanna.toFixed(1)} (per 1000 OI). Assuming a ±${(deltaIVEstimate * 100).toFixed(1)}% 1-day IV move (estimated from ${bars && bars.length >= 20 ? '5-day vol-of-vol' : 'a 1% default'}), dealers would ${netVanna > 0 ? 'BUY' : 'SELL'} ~$${Math.abs(flowMillions).toFixed(1)}M of spot to re-hedge delta. ${bias.toUpperCase()} Vanna-driven flow pressure.`,
       };
     } catch (err) {
       return null;

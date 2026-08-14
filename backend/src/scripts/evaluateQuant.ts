@@ -3,6 +3,7 @@ import { scanItems, putItem, getItem } from '../services/dynamodb.js';
 import { getTimeSeriesYahoo } from '../services/yahoo.js';
 import type { PredictionItem, EvaluationItem, FactorStatsItem, SetupStatsItem } from '../types.js';
 import { learningKey } from '../services/quant/learningEngine.js';
+import { gradeOutcome } from '../services/quant/gradeOutcome.js';
 
 const EVALUATION_HORIZON_BARS = 5;
 
@@ -105,46 +106,25 @@ async function evaluateQuant() {
         continue;
       }
 
-      let hitTarget = false;
-      let hitStop = false;
-      let maxExcursion = 0; 
+      const grade = gradeOutcome(
+        futureBars,
+        target,
+        stop,
+        bias as 'LONG' | 'SHORT' | 'BEARISH',
+        entryPrice,
+        EVALUATION_HORIZON_BARS,
+      );
+      const { outcome, score, hitTarget, hitStop, maxExcursion, ambiguous } = grade;
 
-      for (const bar of futureBars.slice(0, EVALUATION_HORIZON_BARS)) {
-        if (bias === 'LONG') {
-          if (bar.low <= stop) hitStop = true;
-          if (bar.high >= target) hitTarget = true;
-          
-          const excursion = (bar.high - entryPrice) / entryPrice;
-          if (excursion > maxExcursion) maxExcursion = excursion;
-
-        } else if (bias === 'SHORT' || bias === 'BEARISH') { // fallback for 'BEARISH' just in case
-          if (bar.high >= stop) hitStop = true;
-          if (bar.low <= target) hitTarget = true;
-
-          const excursion = (entryPrice - bar.low) / entryPrice;
-          if (excursion > maxExcursion) maxExcursion = excursion;
-        }
-
-        if (hitStop || hitTarget) {
-          break;
-        }
-      }
-
-      let score = 0;
-      let outcome: EvaluationItem['outcome'] = 'TIMEOUT';
-      if (hitTarget && !hitStop) {
-        score = 1.0;
-        outcome = 'TARGET';
+      if (outcome === 'TARGET') {
         console.log(`[Quant Evaluation] 🟢 WIN! Hit target of ${target.toFixed(2)}.`);
-      } else if (hitStop || (hitTarget && hitStop)) {
-        score = 0.0;
-        outcome = 'STOP';
+      } else if (outcome === 'STOP') {
         console.log(`[Quant Evaluation] 🔴 LOSS! Hit stop loss of ${stop.toFixed(2)}.`);
+      } else if (outcome === 'AMBIGUOUS') {
+        // Same-bar target+stop hits; intrabar order unknowable from daily OHLC.
+        // Excluded from wins/losses so calibration is not biased.
+        console.log(`[Quant Evaluation] ⚠️ AMBIGUOUS. Bar spanned both target ${target.toFixed(2)} and stop ${stop.toFixed(2)}; excluded from win/loss.`);
       } else {
-        // A plan that has not reached its target within the declared horizon is
-        // a failed prediction for calibration. This is explicit—not an "open"
-        // trade that can be accidentally counted again next run.
-        score = 0.0;
         console.log(`[Quant Evaluation] ⚪ TIMEOUT after ${EVALUATION_HORIZON_BARS} bars. Max favorable excursion: ${(maxExcursion * 100).toFixed(2)}%`);
       }
 
@@ -172,12 +152,18 @@ async function evaluateQuant() {
         for (const f of thesis.factors) {
           const fname = f.factorName;
           if (!factorStats[fname]) {
-            factorStats[fname] = { tries: 0, wins: 0, losses: 0, score: 0 };
+            factorStats[fname] = { tries: 0, wins: 0, losses: 0, score: 0, ambiguous: 0 };
           }
-          factorStats[fname].tries = factorStats[fname].wins + factorStats[fname].losses + 1;
-          factorStats[fname].score += score;
-          if (score === 1.0) factorStats[fname].wins += 1;
-          if (score === 0.0) factorStats[fname].losses += 1;
+          const fs = factorStats[fname];
+          fs.tries = (fs.wins ?? 0) + (fs.losses ?? 0) + (fs.ambiguous ?? 0) + 1;
+          if (ambiguous) {
+            // Excluded from score/wins/losses so calibration is unbiased.
+            fs.ambiguous = (fs.ambiguous ?? 0) + 1;
+          } else {
+            fs.score += score;
+            if (outcome === 'TARGET') fs.wins += 1;
+            else fs.losses += 1;
+          }
         }
       }
 
@@ -187,17 +173,19 @@ async function evaluateQuant() {
         : undefined;
       const keys = [learningKey(bias), ...(setupKey ? [setupKey] : [])];
       for (const key of keys) {
-          if (!setupStats[key]) {
-            setupStats[key] = { tries: 0, wins: 0, losses: 0, sumExpectedR: 0, sumActualR: 0 };
-          }
-          const stat = setupStats[key];
+        if (!setupStats[key]) {
+          setupStats[key] = { tries: 0, wins: 0, losses: 0, sumExpectedR: 0, sumActualR: 0, ambiguous: 0 };
+        }
+        const stat = setupStats[key];
 
-          stat.tries = stat.wins + stat.losses + 1;
+        stat.tries = (stat.wins ?? 0) + (stat.losses ?? 0) + (stat.ambiguous ?? 0) + 1;
 
-        if (thesis.tradePlan.rewardRisk) {
+        if (ambiguous) {
+          // Neither expected nor actual R accumulate; simply mark the outcome.
+          stat.ambiguous = (stat.ambiguous ?? 0) + 1;
+        } else if (thesis.tradePlan.rewardRisk) {
           stat.sumExpectedR += thesis.tradePlan.rewardRisk;
-
-          if (score === 1.0) {
+          if (outcome === 'TARGET') {
             stat.wins += 1;
             stat.sumActualR += thesis.tradePlan.rewardRisk;
           } else {

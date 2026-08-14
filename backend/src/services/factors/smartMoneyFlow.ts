@@ -124,6 +124,13 @@ export class SmartMoneyFlowFactor implements PredictiveFactor {
         accDistScore = 50 + (smartCallRatio - 0.5) * 20; // Slight tilt based on call ratio
       }
 
+      // Institutional-flow bias tilts the pullback zone slightly closer to price
+      // and the target slightly further; retail-fade bias does the reverse.
+      // Previously these two identifiers were referenced but never declared,
+      // causing every call to throw ReferenceError (silently caught below).
+      const buyTarget = bias === 'bullish' ? currentPrice * 0.99 : currentPrice * 0.985;
+      const sellTarget = bias === 'bullish' ? currentPrice * 1.025 : currentPrice * 1.01;
+
       return {
         factorName: this.name,
         buyTarget,
@@ -135,6 +142,9 @@ export class SmartMoneyFlowFactor implements PredictiveFactor {
         reasoning,
       };
     } catch (err) {
+      // Surface unexpected failures instead of swallowing them; a silent catch
+      // hid the undeclared-target bug for months.
+      console.warn(`[SmartMoneyFlow] evaluation failed for ${input.symbol}:`, err);
       return null;
     }
   }

@@ -59,8 +59,11 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
             <span className={styles.label}>Reward:Risk</span>
             <span className={styles.value}>{plan.rewardRisk}R</span>
           </div>
-          <div className={styles.card}>
-            <span className={styles.label}>Conviction</span>
+          <div
+            className={styles.card}
+            title="Composite evidence strength (bucket-weighted netBias with agreement penalty). This is NOT a win probability. See the Learning section for calibrated probability once sample size ≥ 5."
+          >
+            <span className={styles.label}>Signal Strength</span>
             <span className={styles.value}>{plan.confidence}%</span>
           </div>
         </div>

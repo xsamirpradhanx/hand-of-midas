@@ -1,7 +1,10 @@
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class EstimatedCvdFactor implements PredictiveFactor {
-  name = 'Cumulative Volume Delta (CVD)';
+  // Renamed from 'Cumulative Volume Delta (CVD)' — this is a close-position
+  // bar-range heuristic, not true bid/ask CVD. Real CVD requires trade-direction
+  // data (tick-level or L2), which the daily OHLCV pipeline does not provide.
+  name = 'Estimated CVD (Bar-Position Delta)';
   bucket = 'ORDER_FLOW' as const;
   correlationGroup = 'CVD';
 
@@ -40,16 +43,17 @@ export class EstimatedCvdFactor implements PredictiveFactor {
     let reasoning = '';
 
     if (priceChange < 0 && cvdChange > 0) {
-      // Bullish Absorption: Price falling, but aggressive buyers absorbing liquidity
+      // Bullish divergence: price fell but bars closed nearer their highs, implying
+      // net buying pressure inside each bar range. Estimate only — not order-flow.
       bias = 'bullish';
-      reasoning = `Bullish Order Flow Absorption detected: Price declined by $${Math.abs(priceChange).toFixed(2)}, but CVD increased by +${Math.round(cvdChange).toLocaleString()} shares (Institutional Aggressive Buying).`;
+      reasoning = `Bullish bar-position divergence: price fell $${Math.abs(priceChange).toFixed(2)} over 10 bars, but close-in-range implies net buying of ~+${Math.round(cvdChange).toLocaleString()} shares. Estimated from bar geometry, not true order flow.`;
     } else if (priceChange > 0 && cvdChange < 0) {
-      // Bearish Absorption: Price rising, but aggressive sellers absorbing liquidity
+      // Bearish divergence: price rose but bars closed nearer their lows.
       bias = 'bearish';
-      reasoning = `Bearish Order Flow Absorption detected: Price rose by +$${priceChange.toFixed(2)}, but CVD declined by -${Math.abs(Math.round(cvdChange)).toLocaleString()} shares (Institutional Distribution).`;
+      reasoning = `Bearish bar-position divergence: price rose $${priceChange.toFixed(2)} over 10 bars, but close-in-range implies net selling of ~-${Math.abs(Math.round(cvdChange)).toLocaleString()} shares. Estimated from bar geometry, not true order flow.`;
     } else {
       bias = cvdChange >= 0 ? 'bullish' : 'bearish';
-      reasoning = `10-Bar CVD net flow: ${cvdChange >= 0 ? '+' : ''}${Math.round(cvdChange).toLocaleString()} shares. Order flow aligned with price direction.`;
+      reasoning = `10-bar bar-position delta: ${cvdChange >= 0 ? '+' : ''}${Math.round(cvdChange).toLocaleString()} shares (estimated). Direction aligns with price.`;
     }
 
     const buyTarget = bias === 'bullish' ? currentPrice * 0.99 : currentPrice * 0.98;

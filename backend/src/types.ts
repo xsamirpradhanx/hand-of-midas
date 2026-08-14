@@ -109,23 +109,37 @@ export interface EvaluationItem extends DynamoDBBaseItem {
   /** A final result is recorded once and is the only kind used for learning. */
   readonly isFinal?: boolean;
   readonly horizonBars?: number;
-  readonly outcome?: 'TARGET' | 'STOP' | 'TIMEOUT';
+  /**
+   * AMBIGUOUS: same-bar high>=target AND low<=stop. Intrabar order is unknowable
+   * from daily OHLC, so this outcome is excluded from wins/losses accumulation
+   * (tracked separately as `ambiguous` in LearningStats).
+   */
+  readonly outcome?: 'TARGET' | 'STOP' | 'TIMEOUT' | 'AMBIGUOUS';
 }
 
 /** Aggregated historical accuracy for all factors. */
 export interface FactorStatsItem extends DynamoDBBaseItem {
-  readonly stats: Record<string, { wins: number; losses: number; score: number; tries: number }>;
+  readonly stats: Record<string, {
+    wins: number;
+    losses: number;
+    score: number;
+    tries: number;
+    /** Same-bar target+stop hits; unknowable outcome, excluded from wins/losses. */
+    ambiguous?: number;
+  }>;
   readonly updatedAt: string;
 }
 
 /** Aggregated historical accuracy for specific setups and market regimes. */
 export interface SetupStatsItem extends DynamoDBBaseItem {
-  readonly stats: Record<string, { 
-    wins: number; 
-    losses: number; 
+  readonly stats: Record<string, {
+    wins: number;
+    losses: number;
     sumExpectedR: number;
     sumActualR: number;
-    tries: number; 
+    tries: number;
+    /** Same-bar target+stop hits; excluded from wins/losses and sumActualR. */
+    ambiguous?: number;
   }>;
   readonly updatedAt: string;
 }
@@ -134,11 +148,16 @@ export interface SetupStatsItem extends DynamoDBBaseItem {
  * Outcome statistics are deliberately simple and auditable. `tries` is kept
  * for backwards compatibility; calibration uses wins + losses only so open
  * positions can never inflate an apparent win rate.
+ *
+ * `ambiguous` counts same-bar target+stop outcomes (see EvaluationItem.outcome
+ * AMBIGUOUS). Kept optional for backwards compatibility with existing
+ * DynamoDB records that predate this field.
  */
 export interface LearningStats {
   wins: number;
   losses: number;
   tries: number;
+  ambiguous?: number;
 }
 
 
