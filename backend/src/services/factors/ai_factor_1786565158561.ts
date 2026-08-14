@@ -14,6 +14,7 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  */
 export class VolumeInformationEntropyImbalanceFactor implements PredictiveFactor {
   public readonly name = 'Volume Information Entropy Imbalance';
+  bucket = 'MOMENTUM' as const;
   private readonly lookback = 30;
   private readonly binCount = 10;
 

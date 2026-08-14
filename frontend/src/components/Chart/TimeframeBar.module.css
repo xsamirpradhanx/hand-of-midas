@@ -5,6 +5,10 @@
   background: var(--surface-main);
   border-bottom: 1px solid var(--border-color);
   align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .btn {

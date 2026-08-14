@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import { scanItems, putItem, getItem } from '../services/dynamodb.js';
 import { getTimeSeriesYahoo } from '../services/yahoo.js';
-import type { PredictionItem, EvaluationItem, FactorStatsItem } from '../types.js';
+import type { PredictionItem, EvaluationItem, FactorStatsItem, SetupStatsItem } from '../types.js';
+import { learningKey } from '../services/quant/learningEngine.js';
+
+const EVALUATION_HORIZON_BARS = 5;
 
 async function evaluateQuant() {
   console.log('[Quant Evaluation] 📊 Starting prediction evaluation cycle...');
@@ -32,6 +35,17 @@ async function evaluateQuant() {
     }
     const factorStats = factorStatsItem.stats;
 
+    let setupStatsItem = await getItem<SetupStatsItem>('SYSTEM', 'SETUP_STATS');
+    if (!setupStatsItem) {
+      setupStatsItem = {
+        pk: 'SYSTEM',
+        sk: 'SETUP_STATS',
+        stats: {},
+        updatedAt: new Date().toISOString()
+      };
+    }
+    const setupStats = setupStatsItem.stats;
+
     console.log(`[Quant Evaluation] 📝 Found ${predictions.length} prediction(s) to process.`);
 
     const now = new Date();
@@ -59,7 +73,9 @@ async function evaluateQuant() {
       }
 
       const entryPrice = pred.currentPrice;
-      const target = thesis.tradePlan.stretchTarget;
+      // Prefer the target snapshot written with the prediction. Plan defaults
+      // may evolve later, but a historical grade must use the original terms.
+      const target = pred.target ?? thesis.tradePlan.stretchTarget;
       const stop = thesis.tradePlan.stop;
 
       if (!target || !stop) {
@@ -67,15 +83,25 @@ async function evaluateQuant() {
         continue;
       }
 
+      const evaluationPk = `EVALUATION#${pred.symbol}`;
+      const evaluationSk = `TIMESTAMP#${pred.createdAt}`;
+      const existingEvaluation = await getItem<EvaluationItem>(evaluationPk, evaluationSk);
+      // Learning is append-only: a finalized observation must never be counted twice.
+      if (existingEvaluation?.isFinal) {
+        console.log(`[Quant Evaluation] ✓ Already finalized; skipping.`);
+        continue;
+      }
+
       console.log(`[Quant Evaluation] 🎯 Plan: ${bias} @ ${entryPrice.toFixed(2)} | Target: ${target.toFixed(2)} | Stop: ${stop.toFixed(2)}`);
 
       // 3. Fetch recent price action
-      const bars = await getTimeSeriesYahoo(pred.symbol, '1d', 10);
+      const historyNeeded = Math.min(252, Math.max(20, Math.ceil(daysOld) + EVALUATION_HORIZON_BARS + 5));
+      const bars = await getTimeSeriesYahoo(pred.symbol, '1d', historyNeeded);
       
       const futureBars = bars.filter(b => new Date(b.datetime).getTime() > predDate.getTime());
 
-      if (futureBars.length === 0) {
-        console.log(`[Quant Evaluation] ⏳ Not enough future data yet for ${pred.symbol}. Need at least 1 closing bar after prediction.`);
+      if (futureBars.length < EVALUATION_HORIZON_BARS) {
+        console.log(`[Quant Evaluation] ⏳ Waiting for ${EVALUATION_HORIZON_BARS} completed bars after prediction.`);
         continue;
       }
 
@@ -83,7 +109,7 @@ async function evaluateQuant() {
       let hitStop = false;
       let maxExcursion = 0; 
 
-      for (const bar of futureBars) {
+      for (const bar of futureBars.slice(0, EVALUATION_HORIZON_BARS)) {
         if (bias === 'LONG') {
           if (bar.low <= stop) hitStop = true;
           if (bar.high >= target) hitTarget = true;
@@ -105,21 +131,27 @@ async function evaluateQuant() {
       }
 
       let score = 0;
+      let outcome: EvaluationItem['outcome'] = 'TIMEOUT';
       if (hitTarget && !hitStop) {
         score = 1.0;
+        outcome = 'TARGET';
         console.log(`[Quant Evaluation] 🟢 WIN! Hit target of ${target.toFixed(2)}.`);
-      } else if (hitStop) {
+      } else if (hitStop || (hitTarget && hitStop)) {
         score = 0.0;
+        outcome = 'STOP';
         console.log(`[Quant Evaluation] 🔴 LOSS! Hit stop loss of ${stop.toFixed(2)}.`);
       } else {
-        score = 0.5;
-        console.log(`[Quant Evaluation] 🟡 OPEN. Has not hit target or stop yet. Max favorable excursion: ${(maxExcursion * 100).toFixed(2)}%`);
+        // A plan that has not reached its target within the declared horizon is
+        // a failed prediction for calibration. This is explicit—not an "open"
+        // trade that can be accidentally counted again next run.
+        score = 0.0;
+        console.log(`[Quant Evaluation] ⚪ TIMEOUT after ${EVALUATION_HORIZON_BARS} bars. Max favorable excursion: ${(maxExcursion * 100).toFixed(2)}%`);
       }
 
       // 4. Save evaluation back to DynamoDB
       const evalItem: EvaluationItem = {
-        pk: `EVALUATION#${pred.symbol}`,
-        sk: `TIMESTAMP#${pred.createdAt}`,
+        pk: evaluationPk,
+        sk: evaluationSk,
         symbol: pred.symbol,
         predictionTimestamp: pred.createdAt,
         evaluatedAt,
@@ -127,7 +159,10 @@ async function evaluateQuant() {
         score,
         hitStop,
         hitTarget,
-        maxExcursion
+        maxExcursion,
+        isFinal: true,
+        horizonBars: EVALUATION_HORIZON_BARS,
+        outcome,
       };
 
       await putItem(evalItem);
@@ -139,17 +174,45 @@ async function evaluateQuant() {
           if (!factorStats[fname]) {
             factorStats[fname] = { tries: 0, wins: 0, losses: 0, score: 0 };
           }
-          factorStats[fname].tries += 1;
+          factorStats[fname].tries = factorStats[fname].wins + factorStats[fname].losses + 1;
           factorStats[fname].score += score;
           if (score === 1.0) factorStats[fname].wins += 1;
           if (score === 0.0) factorStats[fname].losses += 1;
         }
       }
+
+      // 5. P2: Record setup-specific empirical stats
+      const setupKey = pred.marketRegime && pred.setupType
+        ? `${pred.marketRegime}|${pred.setupType}`
+        : undefined;
+      const keys = [learningKey(bias), ...(setupKey ? [setupKey] : [])];
+      for (const key of keys) {
+          if (!setupStats[key]) {
+            setupStats[key] = { tries: 0, wins: 0, losses: 0, sumExpectedR: 0, sumActualR: 0 };
+          }
+          const stat = setupStats[key];
+
+          stat.tries = stat.wins + stat.losses + 1;
+
+        if (thesis.tradePlan.rewardRisk) {
+          stat.sumExpectedR += thesis.tradePlan.rewardRisk;
+
+          if (score === 1.0) {
+            stat.wins += 1;
+            stat.sumActualR += thesis.tradePlan.rewardRisk;
+          } else {
+            stat.losses += 1;
+            stat.sumActualR -= 1.0;
+          }
+        }
+      }
     }
 
-    factorStatsItem.updatedAt = new Date().toISOString();
-    await putItem(factorStatsItem);
+    await putItem({ ...factorStatsItem, updatedAt: new Date().toISOString() });
     console.log('[Quant Evaluation] 📈 Updated FACTOR_STATS with new performance data.');
+
+    await putItem({ ...setupStatsItem, updatedAt: new Date().toISOString() });
+    console.log('[Quant Evaluation] 📈 Updated SETUP_STATS with new empirical expectancy data.');
 
     console.log('\n[Quant Evaluation] ✨ Evaluation cycle complete.');
 

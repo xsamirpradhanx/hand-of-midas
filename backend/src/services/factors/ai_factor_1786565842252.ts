@@ -10,7 +10,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  * identify highly structured institutional accumulation or distribution regimes before breakout propagation.
  */
 export class VolumeSynchronizedEntropyDivergenceFactor implements PredictiveFactor {
-  name = 'Volume-Synchronized Entropy Divergence Factor';
+  name = 'Volume Synchronized Entropy Divergence';
+  bucket = 'MOMENTUM' as const;
 
   private readonly fastWindow: number = 10;
   private readonly slowWindow: number = 30;

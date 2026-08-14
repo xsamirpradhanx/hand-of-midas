@@ -5,7 +5,10 @@ import type { FactorResult, FactorInput, PredictiveFactor } from './factors/type
 import { getFactors } from './factors/factorRegistry.js';
 import { CompositeScoreAgent } from './compositeScore.js';
 import { putItem, getItem } from './dynamodb.js';
-import type { PredictionItem, FactorStatsItem } from '../types.js';
+import type { FactorStatsItem, SetupStatsItem } from '../types.js';
+import { calibratePrediction, learningKey, type LearningAssessment } from './quant/learningEngine.js';
+import { generateGroundedTradeNarrative } from './tradeNarrative.js';
+import { buildSymbolProfile, applySymbolProfile } from './quant/symbolProfile.js';
 
 export interface PredictiveZone {
   type: 'buy' | 'sell';
@@ -21,8 +24,25 @@ export interface PredictiveEngineResult {
   zones: PredictiveZone[];
   aiThesis: {
     summary: string;
+    aiSynthesis?: string;
     bias: 'bullish' | 'bearish' | 'neutral';
     overallConviction: number;
+    /** Conviction derived from independent evidence (not synthetic). 0–1. */
+    modelConviction: number;
+    /** Always null until empirical data available. */
+    historicalWinProbability: null;
+    learning: LearningAssessment;
+    priceRationale: {
+      targetPrice: number;
+      targetType: 'support' | 'resistance' | 'none';
+      targetSources: string[];
+      invalidationPrice: number;
+      explanation: string;
+    };
+    aiNarrative: string;
+    /** Agreement between evidence buckets. */
+    signalAgreement: number;
+    agreementLevel: 'HIGH' | 'MODERATE' | 'LOW';
     factors: FactorResult[];
     tradePlan?: {
       bias: 'LONG' | 'SHORT' | 'NO TRADE';
@@ -51,7 +71,7 @@ const aiAgent = new CompositeScoreAgent();
 // (12 original + 4 new institutional alpha factors from the quant audit)
 const registeredFactors: PredictiveFactor[] = getFactors();
 
-export async function getPredictiveZones(symbol: string): Promise<PredictiveEngineResult> {
+export async function getPredictiveZones(symbol: string, activeExpiry?: string): Promise<PredictiveEngineResult> {
   const sym = symbol.toUpperCase();
 
   // 1. Fetch OHLCV (6 months / 126 trading days)
@@ -84,6 +104,7 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
     currentPrice,
     bars,
     optionsChain,
+    activeExpiry,
     news,
   };
 
@@ -95,20 +116,33 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
     }))
   );
 
-  const activeFactors = factorEvaluations.filter((res): res is FactorResult => res !== null);
+  let activeFactors = factorEvaluations.filter((res): res is FactorResult => res !== null);
+
+  try {
+    const profile = await buildSymbolProfile(sym, bars, news);
+    activeFactors = applySymbolProfile(activeFactors, profile);
+  } catch (err) {
+    console.warn(`[PredictiveEngine] SymbolProfile failed for ${sym}:`, err);
+  }
 
   // 5. Fetch Factor Stats
   let factorStats: Record<string, { wins: number; losses: number; score: number; tries: number }> | undefined;
+  let setupStats: SetupStatsItem['stats'] | undefined;
   try {
     const factorStatsItem = await getItem<FactorStatsItem>('SYSTEM', 'FACTOR_STATS');
     if (factorStatsItem) factorStats = factorStatsItem.stats;
   } catch (err) {
     console.warn(`[PredictiveEngine] Could not fetch FACTOR_STATS:`, err);
   }
+  try {
+    setupStats = (await getItem<SetupStatsItem>('SYSTEM', 'SETUP_STATS'))?.stats;
+  } catch (err) {
+    console.warn(`[PredictiveEngine] Could not fetch learning stats: ${String(err)}`);
+  }
 
   // 6. Run AI Synthesis Agent over all factor outputs
   // Pass `bars` so the agent can compute ATR-adaptive zone spread
-  const synthesis = aiAgent.synthesize(sym, currentPrice, activeFactors, bars, factorStats);
+  const synthesis = await aiAgent.synthesize(sym, currentPrice, activeFactors, bars, factorStats, news);
 
   const zones: PredictiveZone[] = [
     {
@@ -128,34 +162,56 @@ export async function getPredictiveZones(symbol: string): Promise<PredictiveEngi
     },
   ];
 
+  const plan = synthesis.tradePlan;
+  const learning = calibratePrediction(
+    synthesis.modelConviction,
+    plan ? setupStats?.[learningKey(plan.bias)] : undefined,
+  );
+  const targetPrice = !plan || plan.bias === 'NO TRADE'
+    ? currentPrice
+    : plan.bias === 'LONG' ? plan.majorResistance : plan.stretchTarget;
+  const targetSources = !plan || plan.bias === 'NO TRADE'
+    ? []
+    : plan.bias === 'LONG' ? synthesis.supplyZone.confluence : synthesis.demandZone.confluence;
+  const priceRationale = {
+    targetPrice,
+    targetType: (!plan || plan.bias === 'NO TRADE' ? 'none' : plan.bias === 'LONG' ? 'resistance' : 'support') as 'support' | 'resistance' | 'none',
+    targetSources,
+    invalidationPrice: plan?.stop ?? currentPrice,
+    explanation: !plan || plan.bias === 'NO TRADE'
+      ? 'No executable setup: evidence, location, or reward-to-risk did not clear the trade filter.'
+      : `Target $${targetPrice} is the nearest ${plan.bias === 'LONG' ? 'supply/resistance' : 'demand/support'} cluster supported by ${targetSources.join(', ') || 'price structure'}. Invalidation is $${plan.stop}; a break there invalidates the setup.`,
+  };
+  let aiNarrative = 'No executable setup: evidence, location, or reward-to-risk did not clear the trade filter.';
+  if (plan?.bias && plan.bias !== 'NO TRADE') {
+    aiNarrative = await generateGroundedTradeNarrative({
+      symbol: sym, currentPrice, bias: plan.bias, target: targetPrice,
+      stop: plan.stop ?? currentPrice, trigger: plan.trigger ?? currentPrice, factors: activeFactors,
+    });
+  }
+
   const result: PredictiveEngineResult = {
     symbol: sym,
     currentPrice,
     zones,
     aiThesis: {
       summary: synthesis.summary,
+      aiSynthesis: synthesis.aiSynthesis,
       bias: synthesis.bias,
       overallConviction: synthesis.overallConviction,
+      modelConviction: synthesis.modelConviction,
+      historicalWinProbability: null,
+      learning,
+      priceRationale,
+      aiNarrative,
+      signalAgreement: synthesis.signalAgreement,
+      agreementLevel: synthesis.agreementLevel,
       factors: activeFactors,
       tradePlan: synthesis.tradePlan,
     },
   };
 
-  try {
-    const timestamp = new Date().toISOString();
-    const predictionItem: PredictionItem = {
-      pk: `PREDICTION#${sym}`,
-      sk: `TIMESTAMP#${timestamp}`,
-      symbol: sym,
-      currentPrice,
-      zones,
-      aiThesis: result.aiThesis,
-      createdAt: timestamp,
-    };
-    await putItem(predictionItem);
-  } catch (err) {
-    console.error(`[PredictiveEngine] Failed to persist prediction for ${sym}:`, err);
-  }
+
 
   return result;
 }

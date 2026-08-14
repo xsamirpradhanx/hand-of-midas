@@ -18,6 +18,17 @@ technical indicators, built on serverless AWS infrastructure for near-zero idle 
 - **Persistent Configuration** — Watchlists and chart indicator configs saved per user
 - **Authentication** — Secure sign-up/sign-in via Amazon Cognito
 - **Dark Theme** — Premium financial app aesthetic
+- **Calibrated Quant Learning** — Finalized LONG and SHORT outcomes are recorded once, then used to Bayesian-calibrate later trade scenarios without treating a score as a guaranteed win rate.
+
+## 🧠 Quant learning loop
+
+The predictive engine keeps price generation deterministic and auditable: factors identify independent evidence, structural zones define the trigger/target/stop, and an AI evidence reviewer explains those supplied values without changing them. After the market has supplied five completed daily bars, run the evaluator to finalize eligible predictions and update directional calibration:
+
+```bash
+npm run evaluate-quant --workspace=backend
+```
+
+The UI labels the evidence sample as insufficient, early, or established. This is a decision-support workflow only: it does not place orders, and its calibrated percentage is a scenario likelihood rather than a promise of performance.
 
 ## 🏗️ Architecture
 

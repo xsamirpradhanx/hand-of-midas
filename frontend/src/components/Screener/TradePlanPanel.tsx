@@ -71,10 +71,10 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
           <h4>Trade Parameters</h4>
           <div className={styles.levelRow}>
             <span className={styles.levelLabel}>Expected Move</span>
-            <span className={styles.levelValueTarget}>+${plan.expectedMove}</span>
+            <span className={styles.levelValueTarget}>{(plan.bias === 'SHORT' || thesis.bias === 'bearish') ? '-' : '+'}${Math.abs(plan.expectedMove)}</span>
           </div>
           <div className={styles.levelRow}>
-            <span className={styles.levelLabel}>T1 (Major Resistance)</span>
+            <span className={styles.levelLabel}>T1 (Major {(plan.bias === 'SHORT' || thesis.bias === 'bearish') ? 'Support' : 'Resistance'})</span>
             <span className={styles.levelValueTarget}>${plan.majorResistance}</span>
           </div>
           <div className={styles.levelRow}>
@@ -145,6 +145,50 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
               <p>{plan.invalidation}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {thesis.priceRationale && (
+        <div className={styles.triggersSection}>
+          <h4>Price Thesis</h4>
+          <div className={styles.triggerItem}>
+            <span className={styles.triggerIcon}>🎯</span>
+            <div className={styles.triggerContent}>
+              <span className={styles.triggerTitle}>Why this price?</span>
+              <p>{thesis.priceRationale.explanation}</p>
+            </div>
+          </div>
+          {thesis.priceRationale.targetSources?.length > 0 && (
+            <div className={styles.triggerItem}>
+              <span className={styles.triggerIcon}>🔎</span>
+              <div className={styles.triggerContent}>
+                <span className={styles.triggerTitle}>Supporting evidence</span>
+                <p>{thesis.priceRationale.targetSources.join(', ')}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {thesis.learning && (
+        <div className={styles.triggersSection}>
+          <h4>Self-Learning Calibration</h4>
+          <div className={styles.triggerItem}>
+            <span className={styles.triggerIcon}>🧠</span>
+            <div className={styles.triggerContent}>
+              <span className={styles.triggerTitle}>
+                Calibrated scenario likelihood: {(thesis.learning.calibratedProbability * 100).toFixed(0)}% ({thesis.learning.reliability.toLowerCase()} evidence)
+              </span>
+              <p>{thesis.learning.explanation}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {thesis.aiNarrative && (
+        <div className={styles.synthesisSection}>
+          <h4>AI Evidence Review</h4>
+          <p className={styles.summaryText}>{thesis.aiNarrative}</p>
         </div>
       )}
 

@@ -17,6 +17,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  */
 export class IvRvRatioFactor implements PredictiveFactor {
   name = 'IV/RV Ratio (Volatility Premium)';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'IV_STRUCTURE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, optionsChain, currentPrice } = input;
@@ -113,6 +115,8 @@ export class IvRvRatioFactor implements PredictiveFactor {
       sellTarget,
       bias,
       weight: 0.20,
+      bucket: 'OPTIONS',
+      correlationGroup: 'IV_STRUCTURE',
       reasoning,
     };
   }

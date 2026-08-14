@@ -5,6 +5,8 @@ import { getDTE, getTimeToExpiryYears } from '../tradingCalendar.js';
 
 export class DealerHedgingFactor implements PredictiveFactor {
   name = 'Dealer Microstructure (GEX & Greeks)';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'GEX_COMPLEX';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;
@@ -89,6 +91,8 @@ export class DealerHedgingFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.25,
+        bucket: 'OPTIONS',
+        correlationGroup: 'GEX_COMPLEX',
         reasoning: `Multi-expiry Gamma Flip at $${gammaFlipStrike.toFixed(2)} (${isLongGamma ? 'Long Gamma / Mean Reverting' : 'Short Gamma / High Volatility'}). Net Vanna Exposure: ${vannaDirection} (${netVanna > 0 ? '+' : ''}${netVanna.toFixed(0)} contracts) — dealers will ${netVanna > 0 ? 'BUY' : 'SELL'} spot as IV rises.`,
       };
     } catch (err) {

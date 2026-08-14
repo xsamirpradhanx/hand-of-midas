@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class AnchoredVwapFactor implements PredictiveFactor {
   name = 'Anchored VWAP (±2σ Bands)';
+  bucket = 'PRICE_STRUCTURE' as const;
+  correlationGroup = 'VWAP';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -45,6 +47,8 @@ export class AnchoredVwapFactor implements PredictiveFactor {
       sellTarget,
       bias,
       weight: 0.30,
+      bucket: 'PRICE_STRUCTURE',
+      correlationGroup: 'VWAP',
       reasoning: `Month-Anchored VWAP is $${vwap.toFixed(2)} (±2σ Bands: Lower $${buyTarget.toFixed(2)}, Upper $${sellTarget.toFixed(2)}). Price is currently ${bias.toUpperCase()} relative to VWAP.`,
     };
   }

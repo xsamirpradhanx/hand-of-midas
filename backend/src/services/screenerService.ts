@@ -1,5 +1,9 @@
 import { yf } from './yahoo.js';
 import { getPredictiveZones } from './predictiveEngine.js';
+import { putItem, getItem } from './dynamodb.js';
+import type { PredictionItem, SetupStatsItem } from '../types.js';
+import { evaluateEventRisk } from './quant/eventRiskEngine.js';
+import { evaluateTrigger, triggerStateLabel } from './quant/triggerEngine.js';
 
 export interface ScreenerResult {
   symbol: string;
@@ -42,7 +46,21 @@ export interface ScreenerResult {
   tradeScore: number;
   opportunityScore: number;
   location: string;
-  sentimentScore?: number; // optional, placeholder for future logic
+  sentimentScore?: number;
+  
+  // Phase 1 Statistical Metrics
+  eventRisk: 'HIGH' | 'MEDIUM' | 'LOW';
+  eventRiskReasons?: string[];
+  marketRegime: string;
+  triggerStatus: string;
+  expectedR: number;
+  adjustedEV: number;
+
+  modelPT1: number;
+  modelPStop: number;
+  modelPTimeout: number;
+  modelSampleSize: number;
+
   tradePlan?: {
     bias: 'LONG' | 'SHORT' | 'NO TRADE';
     archetype: string;
@@ -82,6 +100,7 @@ interface Candidate {
   yahooConsensus: number;
   floatTurnover?: number;
   volumeAcceleration?: number;
+  adv: number;
 }
 
 function averageDailyVolume(quote: Record<string, unknown>): number {
@@ -147,8 +166,8 @@ function computeRSI14(closes: number[]): number | null {
   return Number((100 - 100 / (1 + rs)).toFixed(1));
 }
 
-function calculateIntradayMetrics(chart: any): { pmVwap: number | null, pmHigh: number | null, pmLow: number | null, volumeAcceleration: number } {
-  if (!chart?.quotes || chart.quotes.length === 0) return { pmVwap: null, pmHigh: null, pmLow: null, volumeAcceleration: 0 };
+function calculateIntradayMetrics(chart: any): { pmVwap: number | null, pmHigh: number | null, pmLow: number | null, volumeAcceleration: number, totalVolume: number } {
+  if (!chart?.quotes || chart.quotes.length === 0) return { pmVwap: null, pmHigh: null, pmLow: null, volumeAcceleration: 0, totalVolume: 0 };
   let high = -Infinity;
   let low = Infinity;
   let cumVolPrice = 0;
@@ -175,17 +194,28 @@ function calculateIntradayMetrics(chart: any): { pmVwap: number | null, pmHigh: 
     volumeAcceleration = sessionAvg > 0 ? recentAvg / sessionAvg : 0;
   }
 
-  return { pmVwap, pmHigh: high === -Infinity ? null : high, pmLow: low === Infinity ? null : low, volumeAcceleration };
+  return { pmVwap, pmHigh: high === -Infinity ? null : high, pmLow: low === Infinity ? null : low, volumeAcceleration, totalVolume: cumVol };
 }
 
-export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]> {
-  console.log(`[ScreenerService] Starting scan for mode="${mode}" via Yahoo Finance...`);
-
-  const universeCandidates = await buildActiveMarketUniverse();
-
+export async function runScreener(mode: ScreenerMode = 'open'): Promise<ScreenerResult[]> {
+  const universeCandidates = await buildActiveMarketUniverse(mode);
+  
   if (universeCandidates.length === 0) {
-    throw new Error('Could not determine dynamic universe from market data.');
+    console.log(`[ScreenerService] Universe empty for mode ${mode}.`);
+    return [];
   }
+
+  // P2: Fetch historical empirical stats for regime/setup grading
+  let setupStats: Record<string, { wins: number; tries: number }> = {};
+  try {
+    const item = await getItem<SetupStatsItem>('SYSTEM', 'SETUP_STATS');
+    if (item && item.stats) setupStats = item.stats;
+  } catch (err) {
+    console.warn('[ScreenerService] Could not fetch SETUP_STATS:', err);
+  }
+
+  // Get SPY context for relative strength & regime
+  const spyQuote = await yf.quote('SPY');
 
   const yahooSourcesMap = new Map<string, string[]>();
   const yahooConsensusMap = new Map<string, number>();
@@ -208,7 +238,6 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
     throw new Error('No quote data returned for the predefined universe.');
   }
 
-  const spyQuote = rawQuotes.find(q => q['symbol'] === 'SPY');
   let spyChange = 0;
   if (spyQuote) {
     const pPrice = (spyQuote['regularMarketPrice'] as number) ?? 0;
@@ -270,6 +299,7 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
       prevClose,
       yahooSources: yahooSourcesMap.get(symbol) ?? [],
       yahooConsensus: yahooConsensusMap.get(symbol) ?? 0,
+      adv,
     });
   }
 
@@ -293,8 +323,13 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
   }
    // Phase 1: Cheap first-pass ranking (volume leads price)
   candidates.sort((a, b) => {
-    const scoreA = Math.pow(a.intradayRvol, 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) + a.yahooConsensus * 0.3;
-    const scoreB = Math.pow(b.intradayRvol, 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) + b.yahooConsensus * 0.3;
+    // If volume data is missing (common in premarket), prioritize actual price change to ensure movers pass phase 1
+    const scoreA = Math.pow(Math.max(1, a.intradayRvol), 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) 
+                 + (a.volume === 0 ? Math.abs(a.changePercent) : 0) 
+                 + a.yahooConsensus * 0.3;
+    const scoreB = Math.pow(Math.max(1, b.intradayRvol), 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) 
+                 + (b.volume === 0 ? Math.abs(b.changePercent) : 0) 
+                 + b.yahooConsensus * 0.3;
     return scoreB - scoreA;
   });
 
@@ -321,6 +356,13 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
           pmHigh = metrics.pmHigh;
           pmLow = metrics.pmLow;
           volumeAcceleration = metrics.volumeAcceleration;
+          
+          if (c.volume === 0 && metrics.totalVolume > 0) {
+            c.volume = metrics.totalVolume;
+            c.dollarVolume = c.price * c.volume;
+            c.rvol = computeRvol(c.volume, c.adv);
+            c.intradayRvol = computeIntradayRvol(c.volume, c.adv);
+          }
         } catch {
           // ignore intraday chart failure
         }
@@ -412,7 +454,8 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
         candidate.pmHigh, 
         candidate.pmLow, 
         spyChange, 
-        candidate.volumeAcceleration
+        candidate.volumeAcceleration,
+        setupStats
       );
       
       const threshold = mode === 'premarket' ? 45 : 60;
@@ -422,7 +465,14 @@ export async function runScreener(mode: ScreenerMode): Promise<ScreenerResult[]>
     }
   }
 
-  results.sort((a, b) => b.midasScore - a.midasScore);
+  results.sort((a, b) => {
+    const getSortScore = (r: ScreenerResult) => {
+      if (r.eventRisk === 'HIGH') return -100;
+      if (r.expectedR < 0.25 || r.triggerStatus === 'NO TRADE') return -50;
+      return r.adjustedEV;
+    };
+    return getSortScore(b) - getSortScore(a);
+  });
   return results;
 }
 
@@ -436,9 +486,14 @@ async function evaluateSetup(
   pmHigh: number | null,
   pmLow: number | null,
   spyChange: number,
-  volumeAcceleration: number = 0
+  volumeAcceleration: number = 0,
+  setupStats: Record<string, { wins: number; tries: number }> = {}
 ): Promise<ScreenerResult | null> {
   const relativeStrength = Number((candidate.changePercent - spyChange).toFixed(2));
+  
+  let marketRegime = 'Neutral';
+  if (spyChange > 0.5) marketRegime = 'Risk-On';
+  else if (spyChange < -0.5) marketRegime = 'Risk-Off';
   
   let dataQuality: 'VERIFIED' | 'CHECK' | 'SUSPICIOUS' = 'VERIFIED';
   if (candidate.intradayRvol > 100 || Math.abs(candidate.changePercent) > 200) {
@@ -507,25 +562,31 @@ async function evaluateSetup(
   let setupType = 'Trend Continuation';
   let setupStage: 'EARLY' | 'DEVELOPING' | 'BREAKOUT' | 'EXTENDED' | 'BREAKDOWN' = 'DEVELOPING';
 
-  // Strict Breakout / Breakdown Classification
-  if (candidate.changePercent > 4) {
-    if (pmVwap && candidate.price > pmVwap && pmHigh && (pmHigh - candidate.price) / pmHigh < 0.02) {
-      setupType = 'Bullish Breakout';
-      setupStage = 'BREAKOUT';
-    } else if (pmVwap && candidate.price > pmVwap) {
-      setupType = 'Bullish Continuation';
-      setupStage = 'DEVELOPING';
+  // 2D Matrix Classification (P2)
+  if (pmVwap) {
+    if (relativeStrength >= 5) {
+      if (candidate.price < pmVwap) {
+        setupType = 'Dislocation';
+        setupStage = 'EARLY';
+      } else {
+        setupType = 'Pullback';
+        setupStage = 'DEVELOPING';
+      }
+    } else if (relativeStrength <= -5) {
+      if (candidate.price < pmVwap) {
+        setupType = 'Weakness';
+        setupStage = 'DEVELOPING';
+      } else {
+        setupType = 'Fade';
+        setupStage = 'EARLY';
+      }
     } else {
-      setupType = 'Weak Gap (Below VWAP)';
-      setupStage = 'EARLY';
-    }
-  } else if (candidate.changePercent < -4) {
-    if (pmVwap && candidate.price < pmVwap && pmLow && (candidate.price - pmLow) / pmLow < 0.02) {
-      setupType = 'Bearish Breakdown';
-      setupStage = 'BREAKDOWN';
-    } else {
-      setupType = 'Bearish Continuation';
-      setupStage = 'DEVELOPING';
+      // Neutral RS
+      if (candidate.price < pmVwap) {
+        setupType = 'Below VWAP';
+      } else {
+        setupType = 'Above VWAP';
+      }
     }
   } else {
     if (insider?.bias !== 'neutral') setupType = 'News Catalyst';
@@ -629,9 +690,94 @@ async function evaluateSetup(
 
   const opportunityScore = Math.max(0, Math.min(100, oppScore));
 
-  if (tp && tp.bias === 'NO TRADE') {
-    // Demote setup type for UI clarity
-    setupType = '⚠️ ' + setupType;
+  // ── EventRiskEngine (authoritative source for event risk) ─────────────────
+  const eventRiskResult = evaluateEventRisk({
+    symbol: candidate.ticker,
+    rvol: candidate.rvol,
+    intradayRvol: candidate.intradayRvol,
+    changePercent: candidate.changePercent,
+    volumeAcceleration,
+    newsCount: engineResult.aiThesis.factors.filter(f => f.bucket === 'CATALYST').length,
+    insiderFactor: insider ?? null,
+  });
+  const eventRisk = eventRiskResult.level === 'NONE' ? 'LOW' : eventRiskResult.level;
+  const eventRiskReasons = eventRiskResult.reasons;
+
+
+
+  let expectedR = 0;
+  let adjustedEV = 0;
+  let triggerStatus = 'WAIT FOR TRIGGER';
+  
+  let modelPT1 = 0;
+  let modelPStop = 0;
+  let modelPTimeout = 0;
+  let modelSampleSize = 0;
+
+  if (tp && tp.bias !== 'NO TRADE') {
+    // Use modelConviction from synthesis (not synthetic probability)
+    modelPT1 = engineResult.aiThesis.modelConviction ?? (engineConviction / 100);
+    
+    // P2: Override with Empirical Win Rate if sufficient historical data
+    const setupKey = `${marketRegime}|${setupType}`;
+    if (setupStats[setupKey] && setupStats[setupKey].tries >= 3) {
+      modelSampleSize = setupStats[setupKey].tries;
+      modelPT1 = setupStats[setupKey].wins / setupStats[setupKey].tries;
+    }
+
+    modelPTimeout = 0.05;
+    modelPStop = Math.max(0, 1 - modelPT1 - modelPTimeout);
+    
+    expectedR = (modelPT1 * tp.rewardRisk) - (modelPStop * 1.0);
+    adjustedEV = expectedR * (legacyConfidenceScore / 100);
+
+    // ── TriggerEngine (authoritative source for trigger state) ───────────────
+    const cvdFactor = engineResult.aiThesis.factors.find(f => f.correlationGroup === 'CVD');
+    const triggerState = evaluateTrigger({
+      currentPrice: candidate.price,
+      tradePlanBias: tp.bias,
+      triggerPrice: tp.trigger,
+      chasePrice: tp.chasePrice,
+      stop: tp.stop,
+      rewardRisk: tp.rewardRisk,
+      pmVwap,
+      volumeAcceleration,
+      cvdBias: cvdFactor?.bias,
+    });
+    triggerStatus = triggerStateLabel(triggerState);
+    
+    // Phase 1: Persist prediction to DynamoDB
+    try {
+      const timestamp = new Date().toISOString();
+      const vwapDistPct = pmVwap ? Number((((candidate.price - pmVwap) / pmVwap) * 100).toFixed(2)) : undefined;
+      
+      const predictionItem: PredictionItem = {
+        pk: `PREDICTION#${candidate.ticker}`,
+        sk: `TIMESTAMP#${timestamp}`,
+        symbol: candidate.ticker,
+        currentPrice: candidate.price,
+        zones: engineResult.zones,
+        aiThesis: engineResult.aiThesis,
+        createdAt: timestamp,
+        marketRegime,
+        setupType,
+        rvol: candidate.intradayRvol,
+        relativeStrength,
+        vwapDistancePct: vwapDistPct,
+        eventRisk: eventRisk as 'HIGH' | 'MEDIUM' | 'LOW',
+        entry: tp.trigger,
+        stop: tp.stop,
+        target: tp.bias === 'LONG' ? tp.majorResistance : tp.stretchTarget,
+      };
+      await putItem(predictionItem);
+    } catch (err) {
+      console.error(`[ScreenerService] Failed to persist prediction for ${candidate.ticker}:`, err);
+    }
+  } else {
+    triggerStatus = 'NO TRADE';
+    if (tp) {
+      setupType = '⚠️ ' + setupType;
+    }
   }
 
   return {
@@ -666,6 +812,16 @@ async function evaluateSetup(
     tradeScore,
     opportunityScore,
     location: locationStr,
+    eventRisk,
+    eventRiskReasons,
+    marketRegime,
+    triggerStatus,
+    expectedR,
+    adjustedEV,
+    modelPT1,
+    modelPStop,
+    modelPTimeout,
+    modelSampleSize,
     tradePlan: tp,
   };
 }

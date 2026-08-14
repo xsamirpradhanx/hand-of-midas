@@ -21,14 +21,20 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  */
 export class MaxPainDriftFactor implements PredictiveFactor {
   name = 'Max Pain Gravitational Drift';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'MAX_PAIN';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;
     if (!optionsChain?.contracts?.length || !optionsChain.expirations?.length) return null;
 
     try {
-      // Use nearest expiry only — max pain is an expiry-specific phenomenon
-      const nearExpiry = optionsChain.expirations[0]!;
+      // Use specified activeExpiry or default to nearest
+      let nearExpiry = input.activeExpiry;
+      if (!nearExpiry || !optionsChain.expirations.includes(nearExpiry)) {
+        nearExpiry = optionsChain.expirations[0]!;
+      }
+
       const nearContracts = optionsChain.contracts.filter(
         c => c.details?.expiration_date === nearExpiry,
       );
@@ -70,16 +76,16 @@ export class MaxPainDriftFactor implements PredictiveFactor {
       for (const K of allStrikes) {
         let totalPain = 0;
 
-        // Call pain: all calls with strike > K are ITM for holders at price K
+        // Call pain: calls are ITM when expiry price K > strike, payout is (K - strike)
         for (const [s, oi] of Object.entries(callOiByStrike)) {
           const strike = Number(s);
-          if (strike > K) totalPain += oi * (strike - K);
+          if (K > strike) totalPain += oi * (K - strike);
         }
 
-        // Put pain: all puts with strike < K are ITM for holders at price K
+        // Put pain: puts are ITM when expiry price K < strike, payout is (strike - K)
         for (const [s, oi] of Object.entries(putOiByStrike)) {
           const strike = Number(s);
-          if (strike < K) totalPain += oi * (K - strike);
+          if (strike > K) totalPain += oi * (strike - K);
         }
 
         if (totalPain < minPain) {
@@ -91,7 +97,15 @@ export class MaxPainDriftFactor implements PredictiveFactor {
       // Compute directional drift signal
       const driftPct = (maxPainStrike - currentPrice) / currentPrice;
       // Exponential decay: strength halves every 7 DTE (strongest inside 5 DTE)
-      const strength = Math.abs(driftPct) * Math.exp(-dte / 7);
+      let strength = Math.abs(driftPct) * Math.exp(-dte / 7);
+
+      let pinningRelevance = 'Strong';
+      if (Math.abs(driftPct) > 0.15) {
+        strength *= 0.5; // Discount gravitation force if excessively far
+        pinningRelevance = 'Low / Unconfirmed';
+      } else if (Math.abs(driftPct) > 0.05) {
+        pinningRelevance = 'Moderate';
+      }
 
       // Signal is only tradeable when DTE <= 14 (OpEx gravity is detectable)
       if (dte > 21 || strength < 0.001) {
@@ -100,12 +114,14 @@ export class MaxPainDriftFactor implements PredictiveFactor {
           buyTarget: currentPrice * 0.985,
           sellTarget: currentPrice * 1.015,
           bias: 'neutral',
-          weight: 0.10, // Low weight when far from expiry
+          weight: 0.10,
+          bucket: 'OPTIONS',
+          correlationGroup: 'GEX_COMPLEX',
           reasoning: `Max Pain at $${maxPainStrike.toFixed(2)} (${driftPct >= 0 ? '+' : ''}${(driftPct * 100).toFixed(1)}% from spot). DTE=${dte} is too far for OpEx gravity to dominate. Signal weight reduced.`,
         };
       }
 
-      const bias = driftPct > 0.005 ? 'bullish' : driftPct < -0.005 ? 'bearish' : 'neutral';
+      const bias = (driftPct > 0.005 && pinningRelevance !== 'Low / Unconfirmed') ? 'bullish' : (driftPct < -0.005 && pinningRelevance !== 'Low / Unconfirmed') ? 'bearish' : 'neutral';
       const buyTarget = Math.min(currentPrice * 0.99, maxPainStrike * 0.995);
       const sellTarget = Math.max(currentPrice * 1.01, maxPainStrike * 1.005);
 
@@ -115,7 +131,9 @@ export class MaxPainDriftFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.20,
-        reasoning: `Max Pain at $${maxPainStrike.toFixed(2)} (${driftPct >= 0 ? '+' : ''}${(driftPct * 100).toFixed(1)}% from spot, DTE=${dte}). Gravitational strength = ${(strength * 100).toFixed(2)}%. OpEx pinning pressure is ${driftPct > 0 ? 'UPWARD (bullish bias toward max pain)' : driftPct < 0 ? 'DOWNWARD (bearish bias toward max pain)' : 'NEUTRAL'}.`,
+        bucket: 'OPTIONS',
+        correlationGroup: 'GEX_COMPLEX',
+        reasoning: `Max Pain at $${maxPainStrike.toFixed(2)} (${driftPct >= 0 ? '+' : ''}${(driftPct * 100).toFixed(1)}% from spot, DTE=${dte}). Pinning relevance: ${pinningRelevance}. Gravitational strength = ${(strength * 100).toFixed(2)}%. OpEx pinning pressure is ${driftPct > 0 ? 'UPWARD (bullish bias toward max pain)' : driftPct < 0 ? 'DOWNWARD (bearish bias toward max pain)' : 'NEUTRAL'}.`,
       };
     } catch (err) {
       return null;

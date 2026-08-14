@@ -150,6 +150,7 @@ export class SchwabAuth {
         return newTokenInfo.access_token;
       } catch (e) {
         console.error('Failed to refresh token', e);
+        this.currentToken = null; // Clear from memory so it can read from disk next time
         return null;
       }
     }

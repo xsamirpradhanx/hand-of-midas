@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class OptionsSqueezeFactor implements PredictiveFactor {
   name = 'Options Squeeze Score (Gamma Compression)';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'OPTIONS_SQUEEZE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;
@@ -51,6 +53,8 @@ export class OptionsSqueezeFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.20,
+        bucket: 'OPTIONS',
+        correlationGroup: 'GEX_COMPLEX',
         reasoning: `Squeeze Potential Score is ${squeezeScore}% (Call/Put Ratio: ${callPutRatio.toFixed(2)}, Near-Money Call OI: ${nearMoneyCallOI.toLocaleString()} contracts). ${isHighSqueezeRisk ? 'HIGH GAMMA SQUEEZE RISK: Expanding Sell Zone upward.' : 'Normal options gamma compression.'}`,
       };
     } catch (err) {

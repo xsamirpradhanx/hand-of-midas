@@ -9,6 +9,8 @@
  */
 const MARKET_HOLIDAYS: string[] = [];
 
+export type MarketSession = 'PREMARKET' | 'REGULAR' | 'CLOSED';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -89,17 +91,28 @@ export function getDTE(expirationDateStr: string): number {
  * Market hours: 09:30-16:00 ET, Mon-Fri, excluding holidays.
  */
 export function isMarketOpen(): boolean {
-  const nowET = getETDate();
-  
-  if (!isTradingDay(nowET)) {
-    return false;
-  }
-  
-  const hours = nowET.getHours();
-  const minutes = nowET.getMinutes();
-  const time = hours * 100 + minutes;
-  
-  return time >= 930 && time < 1600;
+  return getMarketSession() === 'REGULAR';
+}
+
+/**
+ * Returns the US equity session in Eastern Time. Keep this server-side so an
+ * old browser tab cannot force premarket filters during regular hours.
+ */
+export function getMarketSession(date: Date = new Date()): MarketSession {
+  // Do not parse a formatted ET timestamp back into Date: Lambda normally runs
+  // in UTC, which would reinterpret 14:30 ET as 14:30 UTC. Read ET parts
+  // directly instead.
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? '';
+  const weekday = value('weekday');
+  if (weekday === 'Sat' || weekday === 'Sun') return 'CLOSED';
+
+  const minutes = Number(value('hour')) * 60 + Number(value('minute'));
+  if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) return 'PREMARKET';
+  if (minutes >= 9 * 60 + 30 && minutes < 16 * 60) return 'REGULAR';
+  return 'CLOSED';
 }
 
 /**

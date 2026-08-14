@@ -8,7 +8,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  * Determines microstructure regime shifts and trend persistence.
  */
 export class SpectralMicrostructureInertiaFactor implements PredictiveFactor {
-  name = 'Spectral Microstructure Inertia Factor';
+  name = 'Spectral Microstructure Inertia';
+  bucket = 'MOMENTUM' as const;
 
   private readonly memoryDepth = 20;
   private readonly dFraction = 0.45; // Optimal memory fraction for asset stationarity without loss of signal

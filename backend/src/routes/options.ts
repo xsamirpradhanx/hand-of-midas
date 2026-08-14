@@ -126,11 +126,23 @@ export async function getOptionsChain(
       const intrinsicValue = Math.max(0, type === 'call' ? underlyingPrice - strike : strike - underlyingPrice);
       const timeValue = Math.max(0, mid - intrinsicValue);
       
-      const iv = contract.implied_volatility || 0;
+      let iv = contract.implied_volatility || 0;
       let calculatedGreeks: Record<string, number> = (contract.greeks as any) || { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
       
-      if (calculatedGreeks.delta === 0 && iv > 0 && underlyingPrice > 0 && dte >= 0) {
-        const bs = blackScholes(underlyingPrice, strike, Math.max(1 / 365, getTimeToExpiryYears(expiry)), getRiskFreeRate(), iv, type);
+      // If we don't have valid greeks (e.g. Yahoo fallback), we need to compute them.
+      if (calculatedGreeks.delta === 0 && underlyingPrice > 0 && dte >= 0) {
+        const T = Math.max(1 / 365, getTimeToExpiryYears(expiry));
+        
+        // Yahoo's IV is often stale or 0. Solve for IV ourselves if we have a valid mid (which falls back to last price).
+        if (mid > 0) {
+          const solvedIv = impliedVolatility(mid, underlyingPrice, strike, T, getRiskFreeRate(), type);
+          if (solvedIv !== null && solvedIv > 0) {
+            iv = solvedIv;
+          }
+        }
+        
+        // Calculate Greeks with either the solved IV, provided IV, or 0 (which returns intrinsic delta)
+        const bs = blackScholes(underlyingPrice, strike, T, getRiskFreeRate(), iv, type);
         calculatedGreeks = { ...bs, rho: bs.rho };
       }
 

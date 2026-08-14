@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class VolumeProfileFactor implements PredictiveFactor {
   name = 'Volume Profile (VPVR)';
+  bucket = 'PRICE_STRUCTURE' as const;
+  correlationGroup = 'VOLUME_PROFILE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -79,7 +81,9 @@ export class VolumeProfileFactor implements PredictiveFactor {
       buyTarget,
       sellTarget,
       bias,
-      weight: 0.35, // Strong weight for institutional volume distribution
+      weight: 0.35,
+      bucket: 'PRICE_STRUCTURE',
+      correlationGroup: 'VOLUME_PROFILE',
       reasoning: `Value Area Low (VAL) at $${val.toFixed(2)}, Value Area High (VAH) at $${vah.toFixed(2)}, POC at $${poc.toFixed(2)}.`,
     };
   }

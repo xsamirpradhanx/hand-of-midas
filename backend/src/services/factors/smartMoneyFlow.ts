@@ -27,6 +27,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  */
 export class SmartMoneyFlowFactor implements PredictiveFactor {
   name = 'Smart Money Flow Ratio';
+  bucket = 'ORDER_FLOW' as const;
+  correlationGroup = 'CVD';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;
@@ -128,6 +130,8 @@ export class SmartMoneyFlowFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.20,
+        bucket: 'ORDER_FLOW',
+        correlationGroup: 'CVD',
         reasoning,
       };
     } catch (err) {

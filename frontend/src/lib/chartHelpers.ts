@@ -7,6 +7,7 @@ export function createMainChart(container: HTMLElement, width: number, height: n
     layout: {
       background: { type: ColorType.Solid, color: '#0a0e27' },
       textColor: '#e0e0e0',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif',
     },
     grid: {
       vertLines: { color: 'rgba(43, 43, 67, 0.5)' },

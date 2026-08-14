@@ -13,7 +13,8 @@ export async function getPredictionZonesRoute(
   }
 
   const forceRefresh = event.queryStringParameters?.refresh === 'true';
-  const cacheKey = `PREDICTIVE_ZONES#${symbol}`;
+  const expiry = event.queryStringParameters?.expiry;
+  const cacheKey = `PREDICTIVE_ZONES_V4#${symbol}${expiry ? '#' + expiry : ''}`;
   
   if (!forceRefresh) {
     const cached = await getCachedData<any>(cacheKey);
@@ -23,7 +24,7 @@ export async function getPredictionZonesRoute(
   }
 
   try {
-    const data = await getPredictiveZones(symbol);
+    const data = await getPredictiveZones(symbol, expiry);
     
     // Cache for 1 hour to prevent excessive API calls to Polygon (news & OHLCV)
     await setCachedData(cacheKey, data, 3600);

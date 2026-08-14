@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class EstimatedCvdFactor implements PredictiveFactor {
   name = 'Cumulative Volume Delta (CVD)';
+  bucket = 'ORDER_FLOW' as const;
+  correlationGroup = 'CVD';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -59,6 +61,8 @@ export class EstimatedCvdFactor implements PredictiveFactor {
       sellTarget,
       bias,
       weight: 0.25,
+      bucket: 'ORDER_FLOW',
+      correlationGroup: 'CVD',
       reasoning,
     };
   }

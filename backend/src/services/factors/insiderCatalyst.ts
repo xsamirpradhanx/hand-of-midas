@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class InsiderCatalystFactor implements PredictiveFactor {
   name = 'Catalyst Drift & News NLP';
+  bucket = 'CATALYST' as const;
+  correlationGroup = 'CATALYST';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { news, currentPrice } = input;
@@ -35,6 +37,8 @@ export class InsiderCatalystFactor implements PredictiveFactor {
       sellTarget,
       bias,
       weight: 0.15,
+      bucket: 'CATALYST',
+      correlationGroup: 'CATALYST',
       reasoning: `Scanned ${news.length} news articles. Keyword Sentiment Ratio: ${sentimentRatio >= 0 ? '+' : ''}${(sentimentRatio * 100).toFixed(0)}% (${bullCount} bullish / ${bearCount} bearish headlines).`,
     };
   }

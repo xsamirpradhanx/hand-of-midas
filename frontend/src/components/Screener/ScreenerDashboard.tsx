@@ -45,6 +45,19 @@ export interface ScreenerResult {
   opportunityScore: number;
   location: string;
   sentimentScore?: number;
+  
+  // Phase 1 Statistical Metrics
+  eventRisk: 'HIGH' | 'MEDIUM' | 'LOW';
+  marketRegime: string;
+  triggerStatus: string;
+  expectedR: number;
+  adjustedEV: number;
+
+  modelPT1: number;
+  modelPStop: number;
+  modelPTimeout: number;
+  modelSampleSize: number;
+
   tradePlan?: {
     bias: 'LONG' | 'SHORT' | 'NO TRADE';
     archetype: string;
@@ -93,15 +106,42 @@ function setupIcon(setup: string): string {
   return '⭐';
 }
 
+function isPremarketEastern(now: Date = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? '';
+  const weekday = value('weekday');
+  const minutes = Number(value('hour')) * 60 + Number(value('minute'));
+  return weekday !== 'Sat' && weekday !== 'Sun' && minutes >= 4 * 60 && minutes < 9 * 60 + 30;
+}
+
 
 
 const ScreenerDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [mode, setMode] = useState<ScreenerMode>(location.state?.mode || 'open');
+  const [marketClock, setMarketClock] = useState(() => new Date());
+  const premarketAvailable = isPremarketEastern(marketClock);
+  const [mode, setMode] = useState<ScreenerMode>(
+    location.state?.mode === 'premarket' && !premarketAvailable ? 'open' : (location.state?.mode || 'open'),
+  );
   const [results, setResults] = useState<ScreenerResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  // A tab can stay open through the bell. Refresh the session clock so a
+  // previously valid premarket selection cannot remain active all afternoon.
+  useEffect(() => {
+    const updateClock = () => setMarketClock(new Date());
+    const timer = window.setInterval(updateClock, 60_000);
+    window.addEventListener('focus', updateClock);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', updateClock);
+    };
+  }, []);
 
   const fetchScreenerData = useCallback(async (selectedMode: ScreenerMode) => {
     setLoading(true);
@@ -121,11 +161,20 @@ const ScreenerDashboard: React.FC = () => {
     fetchScreenerData(mode);
   }, [mode, fetchScreenerData]);
 
+  useEffect(() => {
+    if (mode === 'premarket' && !premarketAvailable) setMode('open');
+  }, [mode, premarketAvailable]);
+
   const handleRowClick = useCallback((symbol: string) => {
     window.localStorage.setItem('dashboard_selectedSymbol', JSON.stringify(symbol));
     window.dispatchEvent(new CustomEvent('TICKER_SELECTED', { detail: { symbol } }));
     navigate('/');
   }, [navigate]);
+
+  const toggleRow = useCallback((symbol: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedRow(prev => prev === symbol ? null : symbol);
+  }, []);
 
   return (
     <div className={styles.page}>
@@ -146,6 +195,8 @@ const ScreenerDashboard: React.FC = () => {
               aria-selected={mode === 'premarket'}
               className={`${styles.modeBtn} ${mode === 'premarket' ? styles.modeBtnActivePremarket : ''}`}
               onClick={() => setMode('premarket')}
+              disabled={!premarketAvailable}
+              title={premarketAvailable ? 'Run the 4:00–9:30 AM ET premarket scan' : 'Premarket scan is available only from 4:00–9:30 AM ET'}
             >
               Premarket (4A–9:30A)
             </button>
@@ -210,13 +261,13 @@ const ScreenerDashboard: React.FC = () => {
       {!loading && results.length > 0 && (
         <div className={styles.topTradesContainer}>
           <div className={styles.topTradesSection}>
-            <h2 className={styles.sectionTitle}>🏆 Today's Best Risk-Adjusted Setups</h2>
+            <h2 className={styles.sectionTitle}>🏆 A+ Setups (Active Triggers)</h2>
             <div className={styles.cardsGrid}>
-              {results.filter(r => r.tradePlan && r.tradePlan.bias !== 'NO TRADE').slice(0, 3).map((result, idx) => (
+              {results.filter(r => r.eventRisk !== 'HIGH' && r.adjustedEV >= 0.5 && r.triggerStatus === 'TRIGGER ACTIVE').slice(0, 3).map(result => (
                 <div key={result.symbol} className={styles.tradeCard} onClick={() => handleRowClick(result.symbol)}>
                   <div className={styles.cardHeader}>
-                    <span className={styles.cardRank}>{['🥇', '🥈', '🥉'][idx]} {result.symbol}</span>
-                    <span className={styles.cardScore}>{result.opportunityScore} Opportunity</span>
+                    <span className={styles.cardRank}>🏆 {result.symbol}</span>
+                    <span className={styles.cardScore}>+{result.adjustedEV.toFixed(2)}R EV</span>
                   </div>
                   <div className={styles.cardBody}>
                     <div>{result.setupType}</div>
@@ -226,13 +277,34 @@ const ScreenerDashboard: React.FC = () => {
                 </div>
               ))}
             </div>
+            {results.filter(r => r.eventRisk !== 'HIGH' && r.adjustedEV >= 0.5 && r.triggerStatus === 'TRIGGER ACTIVE').length === 0 && (
+              <p style={{ color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>No A+ setups currently active.</p>
+            )}
+          </div>
+          <div className={styles.topTradesSection}>
+            <h2 className={styles.sectionTitle}>🟢 A Setups (Wait For Trigger)</h2>
+            <div className={styles.cardsGrid}>
+              {results.filter(r => r.eventRisk !== 'HIGH' && r.adjustedEV >= 0.5 && r.triggerStatus !== 'TRIGGER ACTIVE').slice(0, 3).map(result => (
+                <div key={result.symbol} className={styles.tradeCard} onClick={() => handleRowClick(result.symbol)}>
+                  <div className={styles.cardHeader}>
+                    <span className={styles.cardRank}>🟢 {result.symbol}</span>
+                    <span className={styles.cardScore}>+{result.adjustedEV.toFixed(2)}R EV</span>
+                  </div>
+                  <div className={styles.cardBody}>
+                    <div>{result.setupType}</div>
+                    <div style={{ color: 'var(--accent-main)' }}>{result.triggerStatus}</div>
+                    <div style={{ color: 'var(--color-text-dim)' }}>{result.tradePlan?.entryZone}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           <div className={styles.avoidSection}>
-            <h2 className={styles.sectionTitle}>🚫 Avoid</h2>
+            <h2 className={styles.sectionTitle}>🟠 Event Risk</h2>
             <div className={styles.avoidList}>
-              {results.filter(r => r.tradePlan && r.tradePlan.bias === 'NO TRADE').slice(0, 3).map(result => (
+              {results.filter(r => r.eventRisk === 'HIGH').slice(0, 3).map(result => (
                 <div key={result.symbol} className={styles.avoidItem}>
-                  <strong>{result.symbol}</strong> — <span style={{ color: 'var(--color-text-dim)' }}>{result.tradePlan?.whyNow || 'No trade condition met.'}</span>
+                  <strong>{result.symbol}</strong> — <span style={{ color: 'var(--color-text-dim)' }}>Earnings / Major Catalyst risk.</span>
                 </div>
               ))}
             </div>
@@ -243,6 +315,7 @@ const ScreenerDashboard: React.FC = () => {
         <div className={styles.tableScroll}>
           <table className={styles.table}>
             <colgroup>
+              <col style={{ width: '40px' }} />
               <col className={styles.colSymbol} />
               <col className={styles.colSetup} />
               <col className={styles.colConfidence} />
@@ -257,28 +330,33 @@ const ScreenerDashboard: React.FC = () => {
             </colgroup>
             <thead className={styles.thead}>
               <tr>
+                <th className={styles.th}></th>
                 <th className={styles.th}>Ticker</th>
                 <th className={styles.th}>Setup</th>
-                <th className={styles.th}>Opportunity</th>
+                <th className={styles.th}>Model EV (R)</th>
                 <th className={styles.thRight}>Entry</th>
                 <th className={styles.thRight}>Stop</th>
                 <th className={styles.thRight}>T1</th>
                 <th className={styles.thRight}>R:R</th>
-                <th className={styles.th}>Location</th>
+                <th className={styles.th}>Trigger Status</th>
                 <th className={styles.thRight}>RVOL</th>
                 <th className={styles.thRight}>RS (vs SPY)</th>
-                <th className={styles.th}>Sentiment</th>
+                <th className={styles.th}>Event Risk</th>
               </tr>
             </thead>
             <tbody className={styles.tbody}>
               {results.map(result => {
                 const isNoTrade = result.tradePlan?.bias === 'NO TRADE';
+                const isExpanded = expandedRow === result.symbol;
                 return (
+                <React.Fragment key={result.symbol}>
                 <tr 
-                  key={result.symbol} 
                   onClick={() => handleRowClick(result.symbol)}
                   style={{ cursor: 'pointer', opacity: isNoTrade ? 0.4 : 1.0 }}
                 >
+                  <td className={styles.td} onClick={(e) => toggleRow(result.symbol, e)} style={{ textAlign: 'center', cursor: 'pointer' }}>
+                    {isExpanded ? '▼' : '▶'}
+                  </td>
                   <td className={styles.td}>
                     <div className={styles.symbolCell}>
                       <span className={styles.symbolTicker} style={{ textDecoration: isNoTrade ? 'line-through' : 'none' }}>{result.symbol}</span>
@@ -294,7 +372,14 @@ const ScreenerDashboard: React.FC = () => {
                     </span>
                   </td>
                   <td className={styles.td}>
-                    <span className={styles.confidencePct}>{result.opportunityScore || '-'}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span className={styles.confidencePct}>{result.adjustedEV > 0 ? `+${result.adjustedEV.toFixed(2)}R` : '-'}</span>
+                      {result.adjustedEV > 0 && (
+                        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)', marginTop: '2px' }}>
+                          P(T1): {(result.modelPT1 * 100).toFixed(0)}% | N: {result.modelSampleSize}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className={styles.tdRight}>
                     <span className={styles.priceValue}>{isNoTrade ? '—' : result.tradePlan ? result.tradePlan.entryZone : '-'}</span>
@@ -315,7 +400,10 @@ const ScreenerDashboard: React.FC = () => {
                     </span>
                   </td>
                   <td className={styles.td}>
-                    <span className={styles.locationText}>{result.location || '-'}</span>
+                    <span className={styles.locationText} style={{ 
+                      color: result.triggerStatus === 'TRIGGER ACTIVE' ? 'var(--color-bullish)' : 
+                             result.triggerStatus.includes('WAIT') ? 'var(--accent-main)' : 'var(--color-text-dim)' 
+                    }}>{result.triggerStatus || '-'}</span>
                   </td>
                   <td className={styles.tdRight}>
                     <span className={styles.volumeRvol}>{result.rvol.toFixed(1)}x</span>
@@ -328,14 +416,57 @@ const ScreenerDashboard: React.FC = () => {
                     </span>
                   </td>
                   <td className={styles.td}>
-                    <span className={styles.locationText}>{result.sentimentScore ? `🟢 ${result.sentimentScore}` : '-'}</span>
+                    <span className={styles.locationText} style={{ 
+                      color: result.eventRisk === 'HIGH' ? 'var(--color-bearish)' : 
+                             result.eventRisk === 'MEDIUM' ? 'var(--gold-mid)' : 'var(--color-bullish)'
+                    }}>{result.eventRisk}</span>
                   </td>
                 </tr>
+                
+                {isExpanded && !isNoTrade && result.tradePlan && (
+                  <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)' }}>
+                    <td colSpan={12} style={{ padding: '1rem', borderBottom: '1px solid var(--color-border)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', fontSize: '0.85rem' }}>
+                        <div>
+                          <strong style={{ color: 'var(--color-text)', display: 'block', marginBottom: '0.5rem' }}>
+                            {result.triggerStatus} — {result.setupType}
+                          </strong>
+                          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '0.5rem' }}>
+                            <span style={{ color: 'var(--color-text-dim)' }}>Entry zone</span>
+                            <span style={{ color: 'var(--color-text)' }}>{result.tradePlan.entryZone}</span>
+                            
+                            <span style={{ color: 'var(--color-text-dim)' }}>Trigger</span>
+                            <span style={{ color: 'var(--accent-main)' }}>{result.tradePlan.trigger ? `Price hits $${result.tradePlan.trigger}` : 'N/A'}</span>
+                            
+                            <span style={{ color: 'var(--color-text-dim)' }}>Confirmation</span>
+                            <span style={{ color: 'var(--color-text)' }}>{result.tradePlan.confirmation}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <strong style={{ color: 'var(--color-text)', display: 'block', marginBottom: '0.5rem', opacity: 0 }}>
+                            Risk Management
+                          </strong>
+                          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '0.5rem' }}>
+                            <span style={{ color: 'var(--color-text-dim)' }}>Invalidation</span>
+                            <span style={{ color: 'var(--color-bearish)' }}>{result.tradePlan.invalidation}</span>
+                            
+                            <span style={{ color: 'var(--color-text-dim)' }}>Target</span>
+                            <span style={{ color: 'var(--color-bullish)' }}>{result.tradePlan.bias === 'LONG' ? `$${result.tradePlan.majorResistance}` : `$${result.tradePlan.stretchTarget}`}</span>
+                            
+                            <span style={{ color: 'var(--color-text-dim)' }}>Expected Move</span>
+                            <span style={{ color: 'var(--color-text)' }}>{result.tradePlan.expectedMove.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               )})}
 
               {results.length === 0 && !loading && (
                 <tr className={styles.emptyRow}>
-                  <td colSpan={11}>
+                  <td colSpan={12}>
                     <p className={styles.emptyTitle}>No setups found</p>
                     <p className={styles.emptyHint}>
                       No names met the confidence threshold for this session. Try premarket mode or refresh

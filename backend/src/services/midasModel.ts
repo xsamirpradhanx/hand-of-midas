@@ -7,7 +7,12 @@ export interface MidasScoreResult {
   shortMomentum: number;
   direction: 'LONG' | 'SHORT' | 'NEUTRAL';
   riskScore: number;
-  probability: number;
+  /**
+   * @deprecated Always null. Midas score is a candidate quality rank, NOT a win probability.
+   * Conviction comes from CompositeScoreAgent.modelConviction via IndependentEvidenceEngine.
+   * Historical win probability comes from SETUP_STATS empirical data.
+   */
+  probability: null;
   subScores: {
     momentumQuality: number;
     volumeConfirmation: number;
@@ -176,7 +181,9 @@ export async function calculateMidasScore(
   if (mode === 'premarket') adjustedMidas += 5; // Handicap
 
   const midasScore = Math.min(99, Math.max(1, Math.round(adjustedMidas * regimeMultiplier)));
-  const probability = Math.min(75, Math.round(midasScore * 0.75));
+  // probability is null — Midas score is candidate quality, not win probability.
+  // Do not use midasScore * 0.75 as a probability estimate.
+  const probability = null;
 
   return { 
     midasScore, 

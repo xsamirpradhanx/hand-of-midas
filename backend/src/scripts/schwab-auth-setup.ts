@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { SchwabAuth } from './src/schwabAuth.js';
+import { SchwabAuth } from '../schwabAuth.js';
 import * as readline from 'readline';
 
 const rl = readline.createInterface({

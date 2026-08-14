@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class AtrVolatilityFactor implements PredictiveFactor {
   name = 'ATR Dynamic Volatility';
+  bucket = 'POSITIONING' as const;
+  correlationGroup = 'REGIME';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -41,7 +43,9 @@ export class AtrVolatilityFactor implements PredictiveFactor {
       buyTarget,
       sellTarget,
       bias: 'neutral',
-      weight: 0.25, // Volatility envelope scaling
+      weight: 0.25,
+      bucket: 'POSITIONING',
+      correlationGroup: 'REGIME',
       reasoning: `14-Day ATR is $${atr.toFixed(2)} (${atrPct.toFixed(1)}% of price), setting 1.5x ATR volatility boundaries.`,
     };
   }

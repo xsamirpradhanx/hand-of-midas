@@ -25,6 +25,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  */
 export class VannaDeltaPressureFactor implements PredictiveFactor {
   name = 'Vanna-Delta Hedging Pressure';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'VANNA_FLOW';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice, bars } = input;
@@ -112,6 +114,8 @@ export class VannaDeltaPressureFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.20,
+        bucket: 'OPTIONS',
+        correlationGroup: 'GEX_COMPLEX',
         reasoning: `Net Vanna Exposure: ${normalizedVanna > 0 ? '+' : ''}${normalizedVanna.toFixed(1)} (per 1000 OI). As IV ${deltaIVEstimate > 0 ? 'changes ±' + (deltaIVEstimate * 100).toFixed(1) + '%' : 'shifts'}, dealers will ${netVanna > 0 ? 'BUY' : 'SELL'} ~$${Math.abs(flowMillions).toFixed(1)}M of spot to re-hedge delta. ${bias.toUpperCase()} Vanna-driven flow pressure.`,
       };
     } catch (err) {

@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class HurstExponentFactor implements PredictiveFactor {
   name = 'Hurst Exponent (Regime Classification)';
+  bucket = 'POSITIONING' as const;
+  correlationGroup = 'REGIME';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -51,6 +53,8 @@ export class HurstExponentFactor implements PredictiveFactor {
       sellTarget: isTrending && bias === 'bearish' ? currentPrice * 1.01 : currentPrice * 1.025,
       bias,
       weight: 0.20,
+      bucket: 'POSITIONING',
+      correlationGroup: 'REGIME',
       reasoning,
     };
   }

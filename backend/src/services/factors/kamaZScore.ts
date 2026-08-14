@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class KamaZScoreFactor implements PredictiveFactor {
   name = 'KAMA & Z-Score Distance';
+  bucket = 'PRICE_STRUCTURE' as const;
+  correlationGroup = 'MEAN_REVERSION';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -52,6 +54,8 @@ export class KamaZScoreFactor implements PredictiveFactor {
       sellTarget,
       bias,
       weight: 0.20,
+      bucket: 'PRICE_STRUCTURE',
+      correlationGroup: 'MEAN_REVERSION',
       reasoning: `KAMA Z-Score Distance is ${zScore >= 0 ? '+' : ''}${zScore.toFixed(2)}σ (KAMA at $${kama.toFixed(2)}). ${isOversold ? 'OVERSOLD (< −2σ): High statistical probability of mean-reversion rally.' : isOverbought ? 'OVERBOUGHT (> +2σ): High probability of mean-reversion pullback.' : 'Price within normal ±2σ statistical distribution.'}`,
     };
   }

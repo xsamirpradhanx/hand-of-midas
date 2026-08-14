@@ -1,12 +1,12 @@
 .panel {
   width: var(--indicator-panel-width);
-  background: rgba(14, 18, 36, 0.65);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 6, 18, 0.55);
+  border-left: 1px solid rgba(184, 120, 10, 0.2);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
   user-select: none;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -23,8 +23,8 @@
   justify-content: flex-start;
   gap: 12px;
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(184, 120, 10, 0.2);
+  background: linear-gradient(180deg, rgba(15, 10, 5, 0.4) 0%, transparent 100%);
 }
 
 .panel.collapsed .header {
@@ -45,21 +45,26 @@
 
 .header h3 {
   margin: 0;
+  font-family: 'Cinzel', Georgia, serif;
   font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
+  background: linear-gradient(135deg, #c8860a 0%, #f5c842 50%, #e8a020 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
 }
 
 .badge {
-  background: rgba(0, 212, 170, 0.15);
-  color: var(--accent-main);
+  background: rgba(184, 120, 10, 0.15);
+  color: var(--gold-mid);
   font-size: 0.7rem;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 10px;
-  border: 1px solid rgba(0, 212, 170, 0.3);
+  border: 1px solid rgba(200, 134, 10, 0.35);
 }
 
 .headerActions {
@@ -69,9 +74,9 @@
 }
 
 .addBtn {
-  background: rgba(0, 212, 170, 0.12);
-  color: var(--accent-main);
-  border: 1px solid rgba(0, 212, 170, 0.3);
+  background: rgba(184, 120, 10, 0.15);
+  color: var(--gold-mid);
+  border: 1px solid rgba(200, 134, 10, 0.35);
   width: 26px;
   height: 26px;
   border-radius: 6px;
@@ -82,12 +87,14 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 8px rgba(245, 200, 66, 0.1);
 }
 
 .addBtn:hover {
-  background: var(--accent-main);
-  color: #0e1224;
-  box-shadow: 0 0 12px rgba(0, 212, 170, 0.5);
+  background: rgba(200, 134, 10, 0.4);
+  color: var(--gold-bright);
+  box-shadow: 0 0 14px rgba(245, 200, 66, 0.3);
+  border-color: rgba(245, 200, 66, 0.5);
   transform: scale(1.05);
 }
 
@@ -116,16 +123,17 @@
 .collapsedBtn {
   width: 32px;
   height: 32px;
-  background: rgba(0, 212, 170, 0.12);
-  color: var(--accent-main);
-  border-color: rgba(0, 212, 170, 0.3);
-  box-shadow: 0 0 8px rgba(0, 212, 170, 0.2);
+  background: rgba(184, 120, 10, 0.15);
+  color: var(--gold-mid);
+  border-color: rgba(200, 134, 10, 0.35);
+  box-shadow: 0 0 8px rgba(245, 200, 66, 0.1);
 }
 
 .collapsedBtn:hover {
-  background: var(--accent-main);
-  color: #0e1224;
-  box-shadow: 0 0 12px rgba(0, 212, 170, 0.5);
+  background: rgba(200, 134, 10, 0.4);
+  color: var(--gold-bright);
+  border-color: rgba(245, 200, 66, 0.5);
+  box-shadow: 0 0 14px rgba(245, 200, 66, 0.3);
 }
 
 .addMenu {
@@ -158,7 +166,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: var(--accent-main);
+  color: var(--gold-mid);
   opacity: 0.7;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
   margin-top: 2px;
@@ -180,8 +188,8 @@
 }
 
 .addMenu button:hover {
-  background: rgba(0, 212, 170, 0.12);
-  color: #fff;
+  background: rgba(245, 200, 66, 0.15);
+  color: var(--gold-bright);
   padding-left: 20px;
 }
 
@@ -211,8 +219,8 @@
 }
 
 .collapsedItem:hover {
-  background: rgba(0, 212, 170, 0.15);
-  border-color: rgba(0, 212, 170, 0.3);
+  background: rgba(184, 120, 10, 0.15);
+  border-color: rgba(245, 200, 66, 0.3);
   transform: scale(1.04);
 }
 
@@ -323,8 +331,8 @@
 }
 
 .toggleLabel:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(245, 200, 66, 0.08);
+  border-color: rgba(245, 200, 66, 0.2);
   transform: translateX(2px);
 }
 
@@ -364,6 +372,20 @@
   color: rgba(255, 215, 64, 0.9);
 }
 
+.infoIcon {
+  font-size: 0.75rem;
+  color: var(--gold-mid);
+  cursor: help;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  margin-left: 4px;
+}
+
+.infoIcon:hover {
+  opacity: 1;
+  color: var(--gold-bright);
+}
+
 .toggleCheckbox {
   appearance: none;
   -webkit-appearance: none;
@@ -394,9 +416,9 @@
 }
 
 .toggleCheckbox:checked {
-  background: var(--accent-main);
-  border-color: var(--accent-main);
-  box-shadow: 0 0 10px rgba(0, 212, 170, 0.4);
+  background: linear-gradient(135deg, #c8860a 0%, #f5c842 100%);
+  border-color: #f5c842;
+  box-shadow: 0 0 10px rgba(245, 200, 66, 0.4);
 }
 
 .toggleCheckbox:checked::after {
@@ -405,7 +427,7 @@
 }
 
 .extToggle .toggleCheckbox:checked {
-  background: #00d4aa;
+  background: linear-gradient(135deg, #007a66 0%, #00d4aa 100%);
   border-color: #00d4aa;
   box-shadow: 0 0 10px rgba(0, 212, 170, 0.4);
 }

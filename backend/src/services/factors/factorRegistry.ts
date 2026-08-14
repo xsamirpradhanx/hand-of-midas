@@ -20,6 +20,7 @@ import { SmartMoneyFlowFactor } from './smartMoneyFlow.js';
 import { VolumeInformationEntropyImbalanceFactor } from './ai_factor_1786565158561.js';
 import { VolumeSynchronizedEntropyDivergenceFactor } from './ai_factor_1786565842252.js';
 import { SpectralMicrostructureInertiaFactor } from './ai_factor_1786565850584.js';
+import { FractalEfficiencyLiquiditySweepFactor } from './ai_factor_1786641014202.js';
 // [AI_QUANT_IMPORTS_END]
 
 export function getFactors(): PredictiveFactor[] {
@@ -44,6 +45,7 @@ export function getFactors(): PredictiveFactor[] {
     new VolumeInformationEntropyImbalanceFactor(),
     new VolumeSynchronizedEntropyDivergenceFactor(),
     new SpectralMicrostructureInertiaFactor(),
+    new FractalEfficiencyLiquiditySweepFactor(),
     // [AI_QUANT_FACTOR_INSTANCES_END]
   ];
 }

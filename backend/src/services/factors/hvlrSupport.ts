@@ -2,6 +2,8 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class HvlrSupportFactor implements PredictiveFactor {
   name = 'High-Volume Low-Range (HVLR) Support Proxy';
+  bucket = 'PRICE_STRUCTURE' as const;
+  correlationGroup = 'VOLUME_PROFILE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -41,6 +43,8 @@ export class HvlrSupportFactor implements PredictiveFactor {
       sellTarget: darkPoolResistance,
       bias,
       weight: 0.20,
+      bucket: 'PRICE_STRUCTURE',
+      correlationGroup: 'VOLUME_PROFILE',
       reasoning: `Identified ${darkPoolClusters.length} stealth HVLR Proxy block-cross clusters. Nearest off-exchange accumulation support at $${darkPoolSupport.toFixed(2)}.`,
     };
   }

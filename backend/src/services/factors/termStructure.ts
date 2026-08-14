@@ -3,6 +3,8 @@ import { evaluateTermStructureFactor } from '../optionsAnalyticsService.js';
 
 export class TermStructureFactor implements PredictiveFactor {
   name = 'Volatility Term Structure Slope';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'IV_STRUCTURE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;
@@ -28,6 +30,8 @@ export class TermStructureFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.15,
+        bucket: 'OPTIONS',
+        correlationGroup: 'IV_STRUCTURE',
         reasoning: result.narrative,
       };
     } catch {

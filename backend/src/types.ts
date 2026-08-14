@@ -83,6 +83,17 @@ export interface PredictionItem extends DynamoDBBaseItem {
   readonly zones: any[];
   readonly aiThesis: any;
   readonly createdAt: string;
+  // P1 Feature Vector Additions
+  readonly marketRegime?: string;
+  readonly sectorRegime?: string;
+  readonly setupType?: string;
+  readonly rvol?: number;
+  readonly relativeStrength?: number;
+  readonly vwapDistancePct?: number;
+  readonly eventRisk?: string;
+  readonly entry?: number;
+  readonly stop?: number;
+  readonly target?: number;
 }
 
 /** A graded evaluation of a past prediction. */
@@ -95,12 +106,39 @@ export interface EvaluationItem extends DynamoDBBaseItem {
   readonly hitStop: boolean;
   readonly hitTarget: boolean;
   readonly maxExcursion: number;
+  /** A final result is recorded once and is the only kind used for learning. */
+  readonly isFinal?: boolean;
+  readonly horizonBars?: number;
+  readonly outcome?: 'TARGET' | 'STOP' | 'TIMEOUT';
 }
 
 /** Aggregated historical accuracy for all factors. */
 export interface FactorStatsItem extends DynamoDBBaseItem {
   readonly stats: Record<string, { wins: number; losses: number; score: number; tries: number }>;
   readonly updatedAt: string;
+}
+
+/** Aggregated historical accuracy for specific setups and market regimes. */
+export interface SetupStatsItem extends DynamoDBBaseItem {
+  readonly stats: Record<string, { 
+    wins: number; 
+    losses: number; 
+    sumExpectedR: number;
+    sumActualR: number;
+    tries: number; 
+  }>;
+  readonly updatedAt: string;
+}
+
+/**
+ * Outcome statistics are deliberately simple and auditable. `tries` is kept
+ * for backwards compatibility; calibration uses wins + losses only so open
+ * positions can never inflate an apparent win rate.
+ */
+export interface LearningStats {
+  wins: number;
+  losses: number;
+  tries: number;
 }
 
 

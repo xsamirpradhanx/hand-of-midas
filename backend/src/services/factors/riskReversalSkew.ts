@@ -3,6 +3,8 @@ import { evaluateRiskReversalFactor } from '../optionsAnalyticsService.js';
 
 export class RiskReversalSkewFactor implements PredictiveFactor {
   name = 'Risk Reversal Skew (25-Delta IV)';
+  bucket = 'OPTIONS' as const;
+  correlationGroup = 'IV_STRUCTURE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;
@@ -28,6 +30,8 @@ export class RiskReversalSkewFactor implements PredictiveFactor {
         sellTarget,
         bias,
         weight: 0.20,
+        bucket: 'OPTIONS',
+        correlationGroup: 'IV_STRUCTURE',
         reasoning: `${narrative} (OTM Put IV ${(putIV * 100).toFixed(1)}% vs OTM Call IV ${(callIV * 100).toFixed(1)}%, skew ${skew >= 0 ? '+' : ''}${skew.toFixed(2)}pp).`,
       };
     } catch {
