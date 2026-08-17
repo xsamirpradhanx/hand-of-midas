@@ -39,18 +39,17 @@ export function createMainChart(container: HTMLElement, width: number, height: n
 }
 
 
-const colors = [
-  '#00d4aa', // teal
-  '#00b4d8', // cyan
-  '#fca311', // orange
-  '#e0a96d', // gold
-  '#9d4edd', // purple
-];
+// SMA and EMA draw from separate pools so the first of each type never share
+// a hue, and each pool alternates warm/cool so two of the same type added
+// back-to-back (e.g. EMA 20 then EMA 50) stay visually distinct too.
+const smaColors = ['#00d4aa', '#f72585', '#4cc9f0', '#ffd60a', '#b5179e'];
+const emaColors = ['#fca311', '#3a86ff', '#ff006e', '#06ffa5', '#7209b7'];
+const defaultColors = ['#00d4aa', '#00b4d8', '#fca311', '#e0a96d', '#9d4edd'];
 
 export function getSeriesColor(type: string, index: number): string {
-  if (type === 'SMA') return colors[index % colors.length];
-  if (type === 'EMA') return colors[(index + 2) % colors.length];
-  return colors[index % colors.length];
+  if (type === 'SMA') return smaColors[index % smaColors.length];
+  if (type === 'EMA') return emaColors[index % emaColors.length];
+  return defaultColors[index % defaultColors.length];
 }
 
 export function formatVolume(volume: number): string {

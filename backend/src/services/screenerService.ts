@@ -5,6 +5,19 @@ import type { PredictionItem, SetupStatsItem } from '../types.js';
 import { evaluateEventRisk } from './quant/eventRiskEngine.js';
 import { evaluateTrigger, triggerStateLabel } from './quant/triggerEngine.js';
 
+// A thin/illiquid ticker's averageDailyVolume10Day can be tiny or stale (a
+// recent reverse split is a common cause), which turns a normal day's volume
+// into a mathematically "valid" but meaningless RVOL of hundreds or
+// thousands of x. Ranking formulas use intradayRvol^0.7, so an uncapped 6000x
+// reading dominates every genuine 10-30x mover in the list. Capping the value
+// used for ranking (not the raw figure shown to the user — that stays
+// truthful) keeps one broken-data ticker from crowding out real candidates.
+// Sits between the dataQuality CHECK (30) and SUSPICIOUS (100) thresholds
+// below — comfortably above any real single-day RVOL, comfortably below the
+// artifacts this is guarding against.
+const RANK_RVOL_CAP = 50;
+const rankRvol = (v: number) => Math.min(v, RANK_RVOL_CAP);
+
 export interface ScreenerResult {
   symbol: string;
   direction: 'LONG' | 'SHORT' | 'NEUTRAL';
@@ -328,11 +341,11 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
    // Phase 1: Cheap first-pass ranking (volume leads price)
   candidates.sort((a, b) => {
     // If volume data is missing (common in premarket), prioritize actual price change to ensure movers pass phase 1
-    const scoreA = Math.pow(Math.max(1, a.intradayRvol), 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) 
-                 + (a.volume === 0 ? Math.abs(a.changePercent) : 0) 
+    const scoreA = Math.pow(Math.max(1, rankRvol(a.intradayRvol)), 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10)
+                 + (a.volume === 0 ? Math.abs(a.changePercent) : 0)
                  + a.yahooConsensus * 0.3;
-    const scoreB = Math.pow(Math.max(1, b.intradayRvol), 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) 
-                 + (b.volume === 0 ? Math.abs(b.changePercent) : 0) 
+    const scoreB = Math.pow(Math.max(1, rankRvol(b.intradayRvol)), 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10)
+                 + (b.volume === 0 ? Math.abs(b.changePercent) : 0)
                  + b.yahooConsensus * 0.3;
     return scoreB - scoreA;
   });
@@ -391,8 +404,8 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
 
   // Phase 2 Ranking: Now we actually have volume acceleration!
   phase2Candidates.sort((a, b) => {
-    const scoreA = Math.pow(a.intradayRvol, 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) + a.volumeAcceleration * 3 + a.yahooConsensus * 0.3;
-    const scoreB = Math.pow(b.intradayRvol, 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) + b.volumeAcceleration * 3 + b.yahooConsensus * 0.3;
+    const scoreA = Math.pow(rankRvol(a.intradayRvol), 0.7) * (1 + Math.min(Math.abs(a.changePercent), 5) / 10) + a.volumeAcceleration * 3 + a.yahooConsensus * 0.3;
+    const scoreB = Math.pow(rankRvol(b.intradayRvol), 0.7) * (1 + Math.min(Math.abs(b.changePercent), 5) / 10) + b.volumeAcceleration * 3 + b.yahooConsensus * 0.3;
     return scoreB - scoreA;
   });
 
@@ -679,11 +692,22 @@ async function evaluateSetup(
     locationStrParts.push(`${Math.abs(Number(vwapDistPct))}% ${candidate.price > pmVwap ? 'above' : 'below'} VWAP`);
   }
   if (pmHigh && candidate.price < pmHigh) {
-    const pmHighDist = (((pmHigh - candidate.price) / candidate.price) * 100).toFixed(1);
+    // Denominator is pmHigh, not price — matches the VWAP figure above and
+    // keeps this bounded under 100%. Dividing by price let a big single-day
+    // move (e.g. -69%) produce something like "234% below PM high", which
+    // isn't a sentence that parses.
+    const pmHighDist = (((pmHigh - candidate.price) / pmHigh) * 100).toFixed(1);
     locationStrParts.push(`${pmHighDist}% below PM high`);
   }
   if (tp && tp.roomToResistance > 0) {
-    locationStrParts.push(`${tp.roomToResistance}% below resistance`);
+    // roomToResistance is "distance to T1" either way, but T1 sits on opposite
+    // sides depending on bias: above price (resistance) for a LONG thesis,
+    // below price (support) for a SHORT one — compositeScore.ts's bearish
+    // branch reuses the same field name for a support distance. Labeling it
+    // "resistance" unconditionally told a SHORT-biased row there was a ceiling
+    // overhead when the actual level was a floor underneath.
+    const targetLabel = engineResult.aiThesis.bias === 'bearish' ? 'above support' : 'below resistance';
+    locationStrParts.push(`${tp.roomToResistance}% ${targetLabel}`);
   }
   let locationStr = locationStrParts.length > 0 ? locationStrParts.join(', ') : 'Consolidating';
 
@@ -703,6 +727,11 @@ async function evaluateSetup(
   if (isExtremeMover || (tp && tp.roomToSupport > 15)) oppScore -= 20;
   if (tp && tp.bias === 'LONG' && pmVwap && candidate.price < pmVwap) oppScore -= 10;
   if (candidate.dollarVolume < 2_000_000) oppScore -= 15;
+  // dataQuality was computed above but never penalized anything — a SUSPICIOUS
+  // reading (RVOL/change-% far outside normal range, usually a thin/stale ADV
+  // baseline) reached the A+/A Setups cards with no less standing than a clean one.
+  if (dataQuality === 'SUSPICIOUS') oppScore -= 25;
+  else if (dataQuality === 'CHECK') oppScore -= 10;
 
   const opportunityScore = Math.max(0, Math.min(100, oppScore));
 

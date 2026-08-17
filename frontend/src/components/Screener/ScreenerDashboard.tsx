@@ -290,6 +290,33 @@ const ScreenerDashboard: React.FC = () => {
             >
               📈 Diagonal Spreads
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={styles.modeBtn}
+              onClick={() => navigate('/screener/value')}
+            >
+              💰 Value
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={styles.modeBtn}
+              onClick={() => navigate('/screener/growth')}
+            >
+              🚀 Growth
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={styles.modeBtn}
+              onClick={() => navigate('/screener/etf')}
+            >
+              📊 ETFs
+            </button>
           </div>
 
           <button
@@ -422,6 +449,19 @@ const ScreenerDashboard: React.FC = () => {
                   <td className={styles.td}>
                     <div className={styles.symbolCell}>
                       <span className={styles.symbolTicker} style={{ textDecoration: isNoTrade ? 'line-through' : 'none' }}>{result.symbol}</span>
+                      {result.dataQuality !== 'VERIFIED' && (
+                        <span
+                          aria-label={result.dataQuality === 'SUSPICIOUS' ? 'Suspicious data' : 'Check data'}
+                          title={
+                            result.dataQuality === 'SUSPICIOUS'
+                              ? 'RVOL or % change is far outside normal range — often a thin/stale average-volume baseline (e.g. a recent reverse split). Verify before trading.'
+                              : 'RVOL or % change is elevated enough to double-check against another source before trading.'
+                          }
+                          style={{ marginLeft: '4px', color: result.dataQuality === 'SUSPICIOUS' ? 'var(--color-bearish)' : 'var(--color-text-dim)', cursor: 'help' }}
+                        >
+                          ⚠️
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className={styles.td}>

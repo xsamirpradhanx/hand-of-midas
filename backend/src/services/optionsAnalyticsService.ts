@@ -379,21 +379,36 @@ function computeGexProfile(
   const isNetPositive = netGamma >= 0;
   const sortedProfile = [...profile].sort((a, b) => isNetPositive ? a.strike - b.strike : b.strike - a.strike);
 
-  // Interpolated gamma-flip price: linear interpolation between the two bracketing strikes
-  let gammaFlipStrike = 0;
+  // Interpolated gamma-flip price: linear zero-crossing of cumulative GEX.
+  // Every crossing is collected rather than breaking at the first one — deep-OTM
+  // strikes with thin OI make cumulative GEX wobble across the axis, so the first
+  // crossing is routinely numerical noise far from anything tradeable. A crossing
+  // must be material relative to total |GEX|, and of the survivors we take the one
+  // nearest spot. Consistent with dealerHedging.ts.
+  const totalAbsGex = profile.reduce((sum, p) => sum + Math.abs(p.totalGex), 0);
+  const GAMMA_FLIP_MATERIALITY = 0.02; // crossing must involve >=2% of total |GEX| to count
+  const gammaFlipCandidates: number[] = [];
   let cumulative = 0;
   for (let i = 0; i < sortedProfile.length; i++) {
     const prev = cumulative;
     cumulative += sortedProfile[i]!.totalGex;
-    
+
     if (i > 0 && prev !== 0 && Math.sign(prev) !== Math.sign(cumulative)) {
+      const swing = Math.max(Math.abs(prev), Math.abs(cumulative));
+      if (totalAbsGex > 0 && swing / totalAbsGex < GAMMA_FLIP_MATERIALITY) continue;
       const strikeA = sortedProfile[i - 1]!.strike;
       const strikeB = sortedProfile[i]!.strike;
       // Linear zero-crossing interpolation: x0 + (x1-x0) * |prev| / (|prev| + |curr|)
-      gammaFlipStrike = strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulative));
-      break;
+      gammaFlipCandidates.push(
+        strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulative)),
+      );
     }
   }
+
+  const gammaFlipStrike = gammaFlipCandidates.length === 0
+    ? 0
+    : gammaFlipCandidates.reduce((best, k) =>
+        Math.abs(k - spot) < Math.abs(best - spot) ? k : best);
 
   const maxAbsGexStrike = profile.reduce(
     (best, p) => (Math.abs(p.totalGex) > Math.abs(best.totalGex) ? p : best),

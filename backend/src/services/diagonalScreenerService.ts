@@ -1,11 +1,25 @@
 /**
  * Diagonal Spread Screener Service
  *
- * Surfaces "SPCX-style" setups: stocks with RSI exhaustion (oversold), a viable
- * option chain, and volatility backwardation — conditions that favor a LEAP
- * diagonal (or calendar) spread where:
- *   - Short near-term call captures elevated near-IV (backwardation premium)
+ * Surfaces "SPCX-style" setups: stocks with RSI exhaustion, a genuinely
+ * liquid/tradeable option chain, and (preferably, not required) volatility
+ * backwardation — conditions that favor a LEAP diagonal (or calendar) spread
+ * where:
+ *   - Short near-term call captures elevated near-IV when backwardation exists
  *   - Long deep-ITM LEAP benefits from delta, gamma, theta AND vega
+ *
+ * Calibrated against ~14 real trade writeups (SPCX, META, GOOGL, NFLX, BABA,
+ * ADBE, AMZN, CRM, AAPL, MSFT, WMT, WFC, NKE, SHOP). Two early assumptions
+ * from a smaller sample didn't hold up against the full set and were reverted:
+ *   - Backwardation is NOT universal — only ~1/3 of trades mention it, and
+ *     MSFT was explicitly entered during contango. It's a scoring bonus.
+ *   - A recent sharp move is NOT required — ADBE (2.5yr decline), NKE (8mo),
+ *     SHOP (6mo+), and BABA (extended grind) were all chronic decliners
+ *     traded purely off an RSI threshold crossing.
+ * What IS consistent across nearly every writeup: every name traded is a
+ * large, liquid, well-known ticker, and wide/"sloshy" bid-ask spreads are
+ * repeatedly cited as a reason to pass on or delay a trade. That's the real
+ * gate on premium quality — not recency or backwardation.
  *
  * Universe: Dynamically pulled from Yahoo Finance screeners.
  */
@@ -13,12 +27,15 @@
 import { yf, getOptionsChainYahoo, getTimeSeriesYahoo } from './yahoo.js';
 import { buildActiveMarketUniverse } from './universeService.js';
 
+// ── Tunable screening thresholds ──────────────────────────────────────────
+const MAX_LEG_SPREAD_PCT = 0.35; // reject a leg if bid-ask spread exceeds 35% of the mid — a "sloshy" chain
+
 export interface DiagonalScreenerResult {
   symbol: string;
   price: number;
   drawdownPct: number;       // % below 52-week high
   rsi14: number | null;
-  isOversold: boolean;       // STRICT: RSI ≤ 35 or >=15% 5-day drop
+  isOversold: boolean;       // STRICT: RSI ≤ 35 or ≥15% 5-day drop
   selloffDepth5d: number;    // % change over last 5 trading days
   hasViableChain: boolean;   // ≥2 expirations, meaningful OI exists (> 500)
   expirations: string[];     // available option expirations
@@ -99,6 +116,59 @@ function avgIVForExpiry(
   return sum / relevant.length;
 }
 
+/** Farthest expiration >= 150 DTE, or the farthest available if none qualify. */
+function pickFarExpiry(expirations: string[]): { targetExp: string; targetDte: number } {
+  const now = new Date();
+  let targetExp = expirations[expirations.length - 1]!;
+  let targetDte = 0;
+
+  for (const exp of expirations) {
+    const dte = (new Date(exp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (dte >= 150) {
+      targetExp = exp;
+      targetDte = Math.round(dte);
+      break;
+    }
+  }
+  if (targetDte === 0) {
+    targetDte = Math.round((new Date(targetExp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  return { targetExp, targetDte };
+}
+
+/** Nearest expiration within 25-55 DTE, or the nearest available if none qualify. */
+function pickNearExpiry(expirations: string[]): { targetExp: string; targetDte: number } {
+  const now = new Date();
+  let targetExp = expirations[0]!;
+  let targetDte = 0;
+
+  for (const exp of expirations) {
+    const dte = (new Date(exp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (dte >= 25 && dte <= 55) {
+      targetExp = exp;
+      targetDte = Math.round(dte);
+      break;
+    }
+  }
+  if (targetDte === 0) {
+    targetDte = Math.round((new Date(targetExp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  return { targetExp, targetDte };
+}
+
+/**
+ * True if a quoted market is too wide (or one-sided/missing) to be
+ * realistically tradeable. Anderson's own trade writeups repeatedly cite
+ * "sloshy"/"sloppy" bid-ask spreads as a reason to pass on or delay a trade
+ * — this is the actual, consistent liquidity gate his methodology applies.
+ */
+function isSpreadTooWide(bid: number, ask: number): boolean {
+  if (bid <= 0 || ask <= 0 || ask < bid) return true;
+  const mid = (bid + ask) / 2;
+  if (mid <= 0) return true;
+  return (ask - bid) / mid > MAX_LEG_SPREAD_PCT;
+}
+
 /**
  * Find a deep-ITM LEAP-like contract for the long leg.
  * Target: > 150 DTE, Delta ~ 0.80.
@@ -109,24 +179,8 @@ function suggestLongLeg(
   currentPrice: number,
 ): DiagonalScreenerResult['longLeg'] {
   if (expirations.length < 2) return null;
-  
-  const now = new Date();
-  let targetExp = expirations[expirations.length - 1]!;
-  let targetDte = 0;
-  
-  // Find the closest expiration that is > 150 DTE (or default to farthest)
-  for (const exp of expirations) {
-    const dte = (new Date(exp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-    if (dte >= 150) {
-      targetExp = exp;
-      targetDte = Math.round(dte);
-      break;
-    }
-  }
-  
-  if (targetDte === 0) {
-    targetDte = Math.round((new Date(targetExp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  }
+
+  const { targetExp, targetDte } = pickFarExpiry(expirations);
 
   // Delta 0.80 proxy -> Strike at roughly 80-85% of price
   const targetStrike = currentPrice * 0.80; 
@@ -155,12 +209,14 @@ function suggestLongLeg(
   // Get Ask price for Long Leg debit
   const bid = best.last_quote?.bid || 0;
   const ask = best.last_quote?.ask || 0;
-  const last = best.last_quote?.last || 0;
-  const priceEst = ask > 0 ? ask : (last > 0 ? last : (bid + ask) / 2);
 
-  return { 
-    strike, 
-    expiry: targetExp, 
+  // No real two-sided market (or too wide to fill reasonably) — not tradeable.
+  if (isSpreadTooWide(bid, ask)) return null;
+  const priceEst = ask;
+
+  return {
+    strike,
+    expiry: targetExp,
     delta: Number(estimatedDelta.toFixed(2)),
     ask: Number(priceEst.toFixed(2)),
     dte: targetDte
@@ -177,24 +233,8 @@ function suggestShortLeg(
   currentPrice: number,
 ): DiagonalScreenerResult['shortLeg'] {
   if (expirations.length === 0) return null;
-  
-  const now = new Date();
-  let targetExp = expirations[0]!;
-  let targetDte = 0;
-  
-  // Find expiration roughly 30-45 DTE
-  for (const exp of expirations) {
-    const dte = (new Date(exp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-    if (dte >= 25 && dte <= 55) {
-      targetExp = exp;
-      targetDte = Math.round(dte);
-      break;
-    }
-  }
-  
-  if (targetDte === 0) {
-    targetDte = Math.round((new Date(targetExp).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  }
+
+  const { targetExp, targetDte } = pickNearExpiry(expirations);
 
   // Delta 0.20 proxy -> Strike at roughly 10% OTM
   const targetStrike = currentPrice * 1.10;
@@ -219,14 +259,15 @@ function suggestShortLeg(
   
   const bid = best.last_quote?.bid || 0;
   const ask = best.last_quote?.ask || 0;
-  const last = best.last_quote?.last || 0;
-  const priceEst = bid > 0 ? bid : (last > 0 ? last : (bid + ask) / 2);
+
+  // No real two-sided market (or too wide to fill reasonably) — not tradeable.
+  if (isSpreadTooWide(bid, ask)) return null;
 
   return {
     strike,
     expiry: targetExp,
     iv: Number(((best.implied_volatility || 0) * 100).toFixed(1)),
-    bid: Number(priceEst.toFixed(2)),
+    bid: Number(bid.toFixed(2)),
     dte: targetDte
   };
 }
@@ -274,8 +315,11 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
     const fiftyTwoWeekHigh = (q['fiftyTwoWeekHigh'] as number) ?? price;
     const changePercent = (q['regularMarketChangePercent'] as number) ?? 0;
     
-    // STRICT Price Floor: >= $15
-    if (!symbol || price < 15 || volume < 200_000) continue;
+    // Price floor raised from $15 to $25 — every real trade example (SPCX,
+    // META, GOOGL, NFLX, BABA, ADBE, AMZN, CRM, AAPL, MSFT, WMT, WFC, NKE,
+    // SHOP) is a large, liquid, well-known name; NKE (~$40) is the cheapest.
+    // A low floor mainly let thin penny/microcap noise into the universe.
+    if (!symbol || price < 25 || volume < 200_000) continue;
 
     const drawdownPct = fiftyTwoWeekHigh > 0
       ? Number(((1 - price / fiftyTwoWeekHigh) * 100).toFixed(1))
@@ -283,6 +327,10 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
 
     const consensus = yahooConsensusMap.get(symbol) ?? 0;
     const dropToday = changePercent < 0 ? Math.abs(changePercent) : 0;
+    // Chronic, multi-month decliners (ADBE, NKE, SHOP, BABA in Anderson's own
+    // trades) are legitimate candidates, not noise — so drawdown is NOT
+    // capped here. The RSI/liquidity gates below are what actually determine
+    // tradeability, not how long a name has been declining.
     const selloffScore = (dropToday * 2) + drawdownPct + (consensus * 0.5);
 
     if (selloffScore > 5) {
@@ -324,11 +372,24 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
           // proceed without
         }
 
-        // STRICT Filter: RSI <= 35 OR 5-day drop >= 15%
+        // STRICT Filter: RSI <= 35 OR 5-day drop >= 15%. No recency requirement
+        // beyond RSI itself — real trade examples include chronic multi-month
+        // decliners (ADBE, NKE, SHOP, BABA) entered purely off an RSI threshold
+        // crossing, with no sharp recent move.
         const isOversold = (rsi14 !== null && rsi14 <= 35) || selloffDepth5d <= -15;
         if (!isOversold) return null;
 
         // ── Options chain ─────────────────────────────────────────────────
+        // Yahoo's options() only returns contracts for ONE expiration per call
+        // — the nearest by default, or whichever `date` is passed. The prior
+        // version called getOptionsChainYahoo(symbol) exactly once with no
+        // date, so `contracts` only ever held the front-week expiry while
+        // `expirations` (a separate metadata field) listed every future date.
+        // suggestLongLeg targets >=150 DTE and suggestShortLeg targets 25-55
+        // DTE — neither is normally the front week, so both always filtered
+        // to zero matches and returned null for every candidate, every time.
+        // Fetching the two specific expirations the legs actually need and
+        // merging their contracts is what makes a leg findable at all.
         let expirations: string[] = [];
         let contracts: any[] = [];
         let hasViableChain = false;
@@ -338,25 +399,42 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
         let isBackwardation = false;
 
         try {
-          const chain = await getOptionsChainYahoo(c.symbol);
-          expirations = chain.expirations;
-          contracts = chain.contracts;
+          const meta = await getOptionsChainYahoo(c.symbol);
+          expirations = meta.expirations;
 
-          // STRICT Liquidity: Total OI > 500 across all available calls
-          const totalCallOI = contracts
-            .filter(contract => contract.details?.contract_type === 'call')
-            .reduce((sum, contract) => sum + (contract.day?.open_interest || 0), 0);
-          
-          hasViableChain = expirations.length >= 2 && totalCallOI > 500;
+          hasViableChain = expirations.length >= 2;
 
           if (hasViableChain) {
-            nearTermIV = avgIVForExpiry(contracts, expirations[0]!, c.price);
-            const farExpIdx = Math.min(2, expirations.length - 1);
-            farTermIV = avgIVForExpiry(contracts, expirations[farExpIdx]!, c.price);
+            const near = pickNearExpiry(expirations);
+            const far = pickFarExpiry(expirations);
 
-            if (nearTermIV !== null && farTermIV !== null && farTermIV > 0) {
-              ivRatio = Number((nearTermIV / farTermIV).toFixed(2));
-              isBackwardation = nearTermIV > farTermIV * 1.05; // >5%
+            const [nearChain, farChain] = await Promise.all([
+              getOptionsChainYahoo(c.symbol, near.targetExp),
+              far.targetExp === near.targetExp
+                ? Promise.resolve(null)
+                : getOptionsChainYahoo(c.symbol, far.targetExp),
+            ]);
+            contracts = farChain ? [...nearChain.contracts, ...farChain.contracts] : nearChain.contracts;
+
+            // STRICT Liquidity: total call OI > 1000 across the fetched expirations.
+            // Raised from 500 — real trade examples are all large, liquid names, and
+            // a low OI bar mainly let thin, wide-spread microcap chains through.
+            const totalCallOI = contracts
+              .filter(contract => contract.details?.contract_type === 'call')
+              .reduce((sum, contract) => sum + (contract.day?.open_interest || 0), 0);
+            hasViableChain = totalCallOI > 1000;
+
+            if (hasViableChain) {
+              nearTermIV = avgIVForExpiry(contracts, near.targetExp, c.price);
+              farTermIV = avgIVForExpiry(contracts, far.targetExp, c.price);
+
+              if (nearTermIV !== null && farTermIV !== null && farTermIV > 0) {
+                ivRatio = Number((nearTermIV / farTermIV).toFixed(2));
+                isBackwardation = nearTermIV > farTermIV * 1.05; // >5%
+              }
+              // Backwardation is scored (see setupScore below), not required —
+              // only ~1/3 of real trade examples explicitly had it, and MSFT was
+              // entered during contango. Requiring it excluded most real setups.
             }
           }
         } catch {
@@ -366,39 +444,27 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
         if (!hasViableChain) return null;
 
         // ── Suggest spread legs & calculate metrics ───────────────────────
+        // Each leg-finder now rejects contracts with no real two-sided market
+        // or a spread too wide to fill (see isSpreadTooWide) — so a null leg
+        // here means the chain wasn't actually tradeable, not just unpriced.
         const longLeg = suggestLongLeg(contracts, expirations, c.price);
         const shortLeg = suggestShortLeg(contracts, expirations, c.price);
+        if (!longLeg || !shortLeg) return null;
 
         let netDebit: number | null = null;
         let strikeWidth: number | null = null;
         let debitWidthRatio: number | null = null;
         let breakEven: number | null = null;
 
-        if (longLeg && shortLeg) {
-          // Both must have valid prices for ratio
-          if (longLeg.ask > 0 && shortLeg.bid > 0) {
-            netDebit = longLeg.ask - shortLeg.bid;
-            strikeWidth = shortLeg.strike - longLeg.strike;
-            
-            if (strikeWidth > 0 && netDebit > 0) {
-              debitWidthRatio = Number((netDebit / strikeWidth).toFixed(2));
-              
-              // Estimated B/E: Long Strike + Net Debit Paid
-              const bePrice = longLeg.strike + netDebit;
-              breakEven = Number(((bePrice / c.price) * 100).toFixed(1));
-            }
-          } else {
-            // Fallback BS approximation if bid/ask is missing
-            const dte = Math.max(1, shortLeg.dte);
-            const shortCredit = c.price * (shortLeg.iv / 100) * Math.sqrt(dte / 365) * 0.4;
-            const longCost = Math.max(0.5, c.price - longLeg.strike + c.price * 0.05);
-            netDebit = longCost - shortCredit;
-            strikeWidth = shortLeg.strike - longLeg.strike;
-            if (strikeWidth > 0 && netDebit > 0) {
-              debitWidthRatio = Number((netDebit / strikeWidth).toFixed(2));
-            }
-            breakEven = Number((((longLeg.strike + netDebit) / c.price) * 100).toFixed(1));
-          }
+        netDebit = longLeg.ask - shortLeg.bid;
+        strikeWidth = shortLeg.strike - longLeg.strike;
+
+        if (strikeWidth > 0 && netDebit > 0) {
+          debitWidthRatio = Number((netDebit / strikeWidth).toFixed(2));
+
+          // Estimated B/E: Long Strike + Net Debit Paid
+          const bePrice = longLeg.strike + netDebit;
+          breakEven = Number(((bePrice / c.price) * 100).toFixed(1));
         }
 
         // IVR Proxy (Current Near IV / 1Y HV)

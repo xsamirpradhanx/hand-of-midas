@@ -7,6 +7,9 @@ import type { ReactNode } from 'react';
 
 import ScreenerDashboard from './components/Screener/ScreenerDashboard';
 import DiagonalScreener from './components/Screener/DiagonalScreener';
+import ValueScreener from './components/Screener/ValueScreener';
+import GrowthScreener from './components/Screener/GrowthScreener';
+import EtfScreener from './components/Screener/EtfScreener';
 import SentimentDashboard from './components/Sentiment/SentimentDashboard';
 
 /**
@@ -62,6 +65,9 @@ export function App() {
           <Route index element={<Dashboard />} />
           <Route path="screener" element={<ScreenerDashboard />} />
           <Route path="screener/diagonal" element={<DiagonalScreener />} />
+          <Route path="screener/value" element={<ValueScreener />} />
+          <Route path="screener/growth" element={<GrowthScreener />} />
+          <Route path="screener/etf" element={<EtfScreener />} />
           <Route path="sentiment" element={<SentimentDashboard />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -406,6 +406,152 @@ export class HandOfMidasStack extends cdk.Stack {
     }
 
     // ──────────────────────────────────────────────
+    // D2d. Diagonal Spread Refresh Lambda (scheduled)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Same reasoning as ScreenerRefreshFunction: fetching a real near+far
+     * options chain per oversold candidate (see diagonalScreenerService.ts —
+     * it previously only fetched the nearest expiry, so no leg could ever be
+     * found) measured ~68s, past the 29s API Lambda timeout. Separate
+     * function, own cron, own cache key; GET /api/screener/diagonal only
+     * reads it. LEAP diagonals are a much slower-moving setup than the
+     * intraday screener modes, so a single 15-min cadence is enough.
+     */
+    const diagonalRefreshFn = new lambdaNodejs.NodejsFunction(this, 'DiagonalRefreshFunction', {
+      functionName: 'HandOfMidasDiagonalRefresh',
+      entry: path.join(__dirname, '../../backend/src/handlers/diagonalRefresh.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(300),
+      handler: 'handler',
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: sharedEnv,
+    });
+
+    table.grantReadWriteData(diagonalRefreshFn);
+    twelveDataApiKeyParam.grantRead(diagonalRefreshFn);
+    polygonApiKeyParam.grantRead(diagonalRefreshFn);
+
+    diagonalRefreshFn.grantInvoke(backendFn);
+    backendFn.addEnvironment('DIAGONAL_REFRESH_FUNCTION_NAME', diagonalRefreshFn.functionName);
+
+    const diagonalRefreshRule = new events.Rule(this, 'DiagonalRefreshRule', {
+      ruleName: 'HandOfMidas-DiagonalRefresh',
+      schedule: events.Schedule.expression('cron(0,15,30,45 13-21 ? * MON-FRI *)'),
+      description: 'Triggers diagonal-spread screener refresh every 15 min during market hours',
+    });
+    diagonalRefreshRule.addTarget(new targets.LambdaFunction(diagonalRefreshFn));
+
+    // ──────────────────────────────────────────────
+    // D2e. Value / Growth / ETF Screener Refresh Lambdas (scheduled)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Same "separate scheduled Lambda + cache-only route" reasoning as
+     * DiagonalRefreshFunction, but for fundamentals-driven screens. Unlike
+     * options chains, P/E ratios, growth estimates, and multi-month ETF
+     * returns don't move intraday — so these run once daily at market open
+     * (staggered a few minutes apart to avoid concurrent cold starts)
+     * instead of every 15 minutes, which also meaningfully cuts Yahoo API
+     * load and Lambda invocation cost vs. matching the diagonal cadence.
+     */
+    const valueRefreshFn = new lambdaNodejs.NodejsFunction(this, 'ValueRefreshFunction', {
+      functionName: 'HandOfMidasValueRefresh',
+      entry: path.join(__dirname, '../../backend/src/handlers/valueRefresh.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(300),
+      handler: 'handler',
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: sharedEnv,
+    });
+
+    table.grantReadWriteData(valueRefreshFn);
+    twelveDataApiKeyParam.grantRead(valueRefreshFn);
+    polygonApiKeyParam.grantRead(valueRefreshFn);
+
+    valueRefreshFn.grantInvoke(backendFn);
+    backendFn.addEnvironment('VALUE_REFRESH_FUNCTION_NAME', valueRefreshFn.functionName);
+
+    const valueRefreshRule = new events.Rule(this, 'ValueRefreshRule', {
+      ruleName: 'HandOfMidas-ValueRefresh',
+      schedule: events.Schedule.expression('cron(30 13 ? * MON-FRI *)'),
+      description: 'Triggers value screener refresh once daily at market open',
+    });
+    valueRefreshRule.addTarget(new targets.LambdaFunction(valueRefreshFn));
+
+    const growthRefreshFn = new lambdaNodejs.NodejsFunction(this, 'GrowthRefreshFunction', {
+      functionName: 'HandOfMidasGrowthRefresh',
+      entry: path.join(__dirname, '../../backend/src/handlers/growthRefresh.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(300),
+      handler: 'handler',
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: sharedEnv,
+    });
+
+    table.grantReadWriteData(growthRefreshFn);
+    twelveDataApiKeyParam.grantRead(growthRefreshFn);
+    polygonApiKeyParam.grantRead(growthRefreshFn);
+
+    growthRefreshFn.grantInvoke(backendFn);
+    backendFn.addEnvironment('GROWTH_REFRESH_FUNCTION_NAME', growthRefreshFn.functionName);
+
+    const growthRefreshRule = new events.Rule(this, 'GrowthRefreshRule', {
+      ruleName: 'HandOfMidas-GrowthRefresh',
+      schedule: events.Schedule.expression('cron(35 13 ? * MON-FRI *)'),
+      description: 'Triggers growth screener refresh once daily at market open',
+    });
+    growthRefreshRule.addTarget(new targets.LambdaFunction(growthRefreshFn));
+
+    const etfRefreshFn = new lambdaNodejs.NodejsFunction(this, 'EtfRefreshFunction', {
+      functionName: 'HandOfMidasEtfRefresh',
+      entry: path.join(__dirname, '../../backend/src/handlers/etfRefresh.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(300),
+      handler: 'handler',
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: sharedEnv,
+    });
+
+    table.grantReadWriteData(etfRefreshFn);
+    twelveDataApiKeyParam.grantRead(etfRefreshFn);
+    polygonApiKeyParam.grantRead(etfRefreshFn);
+
+    etfRefreshFn.grantInvoke(backendFn);
+    backendFn.addEnvironment('ETF_REFRESH_FUNCTION_NAME', etfRefreshFn.functionName);
+
+    const etfRefreshRule = new events.Rule(this, 'EtfRefreshRule', {
+      ruleName: 'HandOfMidas-EtfRefresh',
+      schedule: events.Schedule.expression('cron(40 13 ? * MON-FRI *)'),
+      description: 'Triggers ETF outperformance screener refresh once daily at market open',
+    });
+    etfRefreshRule.addTarget(new targets.LambdaFunction(etfRefreshFn));
+
+    // ──────────────────────────────────────────────
     // D3. WebSocket Lambda
     // ──────────────────────────────────────────────
 

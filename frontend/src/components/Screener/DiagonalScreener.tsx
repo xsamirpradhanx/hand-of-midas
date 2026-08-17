@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import styles from './DiagonalScreener.module.css';
@@ -79,20 +79,70 @@ const DiagonalScreener: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [computedAt, setComputedAt] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const pollTimerRef = useRef<number | null>(null);
+  const pollDeadlineRef = useRef<number>(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getDiagonalScreener();
+      const { results: data, computedAt: at } = await api.getDiagonalScreener();
       setResults(Array.isArray(data) ? data : []);
+      setComputedAt(at);
+      return at;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load diagonal screener';
       setError(msg);
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    setRefreshing(false);
+  }, []);
+
+  const handleRefreshScan = useCallback(async () => {
+    const priorComputedAt = computedAt;
+    setRefreshing(true);
+    setError(null);
+    try {
+      await api.refreshDiagonalScreener();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to start refresh';
+      setError(msg);
+      setRefreshing(false);
+      return;
+    }
+
+    // The scan takes about a minute; poll for the new result rather than
+    // blocking, and give up gracefully if it runs unusually long.
+    const POLL_INTERVAL_MS = 10_000;
+    const POLL_TIMEOUT_MS = 3 * 60_000;
+    pollDeadlineRef.current = Date.now() + POLL_TIMEOUT_MS;
+
+    const poll = async () => {
+      const at = await fetchData();
+      if (at && at !== priorComputedAt) {
+        stopPolling();
+        return;
+      }
+      if (Date.now() >= pollDeadlineRef.current) {
+        setError('Refresh is taking longer than expected — showing the most recent scan.');
+        stopPolling();
+        return;
+      }
+      pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS);
+    };
+    pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS);
+  }, [computedAt, fetchData, stopPolling]);
 
   const handleRowClick = useCallback((symbol: string) => {
     window.localStorage.setItem('dashboard_selectedSymbol', JSON.stringify(symbol));
@@ -102,7 +152,8 @@ const DiagonalScreener: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    return stopPolling;
+  }, [fetchData, stopPolling]);
 
   return (
     <div className={styles.page}>
@@ -164,15 +215,45 @@ const DiagonalScreener: React.FC = () => {
             >
               📈 Diagonal Spreads
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener/value')}
+            >
+              💰 Value
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener/growth')}
+            >
+              🚀 Growth
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={false}
+              className={dashStyles.modeBtn}
+              onClick={() => navigate('/screener/etf')}
+            >
+              📊 ETFs
+            </button>
           </div>
 
           <button
             type="button"
             className={styles.refreshBtn}
-            onClick={fetchData}
-            disabled={loading}
+            onClick={handleRefreshScan}
+            disabled={loading || refreshing}
+            title={refreshing ? 'Recomputing — this takes about a minute' : undefined}
           >
-            {loading ? (
+            {refreshing ? (
+              <><span className={styles.spinner} aria-hidden />Refreshing…</>
+            ) : loading ? (
               <><span className={styles.spinner} aria-hidden />Scanning…</>
             ) : (
               <>↻ Refresh Scan</>
@@ -185,9 +266,9 @@ const DiagonalScreener: React.FC = () => {
       <div className={styles.methodBar}>
         <span className={styles.methodChip}>RSI ≤ 35 or ≥15% 5-day drop</span>
         <span className={styles.methodSep}>+</span>
-        <span className={styles.methodChip}>Viable options chain (≥2 expirations)</span>
+        <span className={styles.methodChip}>Liquid chain (≥2 expirations, OI &gt; 1000, tight spreads)</span>
         <span className={styles.methodSep}>+</span>
-        <span className={styles.methodChip}>Vol backwardation (near IV &gt; far IV)</span>
+        <span className={styles.methodChip}>Backwardation preferred, not required</span>
         <span className={styles.methodSep}>→</span>
         <span className={styles.methodResult}>Long deep-ITM LEAP / Short near-term OTM call</span>
       </div>

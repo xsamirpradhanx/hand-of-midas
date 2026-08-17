@@ -3,6 +3,38 @@ import type { PolygonOptionsContract } from './polygon.js';
 
 export const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
+/** Thin wrapper around yf.quoteSummary — swallows errors so a single bad symbol never aborts a batch scan. */
+export async function getQuoteSummary(symbol: string, modules: string[]): Promise<any> {
+  try {
+    return await yf.quoteSummary(symbol, { modules: modules as any });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The batch yf.quote() marketCap field occasionally disagrees wildly with
+ * price × shares outstanding — observed live on a small-cap ticker whose
+ * batch-quote marketCap implied ~7B shares outstanding (a profile only a
+ * handful of the largest companies on earth actually have) while its growth/
+ * valuation profile made a trillion-dollar market cap structurally
+ * implausible. Prefer the quoteSummary-derived figure — sourced from a
+ * separate, apparently fresher Yahoo endpoint — whenever the two disagree by
+ * more than 3x.
+ */
+export function reconcileMarketCap(
+  quotedMarketCap: number | null,
+  price: number,
+  sharesOutstanding: number | null,
+): number | null {
+  if (sharesOutstanding === null || sharesOutstanding <= 0 || price <= 0) return quotedMarketCap;
+  const recomputed = price * sharesOutstanding;
+  if (quotedMarketCap === null || quotedMarketCap <= 0) return recomputed;
+  const ratio = quotedMarketCap / recomputed;
+  if (ratio > 3 || ratio < 1 / 3) return recomputed;
+  return quotedMarketCap;
+}
+
 export async function getOptionsChainYahoo(symbol: string, expiryStr?: string): Promise<{ expirations: string[], contracts: PolygonOptionsContract[], quote?: any }> {
   try {
     const queryOpts = expiryStr ? { date: new Date(expiryStr) } : {};

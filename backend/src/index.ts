@@ -17,6 +17,9 @@ import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
 import * as screener from './routes/screener.js';
 import * as diagonalScreener from './routes/diagonalScreener.js';
+import * as valueScreener from './routes/valueScreener.js';
+import * as growthScreener from './routes/growthScreener.js';
+import * as etfScreener from './routes/etfScreener.js';
 import * as marketInternals from './routes/marketInternals.js';
 import * as sectorHeatmap from './routes/sectorHeatmap.js';
 import * as news from './routes/news.js';
@@ -323,6 +326,69 @@ const routes: readonly Route[] = [
       const userId = getUserId(event);
       if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
       return diagonalScreener.getDiagonalScreener(event);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/api/screener/diagonal/refresh',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return diagonalScreener.refreshDiagonalScreener(event);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/screener/value',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return valueScreener.getValueScreener(event);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/api/screener/value/refresh',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return valueScreener.refreshValueScreener(event);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/screener/growth',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return growthScreener.getGrowthScreener(event);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/api/screener/growth/refresh',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return growthScreener.refreshGrowthScreener(event);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/screener/etf',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return etfScreener.getEtfScreener(event);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/api/screener/etf/refresh',
+    handler: async (event) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return etfScreener.refreshEtfScreener(event);
     },
   },
 

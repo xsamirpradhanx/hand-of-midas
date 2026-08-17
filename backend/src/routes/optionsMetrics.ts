@@ -248,27 +248,40 @@ export async function getOptionsMetrics(
     const gexProfileSorted = [...gexProfile].sort((a, b) => a.strike - b.strike);
 
     // Gamma flip: linear interpolation at the zero-crossing of cumulative GEX.
-    // Previously used the bracket strike (gexProfileSorted[i].strike), which is
-    // inconsistent with dealerHedging.ts and optionsAnalyticsService.ts that both
-    // interpolate the precise zero-crossing between the two bracketing strikes.
-    let gammaFlipStrike = 0;
+    // Every crossing is collected rather than breaking at the first one. Cumulative
+    // GEX starts near zero and wobbles across the axis over deep-OTM strikes that
+    // carry almost no open interest, so the first crossing is routinely numerical
+    // noise far from anything tradeable. Two filters make the result meaningful:
+    // a crossing must be material relative to the book's total gamma, and of the
+    // survivors we take the one nearest spot. Consistent with dealerHedging.ts.
+    const totalAbsGex = gexProfileSorted.reduce((sum, p) => sum + Math.abs(p.totalGex), 0);
+    const GAMMA_FLIP_MATERIALITY = 0.02; // crossing must involve >=2% of total |GEX| to count
+    const gammaFlipCandidates: number[] = [];
     let cumulativeGex = 0;
     for (let i = 0; i < gexProfileSorted.length; i++) {
       const prev = cumulativeGex;
       cumulativeGex += gexProfileSorted[i].totalGex;
 
       if (i > 0 && Math.sign(prev) !== Math.sign(cumulativeGex) && prev !== 0) {
+        const swing = Math.max(Math.abs(prev), Math.abs(cumulativeGex));
+        if (totalAbsGex > 0 && swing / totalAbsGex < GAMMA_FLIP_MATERIALITY) continue;
         const strikeA = gexProfileSorted[i - 1].strike;
         const strikeB = gexProfileSorted[i].strike;
-        gammaFlipStrike = strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulativeGex));
-        break;
+        gammaFlipCandidates.push(
+          strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulativeGex)),
+        );
       }
     }
 
+    const gammaFlipStrike = gammaFlipCandidates.length === 0
+      ? 0
+      : gammaFlipCandidates.reduce((best, k) =>
+          Math.abs(k - spotPrice) < Math.abs(best - spotPrice) ? k : best);
+
     // No fallback here: if cumulative GEX never crosses zero within the scanned
-    // strikes, gammaFlipStrike stays 0 ("no reliable flip level found"), matching
-    // optionsAnalyticsService.ts and what the frontend already renders as "None"
-    // rather than fabricating an arbitrary strike.
+    // strikes (or no crossing clears the materiality bar), gammaFlipStrike stays 0
+    // ("no reliable flip level found"), matching optionsAnalyticsService.ts and
+    // what the frontend already renders as "None" rather than fabricating a strike.
 
     // Build Volume/OI profile
     const volumeOIProfile: VolumeOIByStrike[] = Object.keys(volOIByStrike).map(k => {

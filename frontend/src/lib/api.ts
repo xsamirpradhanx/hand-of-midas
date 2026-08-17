@@ -220,8 +220,44 @@ export const api = {
   refreshScreener: (mode: 'premarket' | 'open' | 'momentum' | 'highdemand'): Promise<{ ok: boolean; mode: string; message: string }> =>
     fetchWithAuth(`/screener/refresh?mode=${mode}`, { method: 'POST' }),
 
-  getDiagonalScreener: (): Promise<any[]> =>
-    fetchWithAuth('/screener/diagonal'),
+  /** Same pattern as getScreener: pure cache read, computedAt tells the caller when it was last refreshed. */
+  getDiagonalScreener: async (): Promise<{ results: any[]; computedAt: string | null }> => {
+    const response = await fetchWithAuthRaw('/screener/diagonal');
+    const data = response.status === 204 ? [] : await response.json();
+    return { results: data, computedAt: response.headers.get('X-Screener-Computed-At') };
+  },
+
+  /** Kicks off an out-of-band rescan ("Refresh Scan" button) — see refreshScreener for the identical pattern. */
+  refreshDiagonalScreener: (): Promise<{ ok: boolean; message: string }> =>
+    fetchWithAuth('/screener/diagonal/refresh', { method: 'POST' }),
+
+  /** Same pattern as getDiagonalScreener: pure cache read, refreshed once daily. */
+  getValueScreener: async (): Promise<{ results: any[]; computedAt: string | null }> => {
+    const response = await fetchWithAuthRaw('/screener/value');
+    const data = response.status === 204 ? [] : await response.json();
+    return { results: data, computedAt: response.headers.get('X-Screener-Computed-At') };
+  },
+
+  refreshValueScreener: (): Promise<{ ok: boolean; message: string }> =>
+    fetchWithAuth('/screener/value/refresh', { method: 'POST' }),
+
+  getGrowthScreener: async (): Promise<{ results: any[]; computedAt: string | null }> => {
+    const response = await fetchWithAuthRaw('/screener/growth');
+    const data = response.status === 204 ? [] : await response.json();
+    return { results: data, computedAt: response.headers.get('X-Screener-Computed-At') };
+  },
+
+  refreshGrowthScreener: (): Promise<{ ok: boolean; message: string }> =>
+    fetchWithAuth('/screener/growth/refresh', { method: 'POST' }),
+
+  getEtfScreener: async (): Promise<{ results: any[]; computedAt: string | null }> => {
+    const response = await fetchWithAuthRaw('/screener/etf');
+    const data = response.status === 204 ? [] : await response.json();
+    return { results: data, computedAt: response.headers.get('X-Screener-Computed-At') };
+  },
+
+  refreshEtfScreener: (): Promise<{ ok: boolean; message: string }> =>
+    fetchWithAuth('/screener/etf/refresh', { method: 'POST' }),
 
   getMarketInternals: (): Promise<MarketInternalsResponse> =>
     fetchWithAuth('/market-internals'),

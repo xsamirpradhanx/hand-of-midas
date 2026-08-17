@@ -1,5 +1,9 @@
 import { evaluateQuant } from './scripts/evaluateQuant.js';
 import { handler as screenerRefreshHandler } from './handlers/screenerRefresh.js';
+import { handler as diagonalRefreshHandler } from './handlers/diagonalRefresh.js';
+import { handler as valueRefreshHandler } from './handlers/valueRefresh.js';
+import { handler as growthRefreshHandler } from './handlers/growthRefresh.js';
+import { handler as etfRefreshHandler } from './handlers/etfRefresh.js';
 import type { ScreenerMode } from './services/screenerService.js';
 
 /**
@@ -88,6 +92,27 @@ export const screenerRefreshJobs = (Object.keys(SCREENER_MODE_INTERVAL_MINUTES) 
 
 if (process.env.LOCAL_SCREENER_REFRESH_ENABLED === 'true') {
   screenerRefreshJobs.forEach(job => job.start());
+}
+
+// Mirrors DiagonalRefreshFunction: same reasoning, same "cache-only route"
+// pattern, but a single cadence since there's only one mode.
+export const diagonalRefreshJob = registerJob('diagonal-refresh', 15, diagonalRefreshHandler);
+
+if (process.env.LOCAL_SCREENER_REFRESH_ENABLED === 'true') {
+  diagonalRefreshJob.start();
+}
+
+// Mirrors Value/Growth/EtfRefreshFunction: fundamentals and multi-month ETF
+// performance don't move intraday, so a once-daily cadence (1440m) matches
+// the prod cron intent without needing a real day boundary check locally.
+export const valueRefreshJob = registerJob('value-refresh', 1440, valueRefreshHandler);
+export const growthRefreshJob = registerJob('growth-refresh', 1440, growthRefreshHandler);
+export const etfRefreshJob = registerJob('etf-refresh', 1440, etfRefreshHandler);
+
+if (process.env.LOCAL_SCREENER_REFRESH_ENABLED === 'true') {
+  valueRefreshJob.start();
+  growthRefreshJob.start();
+  etfRefreshJob.start();
 }
 
 export function getJob(name: string): JobHandle | undefined {

@@ -104,6 +104,8 @@ export function renderIndicators(
   // space for the sub-panes, since panes are laid out by the library instead.
   chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
 
+  const typeCounters: Record<string, number> = {};
+
   activeIndicators.forEach((ind, i) => {
     const paneIndex = paneIndexFor.get(ind) ?? null;
 
@@ -114,9 +116,16 @@ export function renderIndicators(
         ? calculateSMA(data, period)
         : calculateEMA(data, period);
       const key = `${ind.type}_${period}`;
+      const typeIndex = typeCounters[ind.type] ?? 0;
+      typeCounters[ind.type] = typeIndex + 1;
       const series = chart.addSeries(LineSeries, {
-        color: ind.color || getSeriesColor(ind.type, i),
+        color: ind.color || getSeriesColor(ind.type, typeIndex),
         lineWidth: 2,
+        // Each overlay otherwise draws its own dashed price-line and stacked
+        // axis label, which clutters the axis when several MAs sit close to
+        // price. The candlestick series already owns the price-line/label.
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       series.setData(calcData as any);
       seriesMapRef.current.set(key, series);
@@ -128,6 +137,8 @@ export function renderIndicators(
       const series = chart.addSeries(LineSeries, {
         color: ind.color || '#ff9800',
         lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       series.setData(wmaData as any);
       seriesMapRef.current.set(`WMA_${period}`, series);
@@ -139,6 +150,8 @@ export function renderIndicators(
       const series = chart.addSeries(LineSeries, {
         color: ind.color || '#e91e63',
         lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       series.setData(hmaData as any);
       seriesMapRef.current.set(`HMA_${period}`, series);
@@ -149,9 +162,10 @@ export function renderIndicators(
       const stdDev = Number(ind.params.stdDev) || 2;
       const bbData = calculateBollingerBands(data, period, stdDev);
       const color  = ind.color || '#2962FF';
-      const upper  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
-      const middle = chart.addSeries(LineSeries, { color, lineWidth: 1 });
-      const lower  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
+      const lineOpts = { priceLineVisible: false, lastValueVisible: false };
+      const upper  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, ...lineOpts });
+      const middle = chart.addSeries(LineSeries, { color, lineWidth: 1, ...lineOpts });
+      const lower  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, ...lineOpts });
       upper.setData(bbData.map(d => ({ time: d.time, value: d.upper })) as any);
       middle.setData(bbData.map(d => ({ time: d.time, value: d.middle })) as any);
       lower.setData(bbData.map(d => ({ time: d.time, value: d.lower })) as any);
@@ -165,9 +179,10 @@ export function renderIndicators(
       const mult   = Number(ind.params.mult)   || 2;
       const kcData = calculateKeltnerChannels(data, period, mult);
       const color  = ind.color || '#00bcd4';
-      const upper  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
-      const middle = chart.addSeries(LineSeries, { color, lineWidth: 1 });
-      const lower  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
+      const lineOpts = { priceLineVisible: false, lastValueVisible: false };
+      const upper  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, ...lineOpts });
+      const middle = chart.addSeries(LineSeries, { color, lineWidth: 1, ...lineOpts });
+      const lower  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, ...lineOpts });
       upper.setData(kcData.map(d => ({ time: d.time, value: d.upper })) as any);
       middle.setData(kcData.map(d => ({ time: d.time, value: d.middle })) as any);
       lower.setData(kcData.map(d => ({ time: d.time, value: d.lower })) as any);
@@ -180,9 +195,10 @@ export function renderIndicators(
       const period = Number(ind.params.period) || 20;
       const dcData = calculateDonchianChannels(data, period);
       const color  = ind.color || '#9c27b0';
-      const upper  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
-      const middle = chart.addSeries(LineSeries, { color: `${color}88`, lineWidth: 1, lineStyle: 1 });
-      const lower  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2 });
+      const lineOpts = { priceLineVisible: false, lastValueVisible: false };
+      const upper  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, ...lineOpts });
+      const middle = chart.addSeries(LineSeries, { color: `${color}88`, lineWidth: 1, lineStyle: 1, ...lineOpts });
+      const lower  = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, ...lineOpts });
       upper.setData(dcData.map(d => ({ time: d.time, value: d.upper })) as any);
       middle.setData(dcData.map(d => ({ time: d.time, value: d.middle })) as any);
       lower.setData(dcData.map(d => ({ time: d.time, value: d.lower })) as any);
@@ -211,11 +227,12 @@ export function renderIndicators(
     // ── Overlay: Ichimoku Cloud ─────────────────────────────────────────────
     } else if (ind.type === 'ICHIMOKU') {
       const ichiData = calculateIchimoku(data);
-      const tenkanSeries  = chart.addSeries(LineSeries, { color: '#e91e63', lineWidth: 1 });
-      const kijunSeries   = chart.addSeries(LineSeries, { color: '#2196f3', lineWidth: 1 });
-      const senkouASeries = chart.addSeries(LineSeries, { color: 'rgba(0,230,118,0.5)', lineWidth: 1, lineStyle: 2 });
-      const senkouBSeries = chart.addSeries(LineSeries, { color: 'rgba(255,23,68,0.5)',  lineWidth: 1, lineStyle: 2 });
-      const chikouSeries  = chart.addSeries(LineSeries, { color: '#795548', lineWidth: 1 });
+      const ichiLineOpts = { priceLineVisible: false, lastValueVisible: false };
+      const tenkanSeries  = chart.addSeries(LineSeries, { color: '#e91e63', lineWidth: 1, ...ichiLineOpts });
+      const kijunSeries   = chart.addSeries(LineSeries, { color: '#2196f3', lineWidth: 1, ...ichiLineOpts });
+      const senkouASeries = chart.addSeries(LineSeries, { color: 'rgba(0,230,118,0.5)', lineWidth: 1, lineStyle: 2, ...ichiLineOpts });
+      const senkouBSeries = chart.addSeries(LineSeries, { color: 'rgba(255,23,68,0.5)',  lineWidth: 1, lineStyle: 2, ...ichiLineOpts });
+      const chikouSeries  = chart.addSeries(LineSeries, { color: '#795548', lineWidth: 1, ...ichiLineOpts });
 
       const filterValid = (arr: any[], key: string) =>
         arr.filter(d => d[key] !== null).map(d => ({ time: d.time, value: d[key] }));
@@ -244,6 +261,8 @@ export function renderIndicators(
       const series = chart.addSeries(LineSeries, {
         color: ind.color || '#ff4081',
         lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
       series.setData(vwapData as any);
       seriesMapRef.current.set('VWAP', series);

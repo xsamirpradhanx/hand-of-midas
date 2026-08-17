@@ -75,18 +75,10 @@ export const Dashboard: React.FC = () => {
 
     api.getChartConfig(selectedSymbol)
       .then(res => {
-        if (res && res.indicators) {
-          setIndicators(res.indicators);
-        } else {
-          setIndicators([
-            { type: 'SMA', enabled: true, params: { period: 20 }, color: '#00d4aa' },
-          ]);
-        }
+        setIndicators(res && res.indicators ? res.indicators : []);
       })
       .catch(() => {
-        setIndicators([
-          { type: 'SMA', enabled: true, params: { period: 20 }, color: '#00d4aa' },
-        ]);
+        setIndicators([]);
       });
   }, [selectedSymbol]);
 
