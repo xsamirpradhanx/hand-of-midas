@@ -75,11 +75,19 @@ export function calculateIndependentEvidence(factors: FactorResult[]): Independe
   for (const [bucket, groupMap] of byBucket.entries()) {
     const bucketMultiplier = BUCKET_WEIGHTS[bucket] ?? 1.0;
 
-    // Per correlation group — pick highest-weight representative
+    // Per correlation group — pick highest-weight representative.
+    // A neutral factor carries no directional evidence, so it must not be able
+    // to out-rank a directional (bullish/bearish) factor in the same group just
+    // because its static weight constant happens to be higher — that would
+    // silently erase real evidence instead of de-duplicating it. Prefer any
+    // non-neutral factor in the group; only fall back to a neutral one (or break
+    // ties by weight) when nothing in the group has a directional read.
     const representatives: FactorResult[] = [];
     const names: string[] = [];
     for (const groupFactors of groupMap.values()) {
-      const best = groupFactors.reduce((a, b) => b.weight > a.weight ? b : a);
+      const directional = groupFactors.filter(f => f.bias !== 'neutral');
+      const candidates = directional.length > 0 ? directional : groupFactors;
+      const best = candidates.reduce((a, b) => b.weight > a.weight ? b : a);
       representatives.push(best);
       names.push(best.factorName);
     }

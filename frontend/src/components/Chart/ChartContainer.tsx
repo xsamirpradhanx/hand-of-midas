@@ -318,6 +318,13 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
     const chart = chartRef.current;
     if (!chart || data.length === 0) return;
 
+    // Guards the async predictive-zones fetch below. This effect tears down and
+    // rebuilds the chart on every run, so a zones response that resolves after a
+    // symbol switch would otherwise draw the previous ticker's demand/supply bands
+    // onto the new ticker's chart — and would do it against series objects belonging
+    // to a chart that has already been disposed.
+    let cancelled = false;
+
     try {
       // Clear old series
       seriesMapRef.current.forEach(series => chart.removeSeries(series));
@@ -439,6 +446,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       // ── Attach Zone Plugin if active ────────────────────────────────────────
       if (showPredictiveZones) {
         api.getPredictiveZones(symbol).then((res) => {
+          if (cancelled) return;
           if (res && res.zones && res.zones.length > 0) {
             const plugin = new ZonePlugin(chart);
             // Start projecting from today to the end of the whitespace
@@ -478,6 +486,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
             chart.timeScale().setVisibleLogicalRange({ from: 0, to: baseChartData.length - 1 });
 
             setTimeout(() => {
+              if (cancelled) return;
               chart.priceScale('right').applyOptions({ autoScale: false });
             }, 50);
           }
@@ -488,12 +497,15 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       
       // Disable autoScale shortly after render to allow immediate vertical panning without having to drag the Y-axis
       requestAnimationFrame(() => {
+        if (cancelled) return;
         chart.priceScale('right').applyOptions({ autoScale: false });
       });
     } catch (err: any) {
       console.error(err);
       setError('Chart Error: ' + err.message);
     }
+
+    return () => { cancelled = true; };
   }, [data, chartType, indicators, showPredictiveZones]);
 
   return (

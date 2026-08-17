@@ -1,8 +1,8 @@
-import { GoogleGenAI } from '@google/genai';
 import type { OHLCVDataPoint } from '../../types.js';
 import type { PolygonNewsArticle } from '../polygon.js';
 import { getTimeSeriesYahoo } from '../yahoo.js';
 import type { FactorResult } from '../factors/types.js';
+import { AI_AVAILABLE, generateText } from '../aiProvider.js';
 
 export type BusinessArchetype = 'AI_INFRASTRUCTURE' | 'DIGITAL_ASSET_MINER' | 'HYBRID_TRANSITION' | 'GENERAL';
 export type MarketDriver = 'AI_INFRASTRUCTURE' | 'DIGITAL_ASSET_MINER' | 'MIXED' | 'INDETERMINATE';
@@ -21,7 +21,6 @@ export interface SymbolProfile {
 const AI_INFRA_TICKERS = ['NBIS', 'VRT', 'ETN', 'GEV', 'DLR', 'EQIX'];
 const MINER_TICKERS = ['MARA', 'RIOT', 'CLSK', 'IREN'];
 const KNOWN_HYBRIDS = new Set(['WULF']);
-let ai: GoogleGenAI | null = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 const profileCache = new Map<string, { expiresAt: number; profile: SymbolProfile }>();
 
 function returns(bars: OHLCVDataPoint[]): number[] {
@@ -64,15 +63,14 @@ function defaultArchetype(symbol: string, news: PolygonNewsArticle[] | undefined
 }
 
 async function classifyNarrative(symbol: string, news: PolygonNewsArticle[] | undefined, fallback: BusinessArchetype): Promise<{ archetype: BusinessArchetype; rationale: string; usedLlm: boolean }> {
-  if (!ai || !news?.length || fallback === 'GENERAL') return { archetype: fallback, rationale: 'Classified from vetted ticker and headline keywords.', usedLlm: false };
+  if (!AI_AVAILABLE || !news?.length || fallback === 'GENERAL') return { archetype: fallback, rationale: 'Classified from vetted ticker and headline keywords.', usedLlm: false };
   const headlines = news.slice(0, 10).map(article => article.title).filter(Boolean);
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: `Classify ${symbol}'s current business narrative from these headlines only. Return strict JSON with archetype (one of AI_INFRASTRUCTURE, DIGITAL_ASSET_MINER, HYBRID_TRANSITION, GENERAL) and rationale (max 25 words). Do not assess price, recommend a trade, or infer facts not in the headlines. Headlines: ${JSON.stringify(headlines)}`,
-      config: { responseMimeType: 'application/json' },
-    });
-    const parsed = JSON.parse(response.text ?? '{}') as { archetype?: BusinessArchetype; rationale?: string };
+    const text = await generateText(
+      `Classify ${symbol}'s current business narrative from these headlines only. Return strict JSON with archetype (one of AI_INFRASTRUCTURE, DIGITAL_ASSET_MINER, HYBRID_TRANSITION, GENERAL) and rationale (max 25 words). Do not assess price, recommend a trade, or infer facts not in the headlines. Headlines: ${JSON.stringify(headlines)}`,
+      { json: true },
+    );
+    const parsed = JSON.parse(text ?? '{}') as { archetype?: BusinessArchetype; rationale?: string };
     const allowed: BusinessArchetype[] = ['AI_INFRASTRUCTURE', 'DIGITAL_ASSET_MINER', 'HYBRID_TRANSITION', 'GENERAL'];
     if (parsed.archetype && allowed.includes(parsed.archetype)) {
       return { archetype: parsed.archetype, rationale: parsed.rationale || 'LLM classified supplied headlines.', usedLlm: true };

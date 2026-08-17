@@ -1,4 +1,5 @@
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
+import { getDTE } from '../tradingCalendar.js';
 
 /**
  * Max Pain Strike Gravitational Drift Factor
@@ -41,10 +42,10 @@ export class MaxPainDriftFactor implements PredictiveFactor {
 
       if (nearContracts.length === 0) return null;
 
-      // Calculate DTE (approximate from expiry string)
-      const today = new Date();
-      const expDate = new Date(nearExpiry + 'T16:00:00');
-      const dte = Math.max(0, Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+      // Calculate DTE using canonical ET-timezone-aware trading-day counter.
+      // Previously used `new Date() - new Date(expiry+'T16:00:00')` which is UTC on
+      // Lambda (16:00 UTC ≠ 16:00 ET), producing DTE=1 for same-day expiry.
+      const dte = getDTE(nearExpiry);
 
       // Collect all strikes with their call and put OI
       const callOiByStrike: Record<number, number> = {};
@@ -107,7 +108,11 @@ export class MaxPainDriftFactor implements PredictiveFactor {
         pinningRelevance = 'Moderate';
       }
 
-      // Signal is only tradeable when DTE <= 14 (OpEx gravity is detectable)
+      // Signal is only tradeable when DTE <= 21 (OpEx gravity is detectable).
+      // Keep correlationGroup 'MAX_PAIN' regardless of DTE so the independent
+      // evidence engine always places this in the correct de-duplication bucket
+      // (was incorrectly 'GEX_COMPLEX' for far-dated options, which caused it to
+      // compete with and potentially displace the DealerHedging GEX signal).
       if (dte > 21 || strength < 0.001) {
         return {
           factorName: this.name,
@@ -116,14 +121,36 @@ export class MaxPainDriftFactor implements PredictiveFactor {
           bias: 'neutral',
           weight: 0.10,
           bucket: 'OPTIONS',
-          correlationGroup: 'GEX_COMPLEX',
+          correlationGroup: 'MAX_PAIN',
           reasoning: `Max Pain at $${maxPainStrike.toFixed(2)} (${driftPct >= 0 ? '+' : ''}${(driftPct * 100).toFixed(1)}% from spot). DTE=${dte} is too far for OpEx gravity to dominate. Signal weight reduced.`,
         };
       }
 
-      const bias = (driftPct > 0.005 && pinningRelevance !== 'Low / Unconfirmed') ? 'bullish' : (driftPct < -0.005 && pinningRelevance !== 'Low / Unconfirmed') ? 'bearish' : 'neutral';
-      const buyTarget = Math.min(currentPrice * 0.99, maxPainStrike * 0.995);
-      const sellTarget = Math.max(currentPrice * 1.01, maxPainStrike * 1.005);
+      let bias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+      let pinningType = 'Magnet / Pinning Level';
+
+      if (Math.abs(driftPct) <= 0.03) {
+        // Within 3% of spot: acts primarily as a pinning magnet/anchor at expiry (not directional push)
+        bias = 'neutral';
+        pinningType = 'Near-Spot Pinning Magnet';
+      } else if (Math.abs(driftPct) <= 0.15) {
+        bias = driftPct > 0 ? 'bullish' : 'bearish';
+        pinningType = driftPct > 0 ? 'Upward Gravitational Drift' : 'Downward Gravitational Drift';
+      } else {
+        bias = 'neutral';
+        pinningType = 'Distant / Low Relevance';
+      }
+
+      // Emit the max-pain strike itself as the level, on whichever side of spot it
+      // actually sits. The previous form (min/max against currentPrice * 0.99 / 1.01)
+      // guaranteed a level ~1% either side of spot regardless of where max pain was:
+      // with max pain ABOVE spot the "buyTarget" became a pure spot offset with no
+      // options basis at all, and that invented number was close enough to survive
+      // zone clustering while the genuine structure further out was discarded.
+      // A pinning magnet is one level, not a pair straddling price.
+      const pinLevel = maxPainStrike;
+      const buyTarget = pinLevel < currentPrice ? pinLevel : undefined;
+      const sellTarget = pinLevel > currentPrice ? pinLevel : undefined;
 
       return {
         factorName: this.name,
@@ -132,8 +159,8 @@ export class MaxPainDriftFactor implements PredictiveFactor {
         bias,
         weight: 0.20,
         bucket: 'OPTIONS',
-        correlationGroup: 'GEX_COMPLEX',
-        reasoning: `Max Pain at $${maxPainStrike.toFixed(2)} (${driftPct >= 0 ? '+' : ''}${(driftPct * 100).toFixed(1)}% from spot, DTE=${dte}). Pinning relevance: ${pinningRelevance}. Gravitational strength = ${(strength * 100).toFixed(2)}%. OpEx pinning pressure is ${driftPct > 0 ? 'UPWARD (bullish bias toward max pain)' : driftPct < 0 ? 'DOWNWARD (bearish bias toward max pain)' : 'NEUTRAL'}.`,
+        correlationGroup: 'MAX_PAIN',
+        reasoning: `Max Pain at $${maxPainStrike.toFixed(2)} (${driftPct >= 0 ? '+' : ''}${(driftPct * 100).toFixed(1)}% from spot, DTE=${dte}). Status: ${pinningType}. Pinning relevance: ${pinningRelevance}. Gravitational strength = ${(strength * 100).toFixed(2)}%.`,
       };
     } catch (err) {
       return null;

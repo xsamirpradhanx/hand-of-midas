@@ -289,21 +289,28 @@ function computeRiskReversal(
 ): RiskReversalSkewResult {
   const putIV = put.implied_volatility!;
   const callIV = call.implied_volatility!;
-  const skew = (putIV - callIV) * 100;
+
+  // Standard 25-delta risk-reversal convention: RR = call IV − put IV.
+  // Positive = calls bid over puts (upside demand, bullish skew); negative = the
+  // usual equity put skew. This was previously computed as (put − call), so the
+  // number carried the opposite sign to the words next to it — a chain with calls
+  // bid by 3.9pp printed "call IV exceeds put IV by 3.9pp ... skew -3.91pp".
+  // The narratives were right; the figure was inverted against convention.
+  const skew = (callIV - putIV) * 100;
 
   const putDelta = contractDelta(put, spot, timeToExpiryYears);
   const callDelta = contractDelta(call, spot, timeToExpiryYears);
 
   let bias: RiskReversalSkewResult['bias'] = 'neutral';
-  if (skew > 3) bias = 'bearish';
-  else if (skew < -3) bias = 'bullish';
+  if (skew < -3) bias = 'bearish';
+  else if (skew > 3) bias = 'bullish';
 
   const narrative =
-    skew > 3
-      ? `25Δ put IV exceeds call IV by ${skew.toFixed(1)}pp — institutional crash protection demand skews Sell Zone lower.`
-      : skew < -3
-        ? `25Δ call IV exceeds put IV by ${Math.abs(skew).toFixed(1)}pp — upside demand dominates skew.`
-        : `25Δ risk reversal near flat (${skew >= 0 ? '+' : ''}${skew.toFixed(1)}pp) — balanced volatility skew.`;
+    skew < -3
+      ? `25Δ put IV exceeds call IV by ${Math.abs(skew).toFixed(1)}pp (RR ${skew.toFixed(1)}pp) — institutional crash protection demand skews Sell Zone lower.`
+      : skew > 3
+        ? `25Δ call IV exceeds put IV by ${skew.toFixed(1)}pp (RR +${skew.toFixed(1)}pp) — upside demand dominates skew.`
+        : `25Δ risk reversal near flat (RR ${skew >= 0 ? '+' : ''}${skew.toFixed(1)}pp) — balanced volatility skew.`;
 
   return {
     expiry,

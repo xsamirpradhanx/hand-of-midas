@@ -13,28 +13,111 @@ export interface RedditSentiment {
   }>;
 }
 
-/**
- * Attempts to read the Devvit OAuth token from the local filesystem.
- */
-function getRedditToken(): string | null {
+interface DevvitTokenPayload {
+  refreshToken: string;
+  accessToken: string;
+  expiresAt: number; // epoch ms
+  scope: string;
+  tokenType: string;
+}
+
+const TOKEN_PATH = path.join(os.homedir(), '.devvit', 'token');
+// Refresh a little early so a request never races an expiry mid-flight.
+const EXPIRY_SAFETY_MARGIN_MS = 60_000;
+
+function readTokenFile(): DevvitTokenPayload | null {
   try {
-    const tokenPath = path.join(os.homedir(), '.devvit', 'token');
-    if (!fs.existsSync(tokenPath)) {
-      return null;
-    }
-    const data = fs.readFileSync(tokenPath, 'utf8');
-    const parsed = JSON.parse(data);
-    
-    if (parsed.token) {
-      const decoded = Buffer.from(parsed.token, 'base64').toString('utf8');
-      const tokenObj = JSON.parse(decoded);
-      return tokenObj.accessToken || null;
-    }
-    return null;
+    if (!fs.existsSync(TOKEN_PATH)) return null;
+    const raw = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
+    if (!raw.token) return null;
+    return JSON.parse(Buffer.from(raw.token, 'base64').toString('utf8')) as DevvitTokenPayload;
   } catch (error) {
     console.error('[Reddit Service] Failed to parse Devvit token:', error);
     return null;
   }
+}
+
+function writeTokenFile(payload: DevvitTokenPayload): void {
+  try {
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+    fs.writeFileSync(TOKEN_PATH, JSON.stringify({ token: encoded, copyPaste: false }), 'utf8');
+  } catch (error) {
+    // Non-fatal: the refreshed token still works for this process even if
+    // persisting it to disk fails, just won't survive a restart.
+    console.warn('[Reddit Service] Failed to persist refreshed Devvit token:', error);
+  }
+}
+
+/** Reddit's OAuth client_id is embedded in the access token's JWT payload (`cid` claim). */
+function extractClientId(accessToken: string): string | null {
+  try {
+    const segment = accessToken.split('.')[1];
+    if (!segment) return null;
+    const padded = segment + '='.repeat((4 - (segment.length % 4)) % 4);
+    const payload = JSON.parse(Buffer.from(padded, 'base64url').toString('utf8'));
+    return payload.cid ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshAccessToken(current: DevvitTokenPayload): Promise<DevvitTokenPayload | null> {
+  const clientId = extractClientId(current.accessToken);
+  if (!clientId) {
+    console.warn('[Reddit Service] Could not determine OAuth client_id from cached token; cannot refresh.');
+    return null;
+  }
+
+  try {
+    const response = await fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${clientId}:`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'HandOfMidas/1.0',
+      },
+      body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(current.refreshToken)}`,
+    });
+
+    if (!response.ok) {
+      console.error(`[Reddit Service] Token refresh failed: ${response.status} ${response.statusText}. Re-run "devvit login" to reauthorize.`);
+      return null;
+    }
+
+    const body = await response.json() as { access_token: string; expires_in: number; refresh_token?: string; scope: string; token_type: string };
+    return {
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token ?? current.refreshToken,
+      expiresAt: Date.now() + body.expires_in * 1000,
+      scope: body.scope,
+      tokenType: body.token_type,
+    };
+  } catch (error) {
+    console.error('[Reddit Service] Error refreshing Devvit token:', error);
+    return null;
+  }
+}
+
+/**
+ * Returns a valid Reddit OAuth access token, transparently refreshing the
+ * cached Devvit token (~/.devvit/token) via its refresh_token when expired.
+ */
+async function getValidRedditAccessToken(): Promise<string | null> {
+  const cached = readTokenFile();
+  if (!cached) {
+    console.warn('[Reddit Service] No Devvit token found. Run "devvit login" to authorize Reddit access.');
+    return null;
+  }
+
+  if (cached.expiresAt > Date.now() + EXPIRY_SAFETY_MARGIN_MS) {
+    return cached.accessToken;
+  }
+
+  const refreshed = await refreshAccessToken(cached);
+  if (!refreshed) return null;
+
+  writeTokenFile(refreshed);
+  return refreshed.accessToken;
 }
 
 /**
@@ -48,9 +131,8 @@ export async function getRedditSentiment(symbol: string): Promise<RedditSentimen
     topPosts: []
   };
 
-  const token = getRedditToken();
+  const token = await getValidRedditAccessToken();
   if (!token) {
-    console.warn(`[Reddit Service] No Devvit token found. Reddit data will be empty for ${symbol}.`);
     return defaultRes;
   }
 
@@ -71,7 +153,7 @@ export async function getRedditSentiment(symbol: string): Promise<RedditSentimen
       return defaultRes;
     }
 
-    const data = await response.json();
+    const data = await response.json() as { data?: { children?: Array<{ data: any }> } };
     const children = data?.data?.children || [];
 
     if (children.length === 0) {
@@ -90,7 +172,7 @@ export async function getRedditSentiment(symbol: string): Promise<RedditSentimen
     for (const child of children) {
       const post = child.data;
       const text = `${post.title || ''} ${post.selftext || ''}`.toLowerCase();
-      
+
       let postBull = 0;
       let postBear = 0;
 
@@ -116,7 +198,7 @@ export async function getRedditSentiment(symbol: string): Promise<RedditSentimen
 
     const netScore = bullScore - bearScore;
     const totalSentimentTokens = bullScore + bearScore;
-    
+
     let sentimentScore = 0;
     if (totalSentimentTokens > 0) {
       sentimentScore = netScore / totalSentimentTokens; // -1 to 1

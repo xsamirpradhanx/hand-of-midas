@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import styles from './ScreenerDashboard.module.css';
@@ -11,7 +11,8 @@ export interface ScreenerResult {
   midasScore: number;
   longMomentum: number;
   shortMomentum: number;
-  probability: number;
+  /** Always null — candidate quality rank, not a win probability. */
+  probability: null;
   riskScore: number;
   subScores: {
     momentumQuality: number;
@@ -130,6 +131,10 @@ const ScreenerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [computedAt, setComputedAt] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const pollTimerRef = useRef<number | null>(null);
+  const pollDeadlineRef = useRef<number>(0);
 
   // A tab can stay open through the bell. Refresh the session clock so a
   // previously valid premarket selection cannot remain active all afternoon.
@@ -143,23 +148,72 @@ const ScreenerDashboard: React.FC = () => {
     };
   }, []);
 
-  const fetchScreenerData = useCallback(async (selectedMode: ScreenerMode) => {
+  const fetchScreenerData = useCallback(async (selectedMode: ScreenerMode, opts?: { force?: boolean }) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getScreener(selectedMode);
+      const { results: data, computedAt: at } = await api.getScreener(selectedMode, opts);
       setResults(Array.isArray(data) ? data : []);
+      setComputedAt(at);
+      return at;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load screener data';
       setError(message);
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    setRefreshing(false);
+  }, []);
+
+  const handleRefreshScan = useCallback(async (selectedMode: ScreenerMode) => {
+    const priorComputedAt = computedAt;
+    setRefreshing(true);
+    setError(null);
+    try {
+      await api.refreshScreener(selectedMode);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to start refresh';
+      setError(message);
+      setRefreshing(false);
+      return;
+    }
+
+    // A full scan takes a few minutes; poll for the new result rather than
+    // blocking, and give up gracefully if it runs unusually long.
+    const POLL_INTERVAL_MS = 10_000;
+    const POLL_TIMEOUT_MS = 5 * 60_000;
+    pollDeadlineRef.current = Date.now() + POLL_TIMEOUT_MS;
+
+    const poll = async () => {
+      const at = await fetchScreenerData(selectedMode, { force: true });
+      if (at && at !== priorComputedAt) {
+        stopPolling();
+        return;
+      }
+      if (Date.now() >= pollDeadlineRef.current) {
+        setError('Refresh is taking longer than expected — showing the most recent scan.');
+        stopPolling();
+        return;
+      }
+      pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS);
+    };
+    pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS);
+  }, [computedAt, fetchScreenerData, stopPolling]);
+
   useEffect(() => {
+    stopPolling();
     fetchScreenerData(mode);
-  }, [mode, fetchScreenerData]);
+  }, [mode, fetchScreenerData, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]);
 
   useEffect(() => {
     if (mode === 'premarket' && !premarketAvailable) setMode('open');
@@ -241,10 +295,16 @@ const ScreenerDashboard: React.FC = () => {
           <button
             type="button"
             className={styles.refreshBtn}
-            onClick={() => fetchScreenerData(mode)}
-            disabled={loading}
+            onClick={() => handleRefreshScan(mode)}
+            disabled={loading || refreshing}
+            title={refreshing ? 'Fetching latest prices and recalculating — this takes a few minutes' : undefined}
           >
-            {loading ? (
+            {refreshing ? (
+              <>
+                <span className={styles.spinner} aria-hidden />
+                Refreshing…
+              </>
+            ) : loading ? (
               <>
                 <span className={styles.spinner} aria-hidden />
                 Scanning…
@@ -271,7 +331,9 @@ const ScreenerDashboard: React.FC = () => {
                   </div>
                   <div className={styles.cardBody}>
                     <div>{result.setupType}</div>
-                    <div style={{ color: 'var(--color-bullish)' }}>{result.tradePlan?.rewardRisk}R theoretical</div>
+                    {result.tradePlan?.bias !== 'NO TRADE' && result.tradePlan?.rewardRisk ? (
+                      <div style={{ color: 'var(--color-bullish)' }}>{result.tradePlan.rewardRisk}R theoretical</div>
+                    ) : null}
                     <div style={{ color: 'var(--color-text-dim)' }}>{result.tradePlan?.whyNow}</div>
                   </div>
                 </div>
@@ -396,7 +458,7 @@ const ScreenerDashboard: React.FC = () => {
                   </td>
                   <td className={styles.tdRight}>
                     <span className={styles.volumeMain}>
-                      {result.tradePlan?.rewardRisk ? `${result.tradePlan.rewardRisk}R` : '-'}
+                      {!isNoTrade && result.tradePlan?.rewardRisk ? `${result.tradePlan.rewardRisk}R` : '-'}
                     </span>
                   </td>
                   <td className={styles.td}>

@@ -221,7 +221,8 @@ export const InstitutionalSubCharts: React.FC<Props> = ({ symbol }) => {
                 <div className={styles.skewMeterLegend}>
                   <span style={{ color: '#ff5252' }}>Put Demand</span>
                   <span className={styles.skewDiffText}>
-                    {rr.skew > 0 ? `+${rr.skew.toFixed(1)}pp Put Skew` : `${rr.skew.toFixed(1)}pp Call Skew`}
+                    {/* RR = call IV − put IV, so positive means calls are bid. */}
+                    {rr.skew > 0 ? `+${rr.skew.toFixed(1)}pp Call Skew` : `${Math.abs(rr.skew).toFixed(1)}pp Put Skew`}
                   </span>
                   <span style={{ color: '#00e676' }}>Call Demand</span>
                 </div>

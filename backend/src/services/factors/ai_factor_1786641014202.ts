@@ -9,6 +9,10 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  */
 export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
   name = 'Fractal Efficiency Liquidity Sweep';
+  bucket = 'MOMENTUM' as const;
+  // Shared with the other AI-generated factors — see ai_factor_1786565158561.ts
+  // for why these dedupe as one correlation group instead of stacking.
+  correlationGroup = 'AI_MICROSTRUCTURE';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
@@ -72,7 +76,10 @@ export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
     // Price sweeps previous low, volume spikes, but fractal efficiency is low (choppy absorption)
     // and close recovers into upper half of the bar.
     if (isSweepingLow && rvol >= 1.6 && ker < 0.40 && closeRelativePos > 0.55) {
-      const weight = Math.min(0.92, 0.65 + (rvol - 1.6) * 0.1 + (0.40 - ker) * 0.5);
+      // Weight ceiling of 0.35 matches the hand-tuned factor convention (see
+      // factors/volumeProfile.ts) — an AI-generated factor with no live track
+      // record must not be able to out-weigh every reviewed factor in the engine.
+      const weight = Math.min(0.35, 0.65 + (rvol - 1.6) * 0.1 + (0.40 - ker) * 0.5);
       const stopLevel = Math.min(currentBar.low, price - atr * 0.8);
       const targetLevel = price + atr * 2.5;
 
@@ -80,6 +87,8 @@ export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
         factorName: this.name,
         bias: 'bullish',
         weight: Number(weight.toFixed(2)),
+        bucket: this.bucket,
+        correlationGroup: this.correlationGroup,
         reasoning: `Bullish Liquidity Absorption Sweep detected. Swept 20-bar low (${lowestLow.toFixed(2)}) on high RVOL (${rvol.toFixed(2)}x) with low Fractal Efficiency (KER: ${ker.toFixed(2)}), signaling heavy limit-order absorption.`,
         buyTarget: Number((price * 0.9985).toFixed(4)),
         sellTarget: Number(targetLevel.toFixed(4)),
@@ -89,13 +98,15 @@ export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
     // Scenario B: Bearish Absorption Sweep (Institutional Trap of Longs)
     // Price sweeps previous high, volume spikes, fractal efficiency is low, close drops into lower half.
     if (isSweepingHigh && rvol >= 1.6 && ker < 0.40 && closeRelativePos < 0.45) {
-      const weight = Math.min(0.92, 0.65 + (rvol - 1.6) * 0.1 + (0.40 - ker) * 0.5);
+      const weight = Math.min(0.35, 0.65 + (rvol - 1.6) * 0.1 + (0.40 - ker) * 0.5);
       const targetLevel = price - atr * 2.5;
 
       return {
         factorName: this.name,
         bias: 'bearish',
         weight: Number(weight.toFixed(2)),
+        bucket: this.bucket,
+        correlationGroup: this.correlationGroup,
         reasoning: `Bearish Liquidity Absorption Sweep detected. Swept 20-bar high (${highestHigh.toFixed(2)}) on high RVOL (${rvol.toFixed(2)}x) with low Fractal Efficiency (KER: ${ker.toFixed(2)}), signaling institutional distribution.`,
         buyTarget: Number(targetLevel.toFixed(4)),
         sellTarget: Number((price * 1.0015).toFixed(4)),
@@ -104,11 +115,13 @@ export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
 
     // Scenario C: Bullish Liquidity Vacuum Breakout (High KER + High Volume Expansion)
     if (isSweepingHigh && ker > 0.72 && rvol >= 1.4 && closeRelativePos > 0.75) {
-      const weight = Math.min(0.88, 0.60 + (ker - 0.72) * 0.8);
+      const weight = Math.min(0.35, 0.60 + (ker - 0.72) * 0.8);
       return {
         factorName: this.name,
         bias: 'bullish',
         weight: Number(weight.toFixed(2)),
+        bucket: this.bucket,
+        correlationGroup: this.correlationGroup,
         reasoning: `Bullish Liquidity Vacuum Breakout. Strong directional trend efficiency (KER: ${ker.toFixed(2)}) clearing major high (${highestHigh.toFixed(2)}) with expanding volume (${rvol.toFixed(2)}x).`,
         buyTarget: Number(price.toFixed(4)),
         sellTarget: Number((price + atr * 3.0).toFixed(4)),
@@ -117,11 +130,13 @@ export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
 
     // Scenario D: Bearish Liquidity Vacuum Breakdown (High KER + High Volume Expansion)
     if (isSweepingLow && ker > 0.72 && rvol >= 1.4 && closeRelativePos < 0.25) {
-      const weight = Math.min(0.88, 0.60 + (ker - 0.72) * 0.8);
+      const weight = Math.min(0.35, 0.60 + (ker - 0.72) * 0.8);
       return {
         factorName: this.name,
         bias: 'bearish',
         weight: Number(weight.toFixed(2)),
+        bucket: this.bucket,
+        correlationGroup: this.correlationGroup,
         reasoning: `Bearish Liquidity Vacuum Breakdown. High structural trend efficiency (KER: ${ker.toFixed(2)}) slicing below support (${lowestLow.toFixed(2)}) with volume confirmation (${rvol.toFixed(2)}x).`,
         buyTarget: Number((price - atr * 3.0).toFixed(4)),
         sellTarget: Number(price.toFixed(4)),
@@ -133,6 +148,8 @@ export class FractalEfficiencyLiquiditySweepFactor implements PredictiveFactor {
       factorName: this.name,
       bias: 'neutral',
       weight: 0.10,
+      bucket: this.bucket,
+      correlationGroup: this.correlationGroup,
       reasoning: `No structural liquidity sweep or efficiency divergence detected. Current KER: ${ker.toFixed(2)}, RVOL: ${rvol.toFixed(2)}. Market is in equilibrium.`,
     };
   }

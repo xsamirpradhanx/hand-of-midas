@@ -3,6 +3,8 @@ import { VolumeProfileFactor } from './volumeProfile.js';
 import { AtrVolatilityFactor } from './atrVolatility.js';
 import { DealerHedgingFactor } from './dealerHedging.js';
 import { AnchoredVwapFactor } from './anchoredVwap.js';
+import { SessionVwapFactor } from './sessionVwap.js';
+import { SwingStructureFactor } from './swingStructure.js';
 import { EstimatedCvdFactor } from './estimatedCvd.js';
 import { HvlrSupportFactor } from './hvlrSupport.js';
 import { OptionsSqueezeFactor } from './squeezeScore.js';
@@ -11,6 +13,7 @@ import { TermStructureFactor } from './termStructure.js';
 import { HurstExponentFactor } from './hurstExponent.js';
 import { KamaZScoreFactor } from './kamaZScore.js';
 import { InsiderCatalystFactor } from './insiderCatalyst.js';
+import { PositioningSentimentFactor } from './positioningSentiment.js';
 import { IvRvRatioFactor } from './ivRvRatio.js';
 import { MaxPainDriftFactor } from './maxPainDrift.js';
 import { VannaDeltaPressureFactor } from './vannaDeltaPressure.js';
@@ -29,6 +32,8 @@ export function getFactors(): PredictiveFactor[] {
     new AtrVolatilityFactor(),
     new DealerHedgingFactor(),
     new AnchoredVwapFactor(),
+    new SessionVwapFactor(),
+    new SwingStructureFactor(),
     new EstimatedCvdFactor(),
     new HvlrSupportFactor(),
     new OptionsSqueezeFactor(),
@@ -37,6 +42,7 @@ export function getFactors(): PredictiveFactor[] {
     new HurstExponentFactor(),
     new KamaZScoreFactor(),
     new InsiderCatalystFactor(),
+    new PositioningSentimentFactor(),
     new IvRvRatioFactor(),
     new MaxPainDriftFactor(),
     new VannaDeltaPressureFactor(),

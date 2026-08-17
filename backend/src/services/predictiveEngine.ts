@@ -1,14 +1,15 @@
 import { getTickerNews, PolygonNewsArticle } from './polygon.js';
-import { getTimeSeriesYahoo } from './yahoo.js';
+import { fetchBarsWithFallback } from './marketData/fetchBars.js';
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import type { FactorResult, FactorInput, PredictiveFactor } from './factors/types.js';
 import { getFactors } from './factors/factorRegistry.js';
 import { CompositeScoreAgent } from './compositeScore.js';
 import { putItem, getItem } from './dynamodb.js';
-import type { FactorStatsItem, SetupStatsItem } from '../types.js';
+import type { FactorStatsItem, SetupStatsItem, OHLCVDataPoint } from '../types.js';
 import { calibratePrediction, learningKey, type LearningAssessment } from './quant/learningEngine.js';
 import { generateGroundedTradeNarrative } from './tradeNarrative.js';
 import { buildSymbolProfile, applySymbolProfile } from './quant/symbolProfile.js';
+import { getAggregatedSentiment, type AggregatedSentiment } from './sentimentAggregator.js';
 
 export interface PredictiveZone {
   type: 'buy' | 'sell';
@@ -46,6 +47,8 @@ export interface PredictiveEngineResult {
     factors: FactorResult[];
     tradePlan?: {
       bias: 'LONG' | 'SHORT' | 'NO TRADE';
+      /** Whether the setup is actionable now, waiting on price, or absent. */
+      readiness: 'ACTIONABLE' | 'WAITING' | 'NO SETUP';
       archetype: string;
       trigger: number;
       entryZone: string;
@@ -55,6 +58,8 @@ export interface PredictiveEngineResult {
       stretchTarget: number;
       stop: number;
       rewardRisk: number;
+      /** True geometric R:R, populated even on NO TRADE. See compositeScore.ts. */
+      potentialRewardRisk: number;
       roomToResistance: number;
       roomToSupport: number;
       confirmation: string;
@@ -71,33 +76,157 @@ const aiAgent = new CompositeScoreAgent();
 // (12 original + 4 new institutional alpha factors from the quant audit)
 const registeredFactors: PredictiveFactor[] = getFactors();
 
-export async function getPredictiveZones(symbol: string, activeExpiry?: string): Promise<PredictiveEngineResult> {
+/**
+ * Explain a NO TRADE verdict in terms of this symbol's own numbers.
+ *
+ * Both this and the AI Evidence Review below used to emit one hardcoded sentence —
+ * "No executable setup: evidence, location, or reward-to-risk did not clear the trade
+ * filter." — for every rejected plan. Since the geometry and structure gates landed,
+ * NO TRADE is the common verdict, so two of the three explanation panels showed the
+ * same text on every symbol and neither said which gate actually fired. The engine
+ * already knows: `whyNow` carries the specific blocking condition and the zones carry
+ * their levels and contributors. This reports them.
+ */
+function explainNoTrade(
+  plan: { whyNow: string; trigger: number; potentialRewardRisk: number } | undefined,
+  currentPrice: number,
+  demandZone: { top: number; bottom: number; confluence: string[] },
+  supplyZone: { top: number; bottom: number; confluence: string[] },
+): string {
+  if (!plan) return 'No trade plan could be built — insufficient factor coverage for this symbol.';
+
+  const NO_STRUCT = 'No structural level identified';
+  const demandOk = demandZone.confluence[0] !== NO_STRUCT;
+  const supplyOk = supplyZone.confluence[0] !== NO_STRUCT;
+  const parts: string[] = [plan.whyNow];
+
+  if (demandOk && supplyOk) {
+    const toDemand = ((currentPrice - demandZone.top) / currentPrice) * 100;
+    const toSupply = ((supplyZone.bottom - currentPrice) / currentPrice) * 100;
+    parts.push(
+      `At $${currentPrice.toFixed(2)}, price sits ${toDemand.toFixed(1)}% above demand ($${demandZone.bottom}–$${demandZone.top}: ${demandZone.confluence.join(' + ')}) and ${toSupply.toFixed(1)}% below supply ($${supplyZone.bottom}–$${supplyZone.top}: ${supplyZone.confluence.join(' + ')}).`,
+    );
+    parts.push(
+      plan.potentialRewardRisk >= 1
+        ? `The geometry itself is sound — ${plan.potentialRewardRisk}R if price reaches $${plan.trigger}. This is a level to watch, not a setup to take here.`
+        : `Even at the trigger the geometry only offers ${plan.potentialRewardRisk}R, so it would not qualify on a pullback either.`,
+    );
+  } else {
+    const missing = !demandOk && !supplyOk
+      ? 'Neither side is'
+      : !demandOk ? 'The demand side is not' : 'The supply side is not';
+    parts.push(
+      `${missing} anchored in observed price behaviour — no pivot cluster, volume shelf, or value-area edge within reach. An entry and a stop would have to be invented, so none are offered.`,
+    );
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Grounded evidence summary, assembled from factor outputs rather than generated.
+ *
+ * Deliberately deterministic: this panel reads as the model's justification, and a
+ * language model asked to justify a verdict will reliably sound more certain than the
+ * evidence warrants. Every number here is a direct readout of what the factors returned.
+ */
+function summariseEvidence(
+  symbol: string,
+  currentPrice: number,
+  modelConviction: number,
+  agreementLevel: string,
+  factors: FactorResult[],
+): string {
+  const directional = factors.filter(f => f.bias !== 'neutral');
+  const bulls = directional.filter(f => f.bias === 'bullish').sort((a, b) => b.weight - a.weight);
+  const bears = directional.filter(f => f.bias === 'bearish').sort((a, b) => b.weight - a.weight);
+  const neutralCount = factors.length - directional.length;
+  const label = (f: FactorResult) => `${f.factorName.replace(/\s*\(.*?\)\s*$/, '')} (${Math.round(f.weight * 100)}%)`;
+
+  const sides: string[] = [];
+  if (bulls.length) sides.push(`Bullish: ${bulls.slice(0, 3).map(label).join(', ')}${bulls.length > 3 ? `, +${bulls.length - 3} more` : ''}.`);
+  if (bears.length) sides.push(`Bearish: ${bears.slice(0, 3).map(label).join(', ')}${bears.length > 3 ? `, +${bears.length - 3} more` : ''}.`);
+  if (!sides.length) sides.push('No factor returned a directional read.');
+
+  const agreement = agreementLevel === 'LOW'
+    ? 'The active evidence buckets disagree, so the net bias carries little weight on its own.'
+    : agreementLevel === 'HIGH'
+      ? 'The active evidence buckets broadly agree.'
+      : 'The active evidence buckets are only moderately aligned.';
+
+  return `${symbol} at $${currentPrice.toFixed(2)}: ${factors.length} factors ran — ${directional.length} directional, ${neutralCount} neutral. ${sides.join(' ')} ${agreement} Composite conviction ${Math.round(modelConviction * 100)}/100, which is an evidence-strength score and not a win probability.`;
+}
+
+export async function getPredictiveZones(
+  symbol: string,
+  activeExpiry?: string,
+  livePriceOverride?: number,
+): Promise<PredictiveEngineResult> {
   const sym = symbol.toUpperCase();
 
-  // 1. Fetch OHLCV (6 months / 126 trading days)
-  const bars = await getTimeSeriesYahoo(sym, '1d', 126);
+  // Fetch daily bars, intraday bars, options chain, sentiment, and news concurrently —
+  // none of these depend on each other's output, only on `sym`. They used to run as five
+  // sequential round trips, which stacked their full latencies on the critical path of
+  // every single trade-plan generation. Each optional fetch keeps its own try/catch so one
+  // slow/failing source doesn't take down the others; only the daily-bar fetch is required.
+  const [dailyResult, intradayResult, optionsChain, sentiment, news] = await Promise.all([
+    // 1. OHLCV (6 months / 126 trading days) — Yahoo primary here since the screener
+    // fans this out across ~20 candidates per run and Schwab-first was the main
+    // latency source; Schwab remains the default for other callers.
+    fetchBarsWithFallback(sym, '1day', 126, { preferredProvider: 'yahoo' }),
+
+    // 1b. 1-min extended-hours bars for the current session, best-effort. Powers
+    // session-anchored VWAP factors (Day/London/US); anything relying on daily bars
+    // is unaffected if this fails, and session-VWAP factors return null rather than
+    // degrading silently. Also used below to refresh `currentPrice`: the daily-bar
+    // fetch has no "synthesize today's live candle" step, so its last close can be a
+    // stale prior-session settlement during premarket/postmarket. Every downstream
+    // trigger/chase-price/overextension check in compositeScore.ts assumes
+    // `currentPrice` is live — on a gap day, a stale close made those checks blind to
+    // the gap (see PR notes). 1-min bars reflect real ticks including pre/post
+    // market, so they're a much better source of truth when available.
+    fetchBarsWithFallback(sym, '1min', 960, { extendedHours: true }).catch(err => {
+      console.warn(`[PredictiveEngine] Intraday bars unavailable for ${sym}, session VWAP factors will be skipped:`, err);
+      return undefined;
+    }),
+
+    // 2. Options Chain, safely (graceful fallback if unsupported/empty)
+    fetchOptionsChainWithFallback(sym).catch(err => {
+      console.warn(`[PredictiveEngine] Options chain unavailable for ${sym}, proceeding with price action factors:`, err);
+      return undefined;
+    }),
+
+    // 2b. Aggregated sentiment, best-effort. Cached for 30 minutes inside the
+    // aggregator, so the screener fanning this across ~20 candidates costs one
+    // provider round trip per symbol per half hour rather than five per call.
+    getAggregatedSentiment(sym).catch(err => {
+      console.warn(`[PredictiveEngine] Sentiment unavailable for ${sym}:`, err);
+      return undefined;
+    }),
+
+    // 3. News, safely. The random delay staggers Polygon requests when the screener
+    // fans this out across many symbols at once; it no longer blocks the other fetches.
+    (async () => {
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 750));
+      return getTickerNews(sym, 15);
+    })().catch(err => {
+      console.warn(`[PredictiveEngine] News unavailable for ${sym}, proceeding without news sentiment: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }),
+  ]);
+
+  const { bars } = dailyResult;
   if (!bars || bars.length === 0) {
     throw new Error(`Insufficient historical price data found for ticker ${sym}`);
   }
 
-  const currentPrice = bars[bars.length - 1].close;
+  const intradayBars: OHLCVDataPoint[] | undefined = intradayResult?.bars;
 
-  // 2. Fetch Options Chain safely (graceful fallback if unsupported/empty)
-  let optionsChain: { expirations: string[]; contracts: any[] } | undefined;
-  try {
-    optionsChain = await fetchOptionsChainWithFallback(sym);
-  } catch (err) {
-    console.warn(`[PredictiveEngine] Options chain unavailable for ${sym}, proceeding with price action factors:`, err);
-  }
-
-  // 3. Fetch News safely
-  let news: PolygonNewsArticle[] | undefined;
-  try {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 750));
-    news = await getTickerNews(sym, 15);
-  } catch (err) {
-    console.warn(`[PredictiveEngine] News unavailable for ${sym}, proceeding without news sentiment: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  // Prefer an explicit live quote from the caller (e.g. screenerService.ts
+  // already has one — using it keeps compositeScore's trade-plan geometry and
+  // the screener's own trigger evaluation looking at the exact same price)
+  // over the latest 1-min bar, over the daily bar's close as a last resort.
+  const latestIntradayClose = intradayBars?.[intradayBars.length - 1]?.close;
+  const currentPrice = livePriceOverride ?? latestIntradayClose ?? bars[bars.length - 1].close;
 
   const factorInput: FactorInput = {
     symbol: sym,
@@ -106,6 +235,8 @@ export async function getPredictiveZones(symbol: string, activeExpiry?: string):
     optionsChain,
     activeExpiry,
     news,
+    intradayBars,
+    sentiment,
   };
 
   // 4. Run all factor modules in parallel
@@ -167,9 +298,13 @@ export async function getPredictiveZones(symbol: string, activeExpiry?: string):
     synthesis.modelConviction,
     plan ? setupStats?.[learningKey(plan.bias)] : undefined,
   );
+  // Always use majorResistance (T1) as the primary target for the AI narrative.
+  // For SHORT, majorResistance = demandZone.top = nearest structural support below entry.
+  // Previously SHORT used stretchTarget (T2), causing the AI to compute R:R from T2
+  // (~22R) instead of T1 (~6R) — a mismatch vs tradePlan.rewardRisk which uses T1.
   const targetPrice = !plan || plan.bias === 'NO TRADE'
     ? currentPrice
-    : plan.bias === 'LONG' ? plan.majorResistance : plan.stretchTarget;
+    : plan.majorResistance;
   const targetSources = !plan || plan.bias === 'NO TRADE'
     ? []
     : plan.bias === 'LONG' ? synthesis.supplyZone.confluence : synthesis.demandZone.confluence;
@@ -179,10 +314,11 @@ export async function getPredictiveZones(symbol: string, activeExpiry?: string):
     targetSources,
     invalidationPrice: plan?.stop ?? currentPrice,
     explanation: !plan || plan.bias === 'NO TRADE'
-      ? 'No executable setup: evidence, location, or reward-to-risk did not clear the trade filter.'
-      : `Target $${targetPrice} is the nearest ${plan.bias === 'LONG' ? 'supply/resistance' : 'demand/support'} cluster supported by ${targetSources.join(', ') || 'price structure'}. Invalidation is $${plan.stop}; a break there invalidates the setup.`,
+      ? explainNoTrade(plan, currentPrice, synthesis.demandZone, synthesis.supplyZone)
+      // TODO(PR2): switch to "15m close" once multi-TF fetch is live. Today the engine only has daily bars.
+      : `T1 ($${plan.majorResistance}) is the primary structural ${plan.bias === 'LONG' ? 'resistance' : 'demand'} zone (${targetSources.join(', ') || 'price structure'}). T2 ($${plan.stretchTarget}) serves as the extended statistical/VWAP target. Invalidation is $${plan.stop}; a daily close ${plan.bias === 'LONG' ? 'below' : 'above'} $${plan.stop} invalidates the setup.`,
   };
-  let aiNarrative = 'No executable setup: evidence, location, or reward-to-risk did not clear the trade filter.';
+  let aiNarrative = summariseEvidence(sym, currentPrice, synthesis.modelConviction, synthesis.agreementLevel, activeFactors);
   if (plan?.bias && plan.bias !== 'NO TRADE') {
     aiNarrative = await generateGroundedTradeNarrative({
       symbol: sym, currentPrice, bias: plan.bias, target: targetPrice,

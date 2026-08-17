@@ -3,7 +3,11 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 export class OptionsSqueezeFactor implements PredictiveFactor {
   name = 'Options Squeeze Score (Gamma Compression)';
   bucket = 'OPTIONS' as const;
-  correlationGroup = 'OPTIONS_SQUEEZE';
+  // Matches the correlationGroup actually returned by evaluate() below
+  // ('GEX_COMPLEX') — was declared as 'OPTIONS_SQUEEZE' here, which nothing
+  // reads (IndependentEvidenceEngine groups by the returned FactorResult
+  // field, not this class-level one), but the mismatch was misleading.
+  correlationGroup = 'GEX_COMPLEX';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { optionsChain, currentPrice } = input;

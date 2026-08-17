@@ -1,13 +1,20 @@
-import 'dotenv/config';
 import { scanItems, putItem, getItem } from '../services/dynamodb.js';
-import { getTimeSeriesYahoo } from '../services/yahoo.js';
+import { fetchBarsWithFallback } from '../services/marketData/fetchBars.js';
 import type { PredictionItem, EvaluationItem, FactorStatsItem, SetupStatsItem } from '../types.js';
 import { learningKey } from '../services/quant/learningEngine.js';
 import { gradeOutcome } from '../services/quant/gradeOutcome.js';
 
-const EVALUATION_HORIZON_BARS = 5;
+/**
+ * Maximum hold a trade plan is graded over, in daily bars — 20 ≈ 4 calendar weeks.
+ * Plans are swing/options setups measured in days-to-weeks; anything still unresolved
+ * after 4 weeks is a TIMEOUT because the thesis no longer applies, not a loss.
+ * Must stay in sync with HORIZON_BARS in services/compositeScore.ts, which sizes
+ * target and stop distances — grading over a different window than plans are built
+ * for is what previously produced setups that could not resolve meaningfully.
+ */
+const EVALUATION_HORIZON_BARS = 20;
 
-async function evaluateQuant() {
+export async function evaluateQuant() {
   console.log('[Quant Evaluation] 📊 Starting prediction evaluation cycle...');
 
   try {
@@ -95,16 +102,21 @@ async function evaluateQuant() {
 
       console.log(`[Quant Evaluation] 🎯 Plan: ${bias} @ ${entryPrice.toFixed(2)} | Target: ${target.toFixed(2)} | Stop: ${stop.toFixed(2)}`);
 
-      // 3. Fetch recent price action
+      // 3. Fetch recent price action (Schwab primary, Yahoo fallback).
+      // fetchBarsWithFallback throws when every provider returns zero bars
+      // (e.g. a delisted/bad ticker) — unlike the old direct Yahoo call, which
+      // just returned []. Isolate that per-prediction so one bad symbol can't
+      // abort grading for every other prediction in this run.
       const historyNeeded = Math.min(252, Math.max(20, Math.ceil(daysOld) + EVALUATION_HORIZON_BARS + 5));
-      const bars = await getTimeSeriesYahoo(pred.symbol, '1d', historyNeeded);
-      
-      const futureBars = bars.filter(b => new Date(b.datetime).getTime() > predDate.getTime());
-
-      if (futureBars.length < EVALUATION_HORIZON_BARS) {
-        console.log(`[Quant Evaluation] ⏳ Waiting for ${EVALUATION_HORIZON_BARS} completed bars after prediction.`);
+      let bars;
+      try {
+        ({ bars } = await fetchBarsWithFallback(pred.symbol, '1day', historyNeeded));
+      } catch (err) {
+        console.warn(`[Quant Evaluation] ⚠️ Could not fetch bars for ${pred.symbol}, skipping: ${err instanceof Error ? err.message : String(err)}`);
         continue;
       }
+
+      const futureBars = bars.filter(b => new Date(b.datetime).getTime() > predDate.getTime());
 
       const grade = gradeOutcome(
         futureBars,
@@ -114,6 +126,17 @@ async function evaluateQuant() {
         entryPrice,
         EVALUATION_HORIZON_BARS,
       );
+
+      // Only an unresolved plan needs the full horizon. TARGET/STOP/AMBIGUOUS mean a
+      // level was actually touched, and no number of later bars can un-touch it — so
+      // those grade as soon as they happen. Waiting for the whole window regardless
+      // (the previous behaviour) would have delayed every single grade by the full
+      // EVALUATION_HORIZON_BARS, throttling the learning loop to one batch of feedback
+      // per horizon rather than grading each plan the day it resolves.
+      if (grade.outcome === 'TIMEOUT' && futureBars.length < EVALUATION_HORIZON_BARS) {
+        console.log(`[Quant Evaluation] ⏳ Unresolved after ${futureBars.length}/${EVALUATION_HORIZON_BARS} bars — waiting.`);
+        continue;
+      }
       const { outcome, score, hitTarget, hitStop, maxExcursion, ambiguous } = grade;
 
       if (outcome === 'TARGET') {
@@ -209,4 +232,7 @@ async function evaluateQuant() {
   }
 }
 
-evaluateQuant();
+// No self-invocation here — this module is imported by both the CLI entry
+// point (scripts/runEvaluateQuant.ts) and the scheduled Lambda handler
+// (handlers/evaluateQuant.ts), each of which calls evaluateQuant() explicitly.
+// A bottom-of-file self-invoking call would also fire on Lambda cold start.

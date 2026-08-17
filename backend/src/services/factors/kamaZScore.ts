@@ -7,11 +7,14 @@ export class KamaZScoreFactor implements PredictiveFactor {
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
     const { bars, currentPrice } = input;
-    if (!bars || bars.length < 20) return null;
+    const period = 20;
+    // Needs period+1 closes: prices[n-period-1] (the KAMA seed) must be in bounds.
+    // Was `bars.length < 20`, which let n=20 through and read prices[-1] (undefined),
+    // silently producing NaN for KAMA/z-score on the minimum-length input.
+    if (!bars || bars.length < period + 1) return null;
 
     const prices = bars.map(b => b.close);
     const n = prices.length;
-    const period = 20;
 
     // KAMA Efficiency Ratio (ER)
     const change = Math.abs(prices[n - 1] - prices[n - 1 - period]);
@@ -45,13 +48,20 @@ export class KamaZScoreFactor implements PredictiveFactor {
     const isOverbought = zScore > 2.0;
 
     const bias = isOversold ? 'bullish' : isOverbought ? 'bearish' : 'neutral';
-    const buyTarget = isOversold ? currentPrice * 0.995 : currentPrice * 0.98;
-    const sellTarget = isOverbought ? currentPrice * 1.005 : currentPrice * 1.02;
+
+    // This factor measures *how stretched* price is from its adaptive mean — it has
+    // no opinion on where support or resistance sits. It previously emitted
+    // currentPrice * 0.98 / 1.02, a fabricated ±2% band that carried no information
+    // yet still fed compositeScore's zone clustering. Because this factor is in the
+    // PRICE_STRUCTURE bucket it passes the isPriceLocation gate, so on volatile
+    // symbols that invented band was one of the few "levels" close enough to survive
+    // MAX_ZONE_DISTANCE — crowding out the genuine structure it sat in front of.
+    // Bias and weight still count as evidence; price levels are left to factors that
+    // actually derive them. (KAMA itself is a real adaptive-mean level and could be
+    // re-introduced as one deliberately — but as a computed level, not a spot offset.)
 
     return {
       factorName: this.name,
-      buyTarget,
-      sellTarget,
       bias,
       weight: 0.20,
       bucket: 'PRICE_STRUCTURE',

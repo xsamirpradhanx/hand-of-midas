@@ -10,21 +10,37 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showFactors, setShowFactors] = useState(false);
 
   useEffect(() => {
     if (!symbol) return;
+    // Ignore a response that arrives after the user has moved to another symbol.
+    //
+    // Without this, switching tickers while a request is still in flight renders one
+    // symbol's plan under another's name: the heading reads from the `symbol` prop
+    // (already updated) while `data` holds whichever response resolved last. An
+    // uncached plan takes ~1s to build, so clicking B while A is loading reliably
+    // lets A land second and overwrite B. It reads as the engine inventing numbers,
+    // but every value is real — just for the previous ticker.
+    let cancelled = false;
     setLoading(true);
     setError(null);
+    // Drop the previous symbol's plan immediately so nothing stale is on screen
+    // while the new one loads.
+    setData(null);
     api.getPredictiveZones(symbol)
       .then(res => {
+        if (cancelled) return;
         setData(res);
         setLoading(false);
       })
       .catch(err => {
+        if (cancelled) return;
         console.error(err);
         setError('Failed to load trade plan');
         setLoading(false);
       });
+    return () => { cancelled = true; };
   }, [symbol]);
 
   if (loading) {
@@ -44,8 +60,21 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
     <div className={styles.panel}>
       <div className={styles.header}>
         <h3>AI Trade Plan for {symbol}</h3>
-        <span className={`${styles.biasBadge} ${plan?.bias === 'LONG' ? styles.long : plan?.bias === 'SHORT' ? styles.short : styles.neutral}`}>
-          {plan?.bias || thesis.bias.toUpperCase()}
+        {/* A sound setup waiting on a pullback is not the same as no setup, so the
+            badge reports readiness rather than collapsing both into "NO TRADE". */}
+        <span
+          className={`${styles.biasBadge} ${
+            plan?.readiness === 'ACTIONABLE'
+              ? (plan.bias === 'LONG' ? styles.long : styles.short)
+              : plan?.readiness === 'WAITING' ? styles.waiting : styles.neutral
+          }`}
+          title={plan?.readiness === 'WAITING' ? `Valid setup at $${plan.trigger} — not actionable at the current price.` : undefined}
+        >
+          {plan?.readiness === 'WAITING'
+            ? `WAITING · ${plan.potentialRewardRisk}R @ $${plan.trigger}`
+            : plan?.readiness === 'NO SETUP'
+              ? 'NO SETUP'
+              : plan?.bias || thesis.bias.toUpperCase()}
         </span>
       </div>
 
@@ -55,9 +84,22 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
             <span className={styles.label}>Archetype</span>
             <span className={styles.value}>{plan.archetype}</span>
           </div>
-          <div className={styles.card}>
-            <span className={styles.label}>Reward:Risk</span>
-            <span className={styles.value}>{plan.rewardRisk}R</span>
+          <div
+            className={styles.card}
+            title={
+              plan.bias === 'NO TRADE'
+                ? 'The plan’s geometry if price reaches the trigger. Not actionable at the current price — see Why Now.'
+                : undefined
+            }
+          >
+            <span className={styles.label}>
+              {plan.bias === 'NO TRADE' ? 'Reward:Risk (if triggered)' : 'Reward:Risk'}
+            </span>
+            <span className={styles.value}>
+              {plan.bias === 'NO TRADE'
+                ? `${plan.potentialRewardRisk ?? 0}R`
+                : `${plan.rewardRisk}R`}
+            </span>
           </div>
           <div
             className={styles.card}
@@ -168,6 +210,42 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
                 <span className={styles.triggerTitle}>Supporting evidence</span>
                 <p>{thesis.priceRationale.targetSources.join(', ')}</p>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {thesis.factors?.length > 0 && (
+        <div className={styles.factorsSection}>
+          <button
+            type="button"
+            className={styles.factorsToggle}
+            onClick={() => setShowFactors(prev => !prev)}
+          >
+            <h4 className={styles.factorsToggleHeading}>Active Factors ({thesis.factors.length})</h4>
+            <span className={styles.factorsToggleIcon}>{showFactors ? '▲' : '▼'}</span>
+          </button>
+          {showFactors && (
+            <div className={styles.factorsList}>
+              {[...thesis.factors]
+                .sort((a: any, b: any) => (b.weight || 0) - (a.weight || 0))
+                .map((f: any, i: number) => (
+                  <div key={`${f.factorName}-${i}`} className={styles.factorCard}>
+                    <div className={styles.factorHeader}>
+                      <span className={styles.factorName}>{f.factorName}</span>
+                      <span
+                        className={`${styles.factorBias} ${
+                          f.bias === 'bullish' ? styles.factorBiasBull
+                            : f.bias === 'bearish' ? styles.factorBiasBear
+                            : styles.factorBiasNeutral
+                        }`}
+                      >
+                        {f.bias} · {Math.round((f.weight || 0) * 100)}%
+                      </span>
+                    </div>
+                    <p className={styles.factorReasoning}>{f.reasoning}</p>
+                  </div>
+                ))}
             </div>
           )}
         </div>

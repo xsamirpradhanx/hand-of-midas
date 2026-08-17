@@ -1,7 +1,7 @@
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import { fetchOptionsChainSchwab, getQuoteSchwab, getPriceHistorySchwab } from './schwabService.js';
 import { getQuote as getQuotePolygon } from './polygon.js';
-import { yf } from './yahoo.js';
+import { yf, getOptionsChainYahoo } from './yahoo.js';
 import type { PolygonOptionsContract } from './polygon.js';
 
 // ---------------------------------------------------------------------------
@@ -111,19 +111,35 @@ export async function fetchOptionsChainProviderAware(
   expiryStr?: string,
   provider?: string
 ): Promise<{ expirations: string[]; contracts: PolygonOptionsContract[]; quote?: any; source: string }> {
-  const isSchwab = provider === 'schwab';
-  
-  if (isSchwab) {
+  const isYahoo = provider === 'yahoo';
+  const isPolygon = provider === 'polygon';
+  // Default (no explicit provider) = Schwab primary, Yahoo fallback.
+  // Polygon is opt-in only per data-source policy — matches getQuoteProviderAware
+  // / getMarketDataProviderAware. Previously only explicit ?provider=schwab hit
+  // Schwab; every unparameterized call (options chain by symbol, GEX/gamma-flip
+  // routes) silently fell to fetchOptionsChainWithFallback's Polygon-first pipeline.
+  const preferSchwab = !isYahoo && !isPolygon;
+
+  if (preferSchwab) {
     try {
       const res = await fetchOptionsChainSchwab(symbol, expiryStr);
       return { ...res, source: 'schwab' };
     } catch (err) {
-      console.warn(`Schwab options fetch failed for ${symbol}: ${err instanceof Error ? err.message : String(err)}. Falling back to default pipeline...`);
+      console.warn(`Schwab options fetch failed for ${symbol}: ${err instanceof Error ? err.message : String(err)}. Falling back to Yahoo...`);
     }
   }
 
-  // Default pipeline handles Polygon -> Yahoo fallback
-  return fetchOptionsChainWithFallback(symbol, expiryStr);
+  // --- Polygon (explicit selection only, via its own Polygon->Yahoo pipeline) ---
+  if (isPolygon) {
+    return fetchOptionsChainWithFallback(symbol, expiryStr);
+  }
+
+  // --- Yahoo (explicit selection, or final fallback when Schwab failed above).
+  // Deliberately NOT fetchOptionsChainWithFallback here — that pipeline tries
+  // Polygon first, which would reintroduce the silent-Polygon-default bug for
+  // callers who never opted into Polygon. ---
+  const data = await getOptionsChainYahoo(symbol, expiryStr);
+  return { ...data, source: 'yahoo' };
 }
 
 // ---------------------------------------------------------------------------
@@ -137,9 +153,12 @@ export async function getQuoteProviderAware(
   const isSchwab = provider === 'schwab';
   const isYahoo = provider === 'yahoo';
   const isPolygon = provider === 'polygon';
+  // Default (no explicit provider) = Schwab primary, Yahoo fallback.
+  // Polygon is opt-in only per data-source policy.
+  const preferSchwab = isSchwab || (!isYahoo && !isPolygon);
 
-  // --- Schwab ---
-  if (isSchwab) {
+  // --- Schwab (default or explicit) ---
+  if (preferSchwab) {
     try {
       const raw = await getQuoteSchwab(upperSymbol);
       const normalized = normalizeSchwabQuote(raw, upperSymbol);
@@ -160,8 +179,8 @@ export async function getQuoteProviderAware(
     }
   }
 
-  // --- Polygon (explicit selection or default non-yahoo/schwab) ---
-  if (isPolygon || (!isYahoo && !isSchwab)) {
+  // --- Polygon (explicit selection only) ---
+  if (isPolygon) {
     try {
       const raw = await getQuotePolygon(upperSymbol);
       return { data: normalizePolygonQuote(raw, upperSymbol), source: 'polygon' };
@@ -181,23 +200,42 @@ export async function getQuoteProviderAware(
   }
 }
 
+/**
+ * Default for the `extendedHours` flag when a caller doesn't specify one.
+ * Schwab's quote already reflects the latest price regardless of session
+ * (pre/post-market), so its price-history calls don't need extended-hours
+ * data by default. Yahoo's "synthesize today's candle" logic relies on
+ * pre/post-market data to stay current, so it defaults to on.
+ */
+export function resolveExtendedHoursDefault(provider?: string): boolean {
+  const isYahoo = provider === 'yahoo';
+  const isPolygon = provider === 'polygon';
+  const preferSchwab = !isYahoo && !isPolygon;
+  return !preferSchwab;
+}
+
 // ---------------------------------------------------------------------------
 // Provider-aware market data (OHLCV)
 // ---------------------------------------------------------------------------
 export async function getMarketDataProviderAware(
   symbol: string,
   interval: string = '1day',
-  extendedHours: boolean = true,
+  extendedHours?: boolean,
   provider?: string
 ): Promise<{ data: any[]; source: string }> {
   const isSchwab = provider === 'schwab';
+  const isYahoo = provider === 'yahoo';
   const isPolygon = provider === 'polygon';
+  // Default (no explicit provider) = Schwab primary, Yahoo fallback.
+  const preferSchwab = isSchwab || (!isYahoo && !isPolygon);
+  const resolvedExtendedHours = extendedHours ?? resolveExtendedHoursDefault(provider);
 
-  // --- Schwab ---
-  if (isSchwab) {
+  // --- Schwab (default or explicit) ---
+  if (preferSchwab) {
     try {
-      const data = await getPriceHistorySchwab(symbol, interval, extendedHours);
-      return { data, source: 'schwab' };
+      const data = await getPriceHistorySchwab(symbol, interval, resolvedExtendedHours);
+      if (data.length > 0) return { data, source: 'schwab' };
+      console.warn(`Schwab returned no bars for ${symbol} ${interval}; falling back to Yahoo.`);
     } catch (err) {
       console.warn(`Schwab market data failed for ${symbol}: ${err instanceof Error ? err.message : String(err)}. Falling back...`);
     }
@@ -227,7 +265,7 @@ export async function getMarketDataProviderAware(
     const yfData = await yf.chart(symbol, {
       interval: yfInterval as any,
       period1: new Date(period1Time),
-      includePrePost: extendedHours
+      includePrePost: resolvedExtendedHours
     });
     if (yfData && yfData.quotes) {
       const data = yfData.quotes.slice(-200).map(q => {
@@ -256,7 +294,7 @@ export async function getMarketDataProviderAware(
             
             if (todayStr > lastCandle.datetime) {
               // Missing today's candle, synthesize it
-              if ((q.marketState === 'PRE' || q.marketState === 'PREPRE') && !extendedHours) {
+              if ((q.marketState === 'PRE' || q.marketState === 'PREPRE') && !resolvedExtendedHours) {
                 // If extended hours are off, do not synthesize today's candle until regular market opens
               } else {
                 let o, h, l, c, v;
@@ -269,7 +307,7 @@ export async function getMarketDataProviderAware(
                   l = q.regularMarketDayLow || q.regularMarketPrice || 0;
                   c = q.regularMarketPrice || 0;
                   v = q.regularMarketVolume || 0;
-                  if (extendedHours && (q.marketState === 'POST' || q.marketState === 'CLOSED') && q.postMarketPrice) {
+                  if (resolvedExtendedHours && (q.marketState === 'POST' || q.marketState === 'CLOSED') && q.postMarketPrice) {
                     c = q.postMarketPrice;
                     h = Math.max(h, c);
                     l = Math.min(l, c);
@@ -293,7 +331,7 @@ export async function getMarketDataProviderAware(
                  if (q.regularMarketDayHigh) lastCandle.high = Math.max(parseFloat(lastCandle.high), q.regularMarketDayHigh).toString();
                  if (q.regularMarketDayLow) lastCandle.low = Math.min(parseFloat(lastCandle.low), q.regularMarketDayLow).toString();
                  if (q.regularMarketVolume) lastCandle.volume = q.regularMarketVolume.toString();
-              } else if (extendedHours && (q.marketState === 'POST' || q.marketState === 'CLOSED') && q.postMarketPrice) {
+              } else if (resolvedExtendedHours && (q.marketState === 'POST' || q.marketState === 'CLOSED') && q.postMarketPrice) {
                  lastCandle.close = q.postMarketPrice.toString();
                  lastCandle.high = Math.max(parseFloat(lastCandle.high), q.postMarketPrice).toString();
                  lastCandle.low = Math.min(parseFloat(lastCandle.low), q.postMarketPrice).toString();

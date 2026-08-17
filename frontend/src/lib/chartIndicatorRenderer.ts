@@ -44,6 +44,37 @@ const SUB_PANE_TYPES = [
   'CCI', 'WILLR', 'OBV', 'CMF', 'MFI', 'ROC', 'MOM', 'AROON',
 ];
 
+/**
+ * Relative pane heights. Price gets the bulk; each oscillator gets a readable slice.
+ * With one sub-pane that is a 75/25 split, with three it is 50/16.6 each.
+ */
+const PRICE_PANE_STRETCH = 3;
+const SUB_PANE_STRETCH = 1;
+
+/**
+ * Pin a pane's axis to a fixed range instead of autoscaling it to the visible data.
+ *
+ * Bounded oscillators are read against absolute thresholds — RSI 70/30 only means
+ * something on a 0–100 axis. Autoscaling zooms the axis to whatever the series
+ * happens to span in view, so a quiet stretch reading 45–55 stretches to fill the
+ * pane and looks identical to a violent swing from 5 to 95, with the 70/30 guides
+ * pushed off-pane entirely.
+ */
+const fixedRange = (minValue: number, maxValue: number) =>
+  () => ({ priceRange: { minValue, maxValue } });
+
+/**
+ * Keep a from-zero series (volume, and other non-negative magnitudes) off negative ticks,
+ * while otherwise leaving the library's own autoscaling alone.
+ *
+ * `original` is the base implementation *function*, not its result — it has to be called.
+ */
+const nonNegativeRange = () => (original: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
+  const base = original();
+  if (!base?.priceRange) return base;
+  return { ...base, priceRange: { ...base.priceRange, minValue: 0 } };
+};
+
 export function renderIndicators(
   chart: IChartApi,
   indicatorData: InternalOHLCV[],
@@ -52,26 +83,29 @@ export function renderIndicators(
 ) {
   const data = indicatorData as unknown as OHLCVBar[];
 
-  // Allocate sub-pane vertical space
+  // Give every sub-pane indicator a real pane of its own.
+  //
+  // These were previously faked by putting all series on the main chart and using
+  // scaleMargins to squeeze each into a horizontal band. That left the price scale
+  // mapped over only the top slice of the chart while the axis still drew ticks across
+  // the full height, so every label below the price region was a linear extrapolation
+  // of the price scale running down through zero — producing negative "volume" ticks
+  // on instruments that have never traded below 0. Worse, sub-pane series sat on
+  // overlay price scales, which lightweight-charts does not render on the axis at all,
+  // so a bounded oscillator like RSI had no readable 0–100 scale of its own.
+  //
+  // v5 panes each own an independent, separately-rendered and separately-autoscaled
+  // price scale, which is what both problems actually required.
   const activeSubPanes = activeIndicators.filter(ind => SUB_PANE_TYPES.includes(ind.type));
-  const subPaneCount = activeSubPanes.length;
-  const paneHeight = 0.15;
-  const totalSubHeight = Math.min(subPaneCount * paneHeight, 0.6);
-  chart.priceScale('right').applyOptions({
-    scaleMargins: { top: 0.1, bottom: totalSubHeight + 0.02 },
-  });
+  const paneIndexFor = new Map<IndicatorConfig, number>();
+  activeSubPanes.forEach((ind, n) => paneIndexFor.set(ind, n + 1)); // pane 0 is price
 
-  let currentBottom = 0;
+  // The price pane keeps symmetric breathing room; it is no longer compressed to make
+  // space for the sub-panes, since panes are laid out by the library instead.
+  chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
 
   activeIndicators.forEach((ind, i) => {
-    let margins: { top: number; bottom: number } | null = null;
-    if (SUB_PANE_TYPES.includes(ind.type)) {
-      margins = {
-        top:    1.0 - totalSubHeight + currentBottom + 0.02,
-        bottom: Math.max(0, totalSubHeight - currentBottom - paneHeight),
-      };
-      currentBottom += paneHeight;
-    }
+    const paneIndex = paneIndexFor.get(ind) ?? null;
 
     // ── Overlay: SMA / EMA ─────────────────────────────────────────────────
     if (ind.type === 'SMA' || ind.type === 'EMA') {
@@ -215,19 +249,17 @@ export function renderIndicators(
       seriesMapRef.current.set('VWAP', series);
 
     // ── Sub-Pane: RSI ───────────────────────────────────────────────────────
-    } else if (ind.type === 'RSI' && margins) {
+    } else if (ind.type === 'RSI' && paneIndex !== null) {
       const period = Number(ind.params.period) || 14;
       const rsiData = calculateRSI(data, period);
-      const scaleId = `rsi_${i}`;
       const series = chart.addSeries(LineSeries, {
         color: '#ffffff',
         lineWidth: 2,
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
         crosshairMarkerVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+        autoscaleInfoProvider: fixedRange(0, 100),
+      }, paneIndex);
       series.setData(rsiData as any);
       series.createPriceLine({ price: 70, color: 'rgba(255,80,80,0.7)',   lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OB' });
       series.createPriceLine({ price: 30, color: 'rgba(80,200,120,0.7)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OS' });
@@ -235,42 +267,35 @@ export function renderIndicators(
       seriesMapRef.current.set(`RSI_${period}`, series);
 
     // ── Sub-Pane: ATR ───────────────────────────────────────────────────────
-    } else if (ind.type === 'ATR' && margins) {
+    } else if (ind.type === 'ATR' && paneIndex !== null) {
       const period = Number(ind.params.period) || 14;
       const atrData = calculateATR(data, period);
-      const scaleId = `atr_${i}`;
       const series = chart.addSeries(LineSeries, {
         color: ind.color || '#00d4aa',
         lineWidth: 2,
-        priceScaleId: scaleId,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+              }, paneIndex);
       series.setData(atrData as any);
       seriesMapRef.current.set(`ATR_${period}`, series);
 
     // ── Sub-Pane: Stochastic ────────────────────────────────────────────────
-    } else if (ind.type === 'STOCHASTIC' && margins) {
+    } else if (ind.type === 'STOCHASTIC' && paneIndex !== null) {
       const periodK = Number(ind.params.periodK) || 14;
       const periodD = Number(ind.params.periodD) || 3;
       const stochData = calculateStochastic(data, periodK, periodD);
-      const scaleId   = `stoch_${i}`;
-      const kSeries   = chart.addSeries(LineSeries, { color: '#00b4d8', lineWidth: 2, priceScaleId: scaleId });
-      const dSeries   = chart.addSeries(LineSeries, { color: '#fca311', lineWidth: 1, priceScaleId: scaleId });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      const kSeries   = chart.addSeries(LineSeries, { color: '#00b4d8', lineWidth: 2, autoscaleInfoProvider: fixedRange(0, 100) }, paneIndex);
+      const dSeries   = chart.addSeries(LineSeries, { color: '#fca311', lineWidth: 1 }, paneIndex);
       kSeries.setData(stochData.map((d: any) => ({ time: d.time, value: d.k })) as any);
       dSeries.setData(stochData.map((d: any) => ({ time: d.time, value: d.d })) as any);
       seriesMapRef.current.set(`STOCHASTIC_${periodK}_k`, kSeries);
       seriesMapRef.current.set(`STOCHASTIC_${periodD}_d`, dSeries);
 
     // ── Sub-Pane: Volume ────────────────────────────────────────────────────
-    } else if (ind.type === 'VOLUME' && margins) {
-      const scaleId = `volume_${i}`;
+    } else if (ind.type === 'VOLUME' && paneIndex !== null) {
       const series  = chart.addSeries(HistogramSeries, {
         color: '#26a69a',
         priceFormat: { type: 'volume' },
-        priceScaleId: scaleId,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+        autoscaleInfoProvider: nonNegativeRange(),
+      }, paneIndex);
       const volSeen = new Set<number | string>();
       const volData: any[] = [];
       for (const d of data) {
@@ -284,16 +309,14 @@ export function renderIndicators(
       seriesMapRef.current.set('VOLUME', series);
 
     // ── Sub-Pane: MACD ──────────────────────────────────────────────────────
-    } else if (ind.type === 'MACD' && margins) {
+    } else if (ind.type === 'MACD' && paneIndex !== null) {
       const fast = Number(ind.params.fastPeriod) || 12;
       const slow = Number(ind.params.slowPeriod) || 26;
       const sig  = Number(ind.params.signalPeriod) || 9;
       const macdData = calculateMACD(data, fast, slow, sig);
-      const scaleId  = `macd_${i}`;
-      const macdLine = chart.addSeries(LineSeries,      { color: '#00b4d8', lineWidth: 2, priceScaleId: scaleId });
-      const sigLine  = chart.addSeries(LineSeries,      { color: '#fca311', lineWidth: 1, priceScaleId: scaleId });
-      const histLine = chart.addSeries(HistogramSeries, { color: '#e0a96d', priceScaleId: scaleId });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      const macdLine = chart.addSeries(LineSeries,      { color: '#00b4d8', lineWidth: 2 }, paneIndex);
+      const sigLine  = chart.addSeries(LineSeries,      { color: '#fca311', lineWidth: 1 }, paneIndex);
+      const histLine = chart.addSeries(HistogramSeries, { color: '#e0a96d' }, paneIndex);
       macdLine.setData(macdData.map((d: any) => ({ time: d.time, value: d.macd })) as any);
       sigLine.setData(macdData.map((d: any) => ({ time: d.time, value: d.signal })) as any);
       histLine.setData(macdData.map((d: any) => ({ time: d.time, value: d.histogram, color: d.histogram >= 0 ? '#00e676' : '#ff1744' })) as any);
@@ -302,14 +325,12 @@ export function renderIndicators(
       seriesMapRef.current.set(`MACD_${fast}_${slow}_${sig}_histogram`, histLine);
 
     // ── Sub-Pane: ADX ───────────────────────────────────────────────────────
-    } else if (ind.type === 'ADX' && margins) {
+    } else if (ind.type === 'ADX' && paneIndex !== null) {
       const period = Number(ind.params.period) || 14;
       const adxData = calculateADX(data, period);
-      const scaleId  = `adx_${i}`;
-      const plusDI   = chart.addSeries(LineSeries, { color: '#00e676', lineWidth: 1.5, priceScaleId: scaleId });
-      const minusDI  = chart.addSeries(LineSeries, { color: '#ff1744', lineWidth: 1.5, priceScaleId: scaleId });
-      const adxLine  = chart.addSeries(LineSeries, { color: '#ffd700', lineWidth: 2,   priceScaleId: scaleId });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      const plusDI   = chart.addSeries(LineSeries, { color: '#00e676', lineWidth: 1.5, autoscaleInfoProvider: fixedRange(0, 100) }, paneIndex);
+      const minusDI  = chart.addSeries(LineSeries, { color: '#ff1744', lineWidth: 1.5 }, paneIndex);
+      const adxLine  = chart.addSeries(LineSeries, { color: '#ffd700', lineWidth: 2 }, paneIndex);
       plusDI.setData(adxData.map(d  => ({ time: d.time, value: d.plusDI  })) as any);
       minusDI.setData(adxData.map(d => ({ time: d.time, value: d.minusDI })) as any);
       adxLine.setData(adxData.map(d => ({ time: d.time, value: d.adx     })) as any);
@@ -318,18 +339,15 @@ export function renderIndicators(
       seriesMapRef.current.set(`ADX_${period}_adx`,     adxLine);
 
     // ── Sub-Pane: CCI ───────────────────────────────────────────────────────
-    } else if (ind.type === 'CCI' && margins) {
+    } else if (ind.type === 'CCI' && paneIndex !== null) {
       const period  = Number(ind.params.period) || 20;
       const cciData = calculateCCI(data, period);
-      const scaleId = `cci_${i}`;
       const series  = chart.addSeries(LineSeries, {
         color: '#ab47bc',
         lineWidth: 2,
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      }, paneIndex);
       series.setData(cciData as any);
       series.createPriceLine({ price:  100, color: 'rgba(255,80,80,0.6)',   lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OB' });
       series.createPriceLine({ price: -100, color: 'rgba(80,200,120,0.6)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OS' });
@@ -337,18 +355,16 @@ export function renderIndicators(
       seriesMapRef.current.set(`CCI_${period}`, series);
 
     // ── Sub-Pane: Williams %R ───────────────────────────────────────────────
-    } else if (ind.type === 'WILLR' && margins) {
+    } else if (ind.type === 'WILLR' && paneIndex !== null) {
       const period    = Number(ind.params.period) || 14;
       const willrData = calculateWilliamsR(data, period);
-      const scaleId   = `willr_${i}`;
       const series    = chart.addSeries(LineSeries, {
         color: '#26c6da',
         lineWidth: 2,
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+        autoscaleInfoProvider: fixedRange(-100, 0),
+      }, paneIndex);
       series.setData(willrData as any);
       series.createPriceLine({ price:  -20, color: 'rgba(255,80,80,0.6)',   lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OB' });
       series.createPriceLine({ price:  -80, color: 'rgba(80,200,120,0.6)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OS' });
@@ -356,32 +372,26 @@ export function renderIndicators(
       seriesMapRef.current.set(`WILLR_${period}`, series);
 
     // ── Sub-Pane: OBV ───────────────────────────────────────────────────────
-    } else if (ind.type === 'OBV' && margins) {
+    } else if (ind.type === 'OBV' && paneIndex !== null) {
       const obvData = calculateOBV(data);
-      const scaleId = `obv_${i}`;
       const series  = chart.addSeries(LineSeries, {
         color: '#66bb6a',
         lineWidth: 2,
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      }, paneIndex);
       series.setData(obvData as any);
       seriesMapRef.current.set('OBV', series);
 
     // ── Sub-Pane: CMF ───────────────────────────────────────────────────────
-    } else if (ind.type === 'CMF' && margins) {
+    } else if (ind.type === 'CMF' && paneIndex !== null) {
       const period  = Number(ind.params.period) || 20;
       const cmfData = calculateCMF(data, period);
-      const scaleId = `cmf_${i}`;
       const series  = chart.addSeries(HistogramSeries, {
         color: '#42a5f5',
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      }, paneIndex);
       series.setData(cmfData.map(d => ({
         time:  d.time,
         value: d.value,
@@ -390,18 +400,16 @@ export function renderIndicators(
       seriesMapRef.current.set(`CMF_${period}`, series);
 
     // ── Sub-Pane: MFI ───────────────────────────────────────────────────────
-    } else if (ind.type === 'MFI' && margins) {
+    } else if (ind.type === 'MFI' && paneIndex !== null) {
       const period  = Number(ind.params.period) || 14;
       const mfiData = calculateMFI(data, period);
-      const scaleId = `mfi_${i}`;
       const series  = chart.addSeries(LineSeries, {
         color: '#ffa726',
         lineWidth: 2,
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+        autoscaleInfoProvider: fixedRange(0, 100),
+      }, paneIndex);
       series.setData(mfiData as any);
       series.createPriceLine({ price:  80, color: 'rgba(255,80,80,0.6)',   lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OB' });
       series.createPriceLine({ price:  20, color: 'rgba(80,200,120,0.6)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'OS' });
@@ -409,34 +417,28 @@ export function renderIndicators(
       seriesMapRef.current.set(`MFI_${period}`, series);
 
     // ── Sub-Pane: ROC ───────────────────────────────────────────────────────
-    } else if (ind.type === 'ROC' && margins) {
+    } else if (ind.type === 'ROC' && paneIndex !== null) {
       const period  = Number(ind.params.period) || 12;
       const rocData = calculateROC(data, period);
-      const scaleId = `roc_${i}`;
       const series  = chart.addSeries(LineSeries, {
         color: '#ef5350',
         lineWidth: 2,
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      }, paneIndex);
       series.setData(rocData as any);
       series.createPriceLine({ price: 0, color: 'rgba(255,255,255,0.25)', lineWidth: 1, lineStyle: 1, axisLabelVisible: false, title: '' });
       seriesMapRef.current.set(`ROC_${period}`, series);
 
     // ── Sub-Pane: Momentum ──────────────────────────────────────────────────
-    } else if (ind.type === 'MOM' && margins) {
+    } else if (ind.type === 'MOM' && paneIndex !== null) {
       const period  = Number(ind.params.period) || 10;
       const momData = calculateMomentum(data, period);
-      const scaleId = `mom_${i}`;
       const series  = chart.addSeries(HistogramSeries, {
         color: '#78909c',
-        priceScaleId: scaleId,
         priceLineVisible: false,
         lastValueVisible: true,
-      });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      }, paneIndex);
       series.setData(momData.map(d => ({
         time:  d.time,
         value: d.value,
@@ -445,19 +447,32 @@ export function renderIndicators(
       seriesMapRef.current.set(`MOM_${period}`, series);
 
     // ── Sub-Pane: Aroon ─────────────────────────────────────────────────────
-    } else if (ind.type === 'AROON' && margins) {
+    } else if (ind.type === 'AROON' && paneIndex !== null) {
       const period    = Number(ind.params.period) || 25;
       const aroonData = calculateAroon(data, period);
-      const scaleId   = `aroon_${i}`;
-      const upSeries  = chart.addSeries(LineSeries, { color: '#00e676', lineWidth: 1.5, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: true });
-      const dnSeries  = chart.addSeries(LineSeries, { color: '#ff1744', lineWidth: 1.5, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false });
-      chart.priceScale(scaleId).applyOptions({ scaleMargins: margins });
+      const upSeries  = chart.addSeries(LineSeries, { color: '#00e676', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, autoscaleInfoProvider: fixedRange(0, 100) }, paneIndex);
+      const dnSeries  = chart.addSeries(LineSeries, { color: '#ff1744', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false }, paneIndex);
       upSeries.setData(aroonData.map(d => ({ time: d.time, value: d.up   })) as any);
       dnSeries.setData(aroonData.map(d => ({ time: d.time, value: d.down })) as any);
       seriesMapRef.current.set(`AROON_${period}_up`,   upSeries);
       seriesMapRef.current.set(`AROON_${period}_down`, dnSeries);
     }
   });
+
+  // Weight the panes so price keeps most of the canvas. Without this the library
+  // splits height evenly and three oscillators leave price with a quarter of the chart.
+  //
+  // Stretch factors rather than setHeight: setHeight is absolute pixels, and the
+  // ResizeObserver in ChartContainer re-lays-out the chart on every container resize,
+  // which redistributes height and squashes fixed-height panes back down. Stretch
+  // factors are proportional, so the split survives resizing.
+  const panes = chart.panes();
+  if (panes.length > 1) {
+    panes[0].setStretchFactor(PRICE_PANE_STRETCH);
+    for (let p = 1; p < panes.length; p++) {
+      panes[p].setStretchFactor(SUB_PANE_STRETCH);
+    }
+  }
 
   // ── Fibonacci overlay ─────────────────────────────────────────────────────
   const fibIndicator = activeIndicators.find(ind => ind.type === 'FIBONACCI');

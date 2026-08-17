@@ -1,5 +1,6 @@
 import type { OHLCVDataPoint } from '../../types.js';
 import type { PolygonNewsArticle } from '../polygon.js';
+import type { AggregatedSentiment } from '../sentimentAggregator.js';
 
 /**
  * Describes which evidence category a factor belongs to.
@@ -38,6 +39,20 @@ export interface FactorInput {
   optionsChain?: { expirations: string[]; contracts: any[] };
   activeExpiry?: string;
   news?: PolygonNewsArticle[];
+  /**
+   * 1-minute extended-hours bars for the current trading day, when available.
+   * Optional — daily-bar-only factors ignore it; intraday factors (session VWAP)
+   * return null if it's missing rather than degrading silently.
+   */
+  intradayBars?: OHLCVDataPoint[];
+  /**
+   * Aggregated insider / analyst / social sentiment, when available.
+   *
+   * Optional and best-effort, like intradayBars: factors that need it return null
+   * rather than degrading, so a sentiment provider outage cannot take down the
+   * whole engine.
+   */
+  sentiment?: AggregatedSentiment;
 }
 
 export interface PredictiveFactor {

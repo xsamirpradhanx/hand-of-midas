@@ -1,6 +1,9 @@
 import { getTickerNews } from './polygon.js';
 import { getStocktwitsSentiment, StocktwitsSentiment } from './stocktwits.js';
 import { getRedditSentiment, RedditSentiment } from './reddit.js';
+import { getFinnhubInsiderSentiment, getFinnhubAnalystRecommendation } from './finnhub.js';
+import { scoreNewsSentiment } from './newsSentimentScorer.js';
+import { getCachedData, setCachedData } from './cache.js';
 
 export interface NewsSentiment {
   score: number; // -1 to 1
@@ -16,9 +19,20 @@ export interface NewsSentiment {
 }
 
 export interface FinnhubSentiment {
-  insiderSentiment: number; // 0 to 100
-  newsSentiment: number; // 0 to 100
-  buzz: number; // 0 to 1
+  insiderSentiment: number | null; // 0 to 100, from Finnhub's free insider-sentiment endpoint
+  /** How many filed months had actual share activity behind the score. */
+  insiderMonthsSampled: number;
+  /** "YYYY-MM" of the latest month Finnhub has any filing for, so a stale score is visible as such. */
+  insiderMostRecentMonth: string | null;
+  /** 0 to 100 analyst consensus (Buy vs Sell weighted), from Finnhub's free recommendation-trends endpoint. */
+  analystScore: number | null;
+  analystStrongBuy: number;
+  analystBuy: number;
+  analystHold: number;
+  analystSell: number;
+  analystStrongSell: number;
+  /** "YYYY-MM-DD" of the consensus period. */
+  analystPeriod: string | null;
 }
 
 export interface AggregatedSentiment {
@@ -31,37 +45,19 @@ export interface AggregatedSentiment {
 }
 
 /**
- * Basic NLP keyword scoring for news headlines.
+ * Scores institutional/news sentiment from recent headlines via the shared
+ * AI-first scorer (see newsSentimentScorer.ts), then attaches the display
+ * article list.
  */
-function analyzeNewsSentiment(articles: any[]): NewsSentiment {
-  if (!articles || articles.length === 0) {
-    return { score: 0, bias: 'neutral', bullCount: 0, bearCount: 0, articles: [] };
-  }
-
-  const bullishWords = ['surge', 'jump', 'gain', 'profit', 'beat', 'growth', 'upgrade', 'rally', 'bull', 'soar', 'record', 'dividend', 'buyback', 'higher'];
-  const bearishWords = ['plunge', 'drop', 'loss', 'miss', 'decline', 'downgrade', 'crash', 'bear', 'fall', 'investigation', 'lawsuit', 'subpoena', 'lower'];
-
-  let bullCount = 0;
-  let bearCount = 0;
-
-  for (const article of articles) {
-    const text = ((article.title || '') + ' ' + (article.description || '')).toLowerCase();
-    for (const w of bullishWords) if (text.includes(w)) bullCount++;
-    for (const w of bearishWords) if (text.includes(w)) bearCount++;
-  }
-
-  const netScore = bullCount - bearCount;
-  const totalCount = bullCount + bearCount;
-  const score = totalCount > 0 ? (netScore / totalCount) : 0;
-  
-  const bias = score > 0.2 ? 'bullish' : score < -0.2 ? 'bearish' : 'neutral';
+async function analyzeNewsSentiment(symbol: string, articles: any[]): Promise<NewsSentiment> {
+  const { score, bias, bullCount, bearCount } = await scoreNewsSentiment(symbol, articles ?? []);
 
   return {
     score,
     bias,
     bullCount,
     bearCount,
-    articles: articles.slice(0, 10).map(a => ({
+    articles: (articles ?? []).slice(0, 10).map(a => ({
       title: a.title,
       url: a.article_url,
       published_utc: a.published_utc,
@@ -71,25 +67,50 @@ function analyzeNewsSentiment(articles: any[]): NewsSentiment {
 }
 
 /**
+ * Cache TTL for the aggregate.
+ *
+ * This function fans out to five separate providers and was previously uncached, so
+ * every /sentiment page load paid the full round trip. That cost is also what kept
+ * sentiment out of the predictive engine: the screener fans getPredictiveZones across
+ * ~20 candidates, and five uncached third-party calls per symbol on top of that is not
+ * viable. Insider filings, analyst ratings and social mood all move on a scale of hours
+ * at best, so a 30-minute TTL loses nothing and makes the data cheap enough to use as
+ * a factor input.
+ */
+const SENTIMENT_TTL_SECONDS = 30 * 60;
+
+/**
  * Aggregates both Retail (Stocktwits) and Institutional/News sentiment into a single payload.
  */
 export async function getAggregatedSentiment(symbol: string): Promise<AggregatedSentiment> {
-  const [stocktwits, reddit, newsArticles] = await Promise.all([
+  const cacheKey = `AGGREGATED_SENTIMENT#${symbol.toUpperCase()}`;
+  const cached = await getCachedData<AggregatedSentiment>(cacheKey).catch(() => null);
+  if (cached) return cached;
+
+  const [stocktwits, reddit, newsArticles, insiderSentiment, analystRecommendation] = await Promise.all([
     getStocktwitsSentiment(symbol),
     getRedditSentiment(symbol),
-    getTickerNews(symbol, 15).catch(() => [])
+    getTickerNews(symbol, 15).catch(() => []),
+    getFinnhubInsiderSentiment(symbol),
+    getFinnhubAnalystRecommendation(symbol),
   ]);
 
-  const news = analyzeNewsSentiment(newsArticles);
+  const news = await analyzeNewsSentiment(symbol, newsArticles);
 
-  // MOCK Finnhub Data (Requires API Key)
   const finnhub: FinnhubSentiment = {
-    insiderSentiment: Math.floor(Math.random() * 100),
-    newsSentiment: Math.floor(Math.random() * 100),
-    buzz: Math.random()
+    insiderSentiment: insiderSentiment.insiderSentiment,
+    insiderMonthsSampled: insiderSentiment.monthsSampled,
+    insiderMostRecentMonth: insiderSentiment.mostRecentMonth,
+    analystScore: analystRecommendation.score,
+    analystStrongBuy: analystRecommendation.strongBuy,
+    analystBuy: analystRecommendation.buy,
+    analystHold: analystRecommendation.hold,
+    analystSell: analystRecommendation.sell,
+    analystStrongSell: analystRecommendation.strongSell,
+    analystPeriod: analystRecommendation.period,
   };
 
-  return {
+  const aggregate: AggregatedSentiment = {
     symbol: symbol.toUpperCase(),
     retail: stocktwits,
     reddit,
@@ -97,4 +118,11 @@ export async function getAggregatedSentiment(symbol: string): Promise<Aggregated
     news,
     timestamp: new Date().toISOString(),
   };
+
+  // Never fail the request over a cache write.
+  void setCachedData(cacheKey, aggregate, SENTIMENT_TTL_SECONDS).catch(err =>
+    console.warn(`[Sentiment] cache write failed for ${symbol}:`, err),
+  );
+
+  return aggregate;
 }

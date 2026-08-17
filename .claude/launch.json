@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "handofmidas-backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=backend"],
+      "port": 3001,
+      "autoPort": false,
+      "env": { "PORT": "3001" }
+    },
+    {
+      "name": "handofmidas-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=frontend", "--", "--port", "5175"],
+      "port": 5175
+    }
+  ]
+}

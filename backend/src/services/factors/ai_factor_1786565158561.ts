@@ -15,6 +15,11 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 export class VolumeInformationEntropyImbalanceFactor implements PredictiveFactor {
   public readonly name = 'Volume Information Entropy Imbalance';
   bucket = 'MOMENTUM' as const;
+  // Shared with the other AI-generated factors: all measure some flavor of
+  // volume/return entropy or microstructure efficiency, so they're correlated
+  // signals, not independent votes — IndependentEvidenceEngine dedupes within
+  // this group instead of letting them stack.
+  correlationGroup = 'AI_MICROSTRUCTURE';
   private readonly lookback = 30;
   private readonly binCount = 10;
 
@@ -60,6 +65,8 @@ export class VolumeInformationEntropyImbalanceFactor implements PredictiveFactor
         factorName: this.name,
         bias: 'neutral',
         weight: 0.0,
+        bucket: this.bucket,
+        correlationGroup: this.correlationGroup,
         reasoning: 'Insufficient balanced directional volume distribution to calculate information entropy safely.',
         buyTarget: currentPrice,
         sellTarget: currentPrice
@@ -94,10 +101,32 @@ export class VolumeInformationEntropyImbalanceFactor implements PredictiveFactor
     // Normalize signal strength relative to historical deviation
     const signalStrength = Math.min(Math.abs(entropyImbalance) / 1.5, 1.0);
     
-    // Dampen allocation scaling factor under elevated realized volatility conditions
-    const volDampener = realizedVol > 0.03 ? Math.max(0.2, 1.0 - (realizedVol * 15)) : 1.0;
-    const baseWeight = 0.40;
-    const weight = parseFloat((baseWeight * signalStrength * volDampener).toFixed(4));
+    // Dampen the weight when volatility is elevated *for this symbol*, measured
+    // against its own recent baseline rather than an absolute cut-off.
+    //
+    // This was `realizedVol > 0.03 ? max(0.2, 1 - realizedVol * 15) : 1.0`, where
+    // realizedVol is a daily standard deviation. Any name whose daily sigma exceeds
+    // ~5.3% pins to the 0.2 floor permanently — which is every high-beta name this
+    // factor exists to analyse. WULF (daily sigma 6.4%) sat at 0.2 unconditionally,
+    // so the factor could never contribute more than ~1% weight no matter how clean
+    // the entropy signal was. Ratioing recent vol against the window baseline
+    // dampens genuine volatility *expansion* while leaving a structurally volatile
+    // name at full weight when it is behaving normally for itself.
+    const recentWindow = Math.min(10, returns.length);
+    const recentReturns = returns.slice(-recentWindow);
+    const recentMean = recentReturns.reduce((s, v) => s + v, 0) / recentReturns.length;
+    const recentVol = Math.sqrt(
+      recentReturns.reduce((s, v) => s + Math.pow(v - recentMean, 2), 0) / Math.max(1, recentReturns.length - 1),
+    );
+    const volRatio = realizedVol > 0 ? recentVol / realizedVol : 1;
+    // 1.0x baseline → no dampening; 2x its own normal vol → floor at 0.2.
+    const volDampener = volRatio <= 1 ? 1.0 : Math.max(0.2, 1.0 - (volRatio - 1) * 0.8);
+    // Weight ceiling of 0.35 matches the hand-tuned factor convention (see
+    // factors/volumeProfile.ts, the highest hand-tuned weight) — an AI-generated
+    // factor with no live track record must not be able to out-weigh every
+    // reviewed factor in the engine.
+    const baseWeight = 0.35;
+    const weight = Math.min(0.35, parseFloat((baseWeight * signalStrength * volDampener).toFixed(4)));
 
     // Dynamic target pricing based on fractional ATR boundaries
     const buyTarget = parseFloat((currentPrice - (atr * 1.2)).toFixed(2));
@@ -110,12 +139,14 @@ export class VolumeInformationEntropyImbalanceFactor implements PredictiveFactor
       : 'Unstructured, balanced retail noise matching Brownian motion.';
 
     const reasoning = `${structuralFlow} | Entropy Imbalance: ${entropyImbalance.toFixed(4)} (H_Buy: ${hBuy.toFixed(3)}, H_Sell: ${hSell.toFixed(3)}). ` +
-      `Realized Volatility: ${(realizedVol * 100).toFixed(2)}%. Vol Dampener scaling applied: ${volDampener.toFixed(2)}x.`;
+      `Realized Volatility: ${(realizedVol * 100).toFixed(2)}% daily (recent ${volRatio.toFixed(2)}x its own baseline). Vol Dampener scaling applied: ${volDampener.toFixed(2)}x.`;
 
     return {
       factorName: this.name,
       bias,
       weight,
+      bucket: this.bucket,
+      correlationGroup: this.correlationGroup,
       reasoning,
       buyTarget,
       sellTarget

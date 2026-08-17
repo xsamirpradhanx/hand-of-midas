@@ -3,17 +3,48 @@ import express from 'express';
 import cors from 'cors';
 import { handler } from './index.js';
 import type { APIGatewayProxyEventV2 } from './types.js';
+import { getJob, listJobs } from './localScheduler.js';
 
 const app = express();
-const port = 3000;
+// Port 3000 is not guaranteed free — another project on this machine may already own
+// it — so allow an override. Defaults to 3000 so existing setups are unchanged.
+const port = Number(process.env.PORT) || 3000;
 
-app.use(cors({ 
+app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Data-Provider'],
   exposedHeaders: ['X-Source-Provider']
 }));
 app.use(express.json());
 app.use(express.text());
 app.use(express.urlencoded({ extended: true }));
+
+// ── Local-dev-only background job controls ──────────────────────────────
+// Not part of the deployed Lambda/API — lets you toggle jobs like quant
+// grading on/off while the dev server is running, without an AWS deploy.
+//   curl http://localhost:3000/local/scheduler
+//   curl -X POST http://localhost:3000/local/scheduler/evaluate-quant/start
+//   curl -X POST http://localhost:3000/local/scheduler/evaluate-quant/stop
+app.get('/local/scheduler', (_req, res) => {
+  res.json(listJobs());
+});
+app.post('/local/scheduler/:job/start', (req, res) => {
+  const job = getJob(req.params.job);
+  if (!job) {
+    res.status(404).json({ error: `Unknown job: ${req.params.job}` });
+    return;
+  }
+  job.start();
+  res.json({ ok: true, job: job.name, running: job.running });
+});
+app.post('/local/scheduler/:job/stop', (req, res) => {
+  const job = getJob(req.params.job);
+  if (!job) {
+    res.status(404).json({ error: `Unknown job: ${req.params.job}` });
+    return;
+  }
+  job.stop();
+  res.json({ ok: true, job: job.name, running: job.running });
+});
 
 // Simulate AWS API Gateway payload
 app.use(async (req, res) => {

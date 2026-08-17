@@ -41,9 +41,16 @@ interface SentimentData {
     }>;
   };
   finnhub: {
-    insiderSentiment: number;
-    newsSentiment: number;
-    buzz: number;
+    insiderSentiment: number | null;
+    insiderMonthsSampled: number;
+    insiderMostRecentMonth: string | null;
+    analystScore: number | null;
+    analystStrongBuy: number;
+    analystBuy: number;
+    analystHold: number;
+    analystSell: number;
+    analystStrongSell: number;
+    analystPeriod: string | null;
   };
   news: {
     score: number;
@@ -162,8 +169,8 @@ export const SentimentDashboard: React.FC = () => {
             <div className={styles.gaugeFill} style={{ width: `${newsBullPct}%` }} />
           </div>
           <div className={styles.gaugeLabels}>
-            <span className={styles.bearLabel}>Negative Keywords</span>
-            <span className={styles.bullLabel}>Positive Keywords</span>
+            <span className={styles.bearLabel}>Bearish ({data.news.bearCount})</span>
+            <span className={styles.bullLabel}>Bullish ({data.news.bullCount})</span>
           </div>
           <p className={styles.summaryText}>
             {data.news.bias === 'bullish' ? 'Bullish' : data.news.bias === 'bearish' ? 'Bearish' : 'Neutral'} ({data.news.score.toFixed(2)})
@@ -200,26 +207,66 @@ export const SentimentDashboard: React.FC = () => {
         {/* Finnhub Sentiment */}
         <div className={styles.gaugeCard}>
           <h3>Insider Sentiment (Finnhub)</h3>
-          <div className={styles.gaugeVisual}>
-            <div className={styles.gaugeFill} style={{ width: `${data.finnhub.insiderSentiment}%` }} />
-          </div>
-          <div className={styles.gaugeLabels}>
-            <span className={styles.bearLabel}>Selling</span>
-            <span className={styles.bullLabel}>Buying</span>
-          </div>
-          <p className={styles.summaryText}>
-            {data.finnhub.insiderSentiment > 60 ? 'Net Buying' : data.finnhub.insiderSentiment < 40 ? 'Net Selling' : 'Neutral'}
-          </p>
-          <div className={styles.retailMeta}>
-            <div className={styles.metaItem}>
-              <span>News Sent</span>
-              <strong>{data.finnhub.newsSentiment}/100</strong>
-            </div>
-            <div className={styles.metaItem}>
-              <span>Buzz</span>
-              <strong>{(data.finnhub.buzz * 100).toFixed(0)}%</strong>
-            </div>
-          </div>
+          {data.finnhub.insiderSentiment !== null ? (
+            <>
+              <div className={styles.gaugeVisual}>
+                <div className={styles.gaugeFill} style={{ width: `${data.finnhub.insiderSentiment}%` }} />
+              </div>
+              <div className={styles.gaugeLabels}>
+                <span className={styles.bearLabel}>Selling</span>
+                <span className={styles.bullLabel}>Buying</span>
+              </div>
+              <p className={styles.summaryText}>
+                {data.finnhub.insiderSentiment > 60 ? 'Net Buying' : data.finnhub.insiderSentiment < 40 ? 'Net Selling' : 'Neutral'}
+              </p>
+              {data.finnhub.insiderMostRecentMonth && (
+                <p className={styles.summaryText} style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                  {data.finnhub.insiderMonthsSampled} month{data.finnhub.insiderMonthsSampled === 1 ? '' : 's'} of filings, latest {data.finnhub.insiderMostRecentMonth}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className={styles.summaryText}>
+              No insider transactions reported recently
+              {data.finnhub.insiderMostRecentMonth ? ` (last filing ${data.finnhub.insiderMostRecentMonth})` : ''}
+            </p>
+          )}
+        </div>
+
+        {/* Finnhub Analyst Consensus */}
+        <div className={styles.gaugeCard}>
+          <h3>Analyst Consensus (Finnhub)</h3>
+          {data.finnhub.analystScore !== null ? (
+            <>
+              <div className={styles.gaugeVisual}>
+                <div className={styles.gaugeFill} style={{ width: `${data.finnhub.analystScore}%` }} />
+              </div>
+              <div className={styles.gaugeLabels}>
+                <span className={styles.bearLabel}>Sell</span>
+                <span className={styles.bullLabel}>Buy</span>
+              </div>
+              <p className={styles.summaryText}>
+                {data.finnhub.analystScore > 60 ? 'Bullish Consensus' : data.finnhub.analystScore < 40 ? 'Bearish Consensus' : 'Mixed'}
+                {data.finnhub.analystPeriod ? ` (${data.finnhub.analystPeriod})` : ''}
+              </p>
+              <div className={styles.retailMeta}>
+                <div className={styles.metaItem}>
+                  <span>Strong Buy / Buy</span>
+                  <strong>{data.finnhub.analystStrongBuy} / {data.finnhub.analystBuy}</strong>
+                </div>
+                <div className={styles.metaItem}>
+                  <span>Hold</span>
+                  <strong>{data.finnhub.analystHold}</strong>
+                </div>
+                <div className={styles.metaItem}>
+                  <span>Sell / Strong Sell</span>
+                  <strong>{data.finnhub.analystSell} / {data.finnhub.analystStrongSell}</strong>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className={styles.summaryText}>No analyst coverage reported</p>
+          )}
         </div>
       </div>
 

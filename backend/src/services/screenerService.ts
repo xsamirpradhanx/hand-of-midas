@@ -13,7 +13,8 @@ export interface ScreenerResult {
   midasScore: number;
   longMomentum: number;
   shortMomentum: number;
-  probability: number;
+  /** Always null — midasModel.ts deprecated this; it's candidate quality, not a win probability. */
+  probability: null;
   riskScore: number;
   subScores: {
     momentumQuality: number;
@@ -198,7 +199,10 @@ function calculateIntradayMetrics(chart: any): { pmVwap: number | null, pmHigh: 
 }
 
 export async function runScreener(mode: ScreenerMode = 'open'): Promise<ScreenerResult[]> {
-  const universeCandidates = await buildActiveMarketUniverse(mode);
+  // buildActiveMarketUniverse takes no arguments — it fetches the same broad
+  // Yahoo-screener universe regardless of mode; mode-specific filtering
+  // happens below against that universe, not at fetch time.
+  const universeCandidates = await buildActiveMarketUniverse();
   
   if (universeCandidates.length === 0) {
     console.log(`[ScreenerService] Universe empty for mode ${mode}.`);
@@ -350,7 +354,15 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
         let volumeAcceleration = 0;
 
         try {
-          const chart1m = await yf.chart(c.ticker, { interval: '1m', range: '1d', includePrePost: true } as any);
+          // yahoo-finance2's chart() schema requires period1 (start) — it rejects the
+          // `range` shorthand this used to pass, so every Phase 2 fetch here was
+          // throwing and getting swallowed by the catch below: pmVwap/pmHigh/pmLow and
+          // volumeAcceleration silently stayed null/0 for every candidate on every
+          // scan. 2 days back comfortably covers today's session (including
+          // pre-market) even right after a weekend; calculateIntradayMetrics filters
+          // to the current session itself.
+          const period1 = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+          const chart1m = await yf.chart(c.ticker, { interval: '1m', period1, includePrePost: true });
           const metrics = calculateIntradayMetrics(chart1m);
           pmVwap = metrics.pmVwap;
           pmHigh = metrics.pmHigh;
@@ -436,7 +448,11 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
           }
         }
 
-        const engineResult = await getPredictiveZones(c.ticker);
+        // Pass the screener's own live quote through so compositeScore's trade-plan
+        // geometry (trigger, chase price, overextension gate) and the trigger
+        // evaluation below (which uses candidate.price) look at the exact same
+        // price — otherwise a gap between them could hide overextension on gap days.
+        const engineResult = await getPredictiveZones(c.ticker, undefined, c.price);
         return { candidate: c, engineResult, rsi14, shortFloatPct };
       })
     );

@@ -3,7 +3,7 @@ import {
   setCachedData,
   timeSeriesCacheKey,
 } from '../services/cache.js';
-import { getMarketDataProviderAware } from '../services/providerService.js';
+import { getMarketDataProviderAware, resolveExtendedHoursDefault } from '../services/providerService.js';
 import type {
   APIGatewayProxyResultV2,
   TwelveDataInterval,
@@ -99,11 +99,16 @@ export async function getMarketData(
     outputsize = Math.floor(parsed);
   }
 
-  // --- Validate extendedHours ----------------------------------------------
-  const extendedHours = queryParams?.['extendedHours'] ? queryParams['extendedHours'] === 'true' : true;
-
   // --- Extract Provider ----------------------------------------------------
   const provider = event?.headers?.['x-data-provider']?.toLowerCase();
+
+  // --- Validate extendedHours ----------------------------------------------
+  // Schwab's quote already reflects the latest price regardless of session,
+  // so it doesn't need extended-hours history by default; Yahoo does (to
+  // synthesize a live "today" candle from pre/post-market data).
+  const extendedHours = queryParams?.['extendedHours']
+    ? queryParams['extendedHours'] === 'true'
+    : resolveExtendedHoursDefault(provider);
 
   // --- Check cache ---------------------------------------------------------
   const cacheKey = timeSeriesCacheKey(upperSymbol, interval, extendedHours) + (provider ? `#PROV-${provider}` : '');

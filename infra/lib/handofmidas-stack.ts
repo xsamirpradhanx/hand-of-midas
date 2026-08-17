@@ -283,6 +283,129 @@ export class HandOfMidasStack extends cdk.Stack {
     );
 
     // ──────────────────────────────────────────────
+    // D2b. Quant Evaluation Lambda (scheduled)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Separate Lambda that grades finalized predictions against subsequent
+     * price action once daily after market close, feeding FACTOR_STATS/
+     * SETUP_STATS. Without this running, the composite score's accuracy-based
+     * weight multiplier and the self-learning calibration never leave their
+     * neutral/conservative defaults, regardless of how many predictions the
+     * screener accumulates. Separate function (not the main API Lambda) so a
+     * large backlog of ungraded predictions can't run into the 29s API timeout.
+     */
+    const evaluateQuantFn = new lambdaNodejs.NodejsFunction(this, 'EvaluateQuantFunction', {
+      functionName: 'HandOfMidasEvaluateQuant',
+      entry: path.join(__dirname, '../../backend/src/handlers/evaluateQuant.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(300),
+      handler: 'handler',
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: sharedEnv,
+    });
+
+    table.grantReadWriteData(evaluateQuantFn);
+    twelveDataApiKeyParam.grantRead(evaluateQuantFn);
+    polygonApiKeyParam.grantRead(evaluateQuantFn);
+
+    /**
+     * EventBridge rule: once daily, after market close, Mon–Fri.
+     * 21:30 UTC = 17:30 ET (EDT, UTC-4) — an hour past the 20:00 UTC close
+     * buffer used by ChainRefreshRule, so the day's final daily bar has had
+     * time to settle with both Schwab and Yahoo before grading runs.
+     */
+    const evaluateQuantRule = new events.Rule(this, 'EvaluateQuantRule', {
+      ruleName: 'HandOfMidas-EvaluateQuant',
+      schedule: events.Schedule.expression('cron(30 21 ? * MON-FRI *)'),
+      description: 'Triggers quant prediction grading once daily after market close',
+    });
+
+    evaluateQuantRule.addTarget(
+      new targets.LambdaFunction(evaluateQuantFn),
+    );
+
+    // ──────────────────────────────────────────────
+    // D2c. Screener Refresh Lambda (scheduled)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Separate Lambda that runs the deep-scan screener and caches the result.
+     * A full scan (up to 20 candidates through the entire predictive-engine
+     * pipeline — bars, options chain, sentiment, 21 factors) measured 3+
+     * minutes, which the 29s API Lambda (backendFn) can never complete inside
+     * a request. GET /api/screener now only ever reads whatever this last
+     * cached; it never runs the scan itself. Same reasoning as
+     * evaluateQuantFn: a separate function so this doesn't share the API
+     * Lambda's timeout budget.
+     */
+    const screenerRefreshFn = new lambdaNodejs.NodejsFunction(this, 'ScreenerRefreshFunction', {
+      functionName: 'HandOfMidasScreenerRefresh',
+      entry: path.join(__dirname, '../../backend/src/handlers/screenerRefresh.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(300),
+      handler: 'handler',
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: sharedEnv,
+    });
+
+    table.grantReadWriteData(screenerRefreshFn);
+    twelveDataApiKeyParam.grantRead(screenerRefreshFn);
+    polygonApiKeyParam.grantRead(screenerRefreshFn);
+
+    // Lets the "Refresh Scan" button in the UI hand off an on-demand scan:
+    // backendFn invokes this Lambda asynchronously (fire-and-forget) rather
+    // than running the 3+ min scan inline, which its own 29s timeout can't
+    // accommodate.
+    screenerRefreshFn.grantInvoke(backendFn);
+    backendFn.addEnvironment('SCREENER_REFRESH_FUNCTION_NAME', screenerRefreshFn.functionName);
+
+    /**
+     * One rule per mode, each on its own offset so they don't all invoke in
+     * the same minute. A scan measured ~3 min: 'open'/'premarket' at every 5
+     * min still leave a buffer between a mode's own firings, but
+     * 'momentum'/'highdemand' at every 2 min will commonly overlap with
+     * their own still-running previous invocation — Lambda just runs them
+     * concurrently, so this is a cost/provider-load tradeoff (more frequent
+     * Yahoo/Polygon fan-out), not a correctness issue.
+     * 'open'/'momentum'/'highdemand' only matter during the regular session;
+     * 'premarket' only during premarket. The handler itself also checks
+     * getMarketSession() and no-ops outside its relevant window, so a broad
+     * cron range here is safe.
+     */
+    const screenerModeSchedules: Array<{ mode: 'open' | 'momentum' | 'highdemand' | 'premarket'; cron: string }> = [
+      { mode: 'open', cron: 'cron(0/5 13-21 ? * MON-FRI *)' },
+      { mode: 'momentum', cron: 'cron(0/2 13-21 ? * MON-FRI *)' },
+      { mode: 'highdemand', cron: 'cron(1/2 13-21 ? * MON-FRI *)' },
+      { mode: 'premarket', cron: 'cron(0/5 8-13 ? * MON-FRI *)' },
+    ];
+
+    for (const { mode, cron } of screenerModeSchedules) {
+      const rule = new events.Rule(this, `ScreenerRefreshRule${mode.charAt(0).toUpperCase()}${mode.slice(1)}`, {
+        ruleName: `HandOfMidas-ScreenerRefresh-${mode}`,
+        schedule: events.Schedule.expression(cron),
+        description: `Triggers screener refresh for mode=${mode}`,
+      });
+      rule.addTarget(
+        new targets.LambdaFunction(screenerRefreshFn, {
+          event: events.RuleTargetInput.fromObject({ mode }),
+        }),
+      );
+    }
+
+    // ──────────────────────────────────────────────
     // D3. WebSocket Lambda
     // ──────────────────────────────────────────────
 

@@ -12,6 +12,9 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 export class VolumeSynchronizedEntropyDivergenceFactor implements PredictiveFactor {
   name = 'Volume Synchronized Entropy Divergence';
   bucket = 'MOMENTUM' as const;
+  // Shared with the other AI-generated factors — see ai_factor_1786565158561.ts
+  // for why these dedupe as one correlation group instead of stacking.
+  correlationGroup = 'AI_MICROSTRUCTURE';
 
   private readonly fastWindow: number = 10;
   private readonly slowWindow: number = 30;
@@ -82,14 +85,17 @@ export class VolumeSynchronizedEntropyDivergenceFactor implements PredictiveFact
     let bias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
     let weight = 0.0;
 
-    // High structural order (> 0.35) and non-negligible ER acceleration required
+    // High structural order (> 0.35) and non-negligible ER acceleration required.
+    // Weight ceiling of 0.35 matches the hand-tuned factor convention (see
+    // factors/volumeProfile.ts) — an AI-generated factor with no live track
+    // record must not be able to out-weigh every reviewed factor in the engine.
     if (structuralOrderScore > 0.35 && Math.abs(divergenceScore) > 0.04) {
       if (divergenceScore > 0 && fastNetChange > 0) {
         bias = 'bullish';
-        weight = Math.min(0.95, Math.abs(divergenceScore) * 2.8 + structuralOrderScore * 0.25);
+        weight = Math.min(0.35, Math.abs(divergenceScore) * 2.8 + structuralOrderScore * 0.25);
       } else if (divergenceScore < 0 || fastNetChange < 0) {
         bias = 'bearish';
-        weight = Math.min(0.95, Math.abs(divergenceScore) * 2.8 + structuralOrderScore * 0.25);
+        weight = Math.min(0.35, Math.abs(divergenceScore) * 2.8 + structuralOrderScore * 0.25);
       }
     } else {
       bias = 'neutral';
@@ -125,6 +131,8 @@ export class VolumeSynchronizedEntropyDivergenceFactor implements PredictiveFact
       factorName: this.name,
       bias,
       weight: Number(weight.toFixed(4)),
+      bucket: this.bucket,
+      correlationGroup: this.correlationGroup,
       reasoning,
       buyTarget: Number(buyTarget.toFixed(4)),
       sellTarget: Number(sellTarget.toFixed(4)),

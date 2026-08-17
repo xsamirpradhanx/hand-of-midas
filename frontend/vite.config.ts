@@ -16,7 +16,9 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // Must match the port the backend actually binds (see backend/src/local.ts,
+        // which honours PORT). Kept in sync via .claude/launch.json.
+        target: process.env.VITE_API_TARGET || 'http://localhost:3001',
         changeOrigin: true,
       },
     },

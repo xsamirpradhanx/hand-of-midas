@@ -308,6 +308,15 @@ const routes: readonly Route[] = [
     },
   },
   {
+    method: 'POST',
+    pattern: '/api/screener/refresh',
+    handler: async (event, params) => {
+      const userId = getUserId(event);
+      if (!userId) return jsonResponse(401, { error: 'Unauthorized' });
+      return screener.refreshScreener(event);
+    },
+  },
+  {
     method: 'GET',
     pattern: '/api/screener/diagonal',
     handler: async (event) => {

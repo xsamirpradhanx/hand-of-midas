@@ -51,31 +51,59 @@ export class DealerHedgingFactor implements PredictiveFactor {
       if (strikes.length === 0) return null;
 
       const totalNetGex = strikes.reduce((sum, strike) => sum + gexByStrike[strike], 0);
-      const isNetPositive = totalNetGex >= 0;
-      strikes.sort((a, b) => isNetPositive ? a - b : b - a);
+      // Strikes must always be evaluated in ascending order (low strike to high strike)
+      // to identify the transition from negative dealer gamma (puts) to positive dealer gamma (calls)
+      strikes.sort((a, b) => a - b);
 
-      // Interpolated gamma-flip: linear zero-crossing between bracketing strikes
-      let gammaFlipStrike = 0;
+      // Interpolated gamma-flip: linear zero-crossing of cumulative GEX.
+      //
+      // Every crossing is collected rather than breaking at the first one. Cumulative
+      // GEX starts near zero and wobbles across the axis over deep-OTM strikes that
+      // carry almost no open interest, so the first crossing is routinely numerical
+      // noise far from anything tradeable — on WULF (spot $17.38) the first crossing
+      // was cumulative GEX moving from +4 to -1 at $5.81, while the real gamma
+      // structure sat at $15–$21. That noise crossing was being reported as the flip.
+      //
+      // Two filters make the result meaningful: a crossing must be material relative
+      // to the book's total gamma, and of the survivors we take the one nearest spot,
+      // since the flip only matters as a level price can actually interact with.
+      const totalAbsGex = strikes.reduce((sum, k) => sum + Math.abs(gexByStrike[k]!), 0);
+      const MATERIALITY = 0.02; // crossing must involve >=2% of total |GEX| to count
+      const candidates: number[] = [];
       let cumulativeGex = 0;
       for (let i = 0; i < strikes.length; i++) {
         const prev = cumulativeGex;
-        cumulativeGex += gexByStrike[strikes[i]];
-        
+        cumulativeGex += gexByStrike[strikes[i]]!;
+
         if (i > 0 && Math.sign(prev) !== Math.sign(cumulativeGex) && prev !== 0) {
+          const swing = Math.max(Math.abs(prev), Math.abs(cumulativeGex));
+          if (totalAbsGex > 0 && swing / totalAbsGex < MATERIALITY) continue;
           const strikeA = strikes[i - 1]!;
           const strikeB = strikes[i]!;
-          gammaFlipStrike = strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulativeGex));
-          break;
+          candidates.push(
+            strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulativeGex)),
+          );
         }
       }
 
-      const isLongGamma = currentPrice > gammaFlipStrike && gammaFlipStrike > 0;
+      const gammaFlipStrike = candidates.length === 0
+        ? 0
+        : candidates.reduce((best, k) =>
+            Math.abs(k - currentPrice) < Math.abs(best - currentPrice) ? k : best);
+
+      // No zero-crossing in the scanned strikes means the flip point is outside
+      // this range (or doesn't exist for this dataset) — fabricating a strike
+      // number here would imply precision we don't have. Fall back to the sign
+      // of total net GEX, which is still a valid (if less precise) read on
+      // whether dealers are net long or short gamma across the board.
+      const hasCrossing = gammaFlipStrike > 0;
+      const isLongGamma = hasCrossing ? currentPrice > gammaFlipStrike : totalNetGex > 0;
       const bias = isLongGamma ? 'neutral' : 'bearish';
 
       let buyTarget: number | undefined;
       let sellTarget: number | undefined;
 
-      if (gammaFlipStrike > 0) {
+      if (hasCrossing) {
         if (gammaFlipStrike < currentPrice) {
           buyTarget = gammaFlipStrike;
         } else {
@@ -84,6 +112,9 @@ export class DealerHedgingFactor implements PredictiveFactor {
       }
 
       const vannaDirection = netVanna > 0 ? 'buy-side' : 'sell-side';
+      const flipDesc = hasCrossing
+        ? `Multi-expiry Gamma Flip at $${gammaFlipStrike.toFixed(2)}`
+        : `No gamma-flip crossing within scanned strikes (net GEX uniformly ${totalNetGex >= 0 ? 'positive' : 'negative'})`;
 
       return {
         factorName: this.name,
@@ -93,7 +124,7 @@ export class DealerHedgingFactor implements PredictiveFactor {
         weight: 0.25,
         bucket: 'OPTIONS',
         correlationGroup: 'GEX_COMPLEX',
-        reasoning: `Multi-expiry Gamma Flip at $${gammaFlipStrike.toFixed(2)} (${isLongGamma ? 'Long Gamma / Mean Reverting' : 'Short Gamma / High Volatility'}). Net Vanna Exposure: ${vannaDirection} (${netVanna > 0 ? '+' : ''}${netVanna.toFixed(0)} contracts) — dealers will ${netVanna > 0 ? 'BUY' : 'SELL'} spot as IV rises.`,
+        reasoning: `${flipDesc} (${isLongGamma ? 'Long Gamma / Mean Reverting' : 'Short Gamma / High Volatility'}). Net Vanna Exposure: ${vannaDirection} (${netVanna > 0 ? '+' : ''}${netVanna.toFixed(0)} contracts) — dealers will ${netVanna > 0 ? 'BUY' : 'SELL'} spot as IV rises.`,
       };
     } catch (err) {
       console.warn('DealerHedgingFactor error, skipping:', err);

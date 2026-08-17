@@ -46,7 +46,7 @@ export const Dashboard: React.FC = () => {
   const [chartType, setChartType] = useLocalStorage<ChartType>('dashboard_chartType', 'candlestick');
   const [showExtendedHours, setShowExtendedHours] = useLocalStorage<boolean>('dashboard_showExtendedHours', false);
   const [showPredictiveZones, setShowPredictiveZones] = useLocalStorage<boolean>('dashboard_showPredictiveZones', false);
-  const [showInstitutionalSignals, setShowInstitutionalSignals] = useLocalStorage<boolean>('dashboard_showInstitutionalSignals', true);
+  const [showInstitutionalSignals, setShowInstitutionalSignals] = useLocalStorage<boolean>('dashboard_showInstitutionalSignals', false);
   const [timezone, setTimezone] = useLocalStorage<'EST' | 'GMT'>('dashboard_timezone', 'EST');
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
   const [companyName, setCompanyName] = useState<string>('');

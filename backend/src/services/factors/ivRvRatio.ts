@@ -7,13 +7,14 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
  * - When IV >> RV (ratio > 1.3): options are expensive → premium collectors short vol,
  *   market makers hedge less aggressively → price pinning behavior.
  * - When IV << RV (ratio < 0.7): options are cheap → breakout expected → expand sell zone.
- * - IV Rank (IVR) places current ATM IV in its 6-month historical percentile context.
+ * - IV-vs-RV percentile places current ATM IV inside the trailing REALIZED vol range.
+ *   (This is deliberately not called IV Rank — see the note in evaluate().)
  *
  * Formula:
  *   RV_30 = stddev(log(P_t / P_{t-1})) * sqrt(252) [annualized]
  *   IV_atm = OI-weighted ATM implied volatility (nearest expiry)
  *   IV/RV Ratio = IV_atm / RV_30
- *   IVR = (IV_atm - IV_6m_low) / (IV_6m_high - IV_6m_low) * 100
+ *   IVvsRV%ile = (IV_atm - RV_low) / (RV_high - RV_low) * 100
  */
 export class IvRvRatioFactor implements PredictiveFactor {
   name = 'IV/RV Ratio (Volatility Premium)';
@@ -38,18 +39,27 @@ export class IvRvRatioFactor implements PredictiveFactor {
 
     if (rv30 <= 0) return null;
 
-    // 2. Compute rolling periodic vols for IVR approximation
+    // 2. Rolling REALIZED vols, used as the reference range below.
+    //
+    // NOT IV Rank. A true IV Rank places current implied vol inside its own historical
+    // *implied* vol range, which needs stored IV history this pipeline does not keep.
+    // What is computed here is the percentile of current IV inside the range of trailing
+    // *realized* vol — a different quantity that answers "is the option market pricing
+    // vol high or low relative to how this name has actually moved". That is a
+    // legitimate read, but it was previously labelled "IVR" and the variables named
+    // iv6mHigh/iv6mLow, which stated the wrong thing: on WULF it reported "IVR 38%"
+    // when 38% was IV's position inside a 69.4%–117.4% realized-vol range.
     const windowSize = 21;
-    const periodicVols: number[] = [];
+    const realizedVols: number[] = [];
     for (let i = windowSize; i <= returns.length; i++) {
       const slice = returns.slice(i - windowSize, i);
       const m = slice.reduce((a, b) => a + b, 0) / slice.length;
       const v = slice.reduce((sum, r) => sum + Math.pow(r - m, 2), 0) / (slice.length - 1);
-      periodicVols.push(Math.sqrt(v * 252));
+      realizedVols.push(Math.sqrt(v * 252));
     }
 
-    const iv6mHigh = Math.max(...periodicVols);
-    const iv6mLow = Math.min(...periodicVols);
+    const rvHigh = Math.max(...realizedVols);
+    const rvLow = Math.min(...realizedVols);
 
     // 3. Get ATM Implied Volatility from options chain
     let atmIV: number | null = null;
@@ -60,53 +70,76 @@ export class IvRvRatioFactor implements PredictiveFactor {
         c => c.details?.expiration_date === nearExpiry && c.implied_volatility && c.implied_volatility > 0,
       );
 
+      // Pick the strikes actually closest to spot rather than everything inside a
+      // fixed ±5% band.
+      //
+      // A percentage band assumes strike spacing scales with price, which it does not.
+      // UWMC at $1.61 has $0.50 strike spacing, so its nearest strikes ($1.50 and
+      // $2.00) sit 6.8% and 24% away and the ±5% window caught nothing at all —
+      // leaving this factor with no ATM IV on every low-priced name. Taking the two
+      // distinct strikes nearest spot is scale-free and brackets the money at any
+      // price level.
+      const usable = nearContracts.filter(c =>
+        (c.details?.strike_price || 0) > 0 &&
+        (c.day?.open_interest || 0) > 0 &&
+        (c.implied_volatility || 0) > 0,
+      );
+      const distinctStrikes = [...new Set(usable.map(c => c.details!.strike_price as number))]
+        .sort((a, b) => Math.abs(a - currentPrice) - Math.abs(b - currentPrice))
+        .slice(0, 2);
+      const atmStrikes = new Set(distinctStrikes);
+
       let ivSum = 0;
       let oiSum = 0;
-      for (const c of nearContracts) {
-        const strike = c.details?.strike_price || 0;
-        const oi = c.day?.open_interest || 0;
-        const iv = c.implied_volatility || 0;
-        if (iv > 0 && oi > 0 && Math.abs(strike - currentPrice) / currentPrice < 0.05) {
-          ivSum += iv * oi;
-          oiSum += oi;
-        }
+      for (const c of usable) {
+        if (!atmStrikes.has(c.details!.strike_price as number)) continue;
+        const oi = c.day!.open_interest as number;
+        ivSum += (c.implied_volatility as number) * oi;
+        oiSum += oi;
       }
       if (oiSum > 0) atmIV = ivSum / oiSum;
     }
 
-    const impliedVol = atmIV ?? rv30;
+    // No usable ATM implied vol means there is nothing to compare realized vol
+    // against, and this factor has no reading to give.
+    //
+    // This previously fell back to `atmIV ?? rv30` — substituting realized vol for
+    // implied vol. That makes the ratio exactly 1.00x by construction and prints
+    // "IV and RV in equilibrium — Normal volatility environment" as though it were a
+    // finding. On UWMC, which has no options chain at all (every other OPTIONS-bucket
+    // factor correctly dropped out), it reported "IV/RV Ratio = 1.00x (RV=61.0%,
+    // IV=61.0%)" — an implied-vol figure invented from the realized-vol input.
+    if (atmIV === null) return null;
+    const impliedVol = atmIV;
 
-    // 4. Compute IV/RV Ratio and IVR
+    // 4. Compute IV/RV Ratio and the IV-vs-realized percentile
     const ivRvRatio = impliedVol / rv30;
 
-    const ivRange = iv6mHigh - iv6mLow;
-    const ivr = ivRange > 0 ? Math.round(((impliedVol - iv6mLow) / ivRange) * 100) : 50;
-    const ivrClamped = Math.max(0, Math.min(100, ivr));
+    const rvRange = rvHigh - rvLow;
+    const ivPctile = rvRange > 0 ? Math.round(((impliedVol - rvLow) / rvRange) * 100) : 50;
+    const ivPctileClamped = Math.max(0, Math.min(100, ivPctile));
 
     // 5. Classify signal
-    const isExpensive = ivRvRatio > 1.3 || ivrClamped > 80;
-    const isCheap = ivRvRatio < 0.7 || ivrClamped < 20;
+    const isExpensive = ivRvRatio > 1.3 || ivPctileClamped > 80;
+    const isCheap = ivRvRatio < 0.7 || ivPctileClamped < 20;
 
-    let bias: 'bullish' | 'bearish' | 'neutral';
+    let bias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
     let reasoning: string;
     let buyTarget: number;
     let sellTarget: number;
 
     if (isExpensive) {
-      bias = 'bearish';
       buyTarget = currentPrice * 0.99;
       sellTarget = currentPrice * 1.015;
-      reasoning = `IV/RV Ratio = ${ivRvRatio.toFixed(2)}x (IVR ${ivrClamped}%) — Options EXPENSIVE vs realized vol (RV=${(rv30 * 100).toFixed(1)}%, IV=${(impliedVol * 100).toFixed(1)}%). Premium compression likely → tighter range. Sell vol / mean-reversion bias.`;
+      reasoning = `IV/RV Ratio = ${ivRvRatio.toFixed(2)}x (IV sits at the ${ivPctileClamped}th pct of trailing realized vol) — Options EXPENSIVE vs realized vol (RV=${(rv30 * 100).toFixed(1)}%, IV=${(impliedVol * 100).toFixed(1)}%). Premium compression expected → pinning / range-bound behavior.`;
     } else if (isCheap) {
-      bias = 'bullish';
       buyTarget = currentPrice * 0.975;
       sellTarget = currentPrice * 1.025;
-      reasoning = `IV/RV Ratio = ${ivRvRatio.toFixed(2)}x (IVR ${ivrClamped}%) — Options CHEAP vs realized vol (RV=${(rv30 * 100).toFixed(1)}%, IV=${(impliedVol * 100).toFixed(1)}%). Vol expansion likely → directional breakout expected. Expand targets.`;
+      reasoning = `IV/RV Ratio = ${ivRvRatio.toFixed(2)}x (IV sits at the ${ivPctileClamped}th pct of trailing realized vol) — Options CHEAP vs realized vol (RV=${(rv30 * 100).toFixed(1)}%, IV=${(impliedVol * 100).toFixed(1)}%). Volatility expansion likely → potential breakout / range widening (non-directional).`;
     } else {
-      bias = 'neutral';
       buyTarget = currentPrice * 0.985;
       sellTarget = currentPrice * 1.015;
-      reasoning = `IV/RV Ratio = ${ivRvRatio.toFixed(2)}x (IVR ${ivrClamped}%) — IV and RV in equilibrium (RV=${(rv30 * 100).toFixed(1)}%, IV=${(impliedVol * 100).toFixed(1)}%). No vol premium edge detected.`;
+      reasoning = `IV/RV Ratio = ${ivRvRatio.toFixed(2)}x (IV sits at the ${ivPctileClamped}th pct of trailing realized vol) — IV and RV in equilibrium (RV=${(rv30 * 100).toFixed(1)}%, IV=${(impliedVol * 100).toFixed(1)}%). Normal volatility environment.`;
     }
 
     return {

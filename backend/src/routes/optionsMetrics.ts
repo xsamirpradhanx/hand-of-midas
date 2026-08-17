@@ -88,7 +88,7 @@ export async function getOptionsMetrics(
     // Build Term Structure
     for (const expiry of tsExpirations) {
       const { contracts } = await fetchOptionsChainProviderAware(symbol, expiry, providerHeader);
-      const dte = await getDTE(expiry);
+      const dte = getDTE(expiry);
 
       let sumIV = 0;
       let countIV = 0;
@@ -154,8 +154,14 @@ export async function getOptionsMetrics(
 
       for (const expiry of metricsExpirations) {
         const { contracts } = await fetchOptionsChainProviderAware(symbol, expiry, providerHeader);
-        const dte = await getDTE(expiry);
-        const t = Math.max(1 / 365, getTimeToExpiryYears(expiry));
+        // Use calendar DTE for GEX weighting (consistent with dealerHedging.ts and
+        // optionsAnalyticsService.ts). Trading-day DTE (getDTE) is NOT used here.
+        const rawT = getTimeToExpiryYears(expiry);
+        const t = Math.max(rawT, 1 / 365);
+        // 1/DTE weight: near-expiry options have larger gamma impact per $ of spot move.
+        // Without this, a 0DTE and a 30DTE option contribute equal GEX — incorrect.
+        const calDte = Math.max(1, t * 365);
+        const dteWeight = 1 / calDte;
 
         for (const c of contracts) {
           const strike = c.details.strike_price;
@@ -168,11 +174,11 @@ export async function getOptionsMetrics(
           const greeks = blackScholes(spotPrice, strike, t, getRiskFreeRate(), iv, type);
           const gamma = greeks.gamma;
 
-          // Dollar Gamma per 1% move: γ * OI * 100 * Spot² * 0.01
-          const gex = gamma * oi * 100 * spotPrice * spotPrice * 0.01;
+          // Dollar Gamma per 1% move, DTE-weighted for cross-expiry consistency.
+          const gex = gamma * oi * 100 * spotPrice * spotPrice * 0.01 * dteWeight;
 
           if (!gexByStrike[strike]) gexByStrike[strike] = { callGex: 0, putGex: 0 };
-          
+
           if (type === 'call') {
             gexByStrike[strike].callGex += gex;
           } else {
@@ -239,20 +245,30 @@ export async function getOptionsMetrics(
     }).sort((a, b) => a.strike - b.strike);
 
     const totalNetGex = gexProfile.reduce((sum, p) => sum + p.totalGex, 0);
-    const isNetPositive = totalNetGex >= 0;
-    const gexProfileSorted = [...gexProfile].sort((a, b) => isNetPositive ? a.strike - b.strike : b.strike - a.strike);
+    const gexProfileSorted = [...gexProfile].sort((a, b) => a.strike - b.strike);
 
+    // Gamma flip: linear interpolation at the zero-crossing of cumulative GEX.
+    // Previously used the bracket strike (gexProfileSorted[i].strike), which is
+    // inconsistent with dealerHedging.ts and optionsAnalyticsService.ts that both
+    // interpolate the precise zero-crossing between the two bracketing strikes.
     let gammaFlipStrike = 0;
     let cumulativeGex = 0;
     for (let i = 0; i < gexProfileSorted.length; i++) {
       const prev = cumulativeGex;
       cumulativeGex += gexProfileSorted[i].totalGex;
-      
+
       if (i > 0 && Math.sign(prev) !== Math.sign(cumulativeGex) && prev !== 0) {
-        gammaFlipStrike = gexProfileSorted[i].strike;
+        const strikeA = gexProfileSorted[i - 1].strike;
+        const strikeB = gexProfileSorted[i].strike;
+        gammaFlipStrike = strikeA + (strikeB - strikeA) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cumulativeGex));
         break;
       }
     }
+
+    // No fallback here: if cumulative GEX never crosses zero within the scanned
+    // strikes, gammaFlipStrike stays 0 ("no reliable flip level found"), matching
+    // optionsAnalyticsService.ts and what the frontend already renders as "None"
+    // rather than fabricating an arbitrary strike.
 
     // Build Volume/OI profile
     const volumeOIProfile: VolumeOIByStrike[] = Object.keys(volOIByStrike).map(k => {

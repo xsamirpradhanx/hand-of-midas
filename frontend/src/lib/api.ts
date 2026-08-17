@@ -39,14 +39,15 @@ async function getCognitoToken(): Promise<string | null> {
   });
 }
 
-async function fetchWithAuth(path: string, options: RequestInit = {}) {
+/** Same request/auth/error handling as fetchWithAuth, but returns the raw Response — for callers that need headers (e.g. screener polling reads X-Screener-Computed-At), not just the parsed body. */
+async function fetchWithAuthRaw(path: string, options: RequestInit = {}): Promise<Response> {
   const token = await getCognitoToken();
-  
+
   const headers = new Headers(options.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  
+
   if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
@@ -64,22 +65,23 @@ async function fetchWithAuth(path: string, options: RequestInit = {}) {
 
   const requestedProvider = headers.get('X-Data-Provider');
   const actualProvider = response.headers.get('X-Source-Provider');
-  
+
   if (actualProvider && actualProvider !== 'cache' && requestedProvider && actualProvider !== requestedProvider) {
     window.dispatchEvent(new CustomEvent('DATA_PROVIDER_FALLBACK', {
       detail: { requested: requestedProvider, actual: actualProvider }
     }));
   }
 
-  if (response.status === 401) {
-    const errorBody = await response.json().catch(() => ({}));
+  if (response.status === 401 || !response.ok) {
+    const errorBody = await response.clone().json().catch(() => ({}));
     throw new Error(errorBody.error || `API Error: ${response.status} ${response.statusText}`);
   }
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.error || `API Error: ${response.status} ${response.statusText}`);
-  }
+  return response;
+}
+
+async function fetchWithAuth(path: string, options: RequestInit = {}) {
+  const response = await fetchWithAuthRaw(path, options);
 
   // Handle 204 No Content
   if (response.status === 204) {
@@ -89,7 +91,7 @@ async function fetchWithAuth(path: string, options: RequestInit = {}) {
   return response.json();
 }
 
-const screenerCache = new Map<string, { timestamp: number; data: any }>();
+const screenerCache = new Map<string, { timestamp: number; data: any; computedAt: string | null }>();
 
 export const api = {
   getWatchlist: async (): Promise<WatchlistEntry[]> => {
@@ -188,19 +190,35 @@ export const api = {
     return fetchWithAuth(`/options-analytics/${symbol}${qs ? `?${qs}` : ''}`);
   },
 
-  getScreener: async (mode: 'premarket' | 'open' | 'momentum' | 'highdemand'): Promise<any[]> => {
+  /**
+   * `force: true` skips this 15s in-memory cache — used when polling after
+   * refreshScreener() so a just-triggered scan's result isn't masked by a
+   * stale in-memory hit.
+   */
+  getScreener: async (
+    mode: 'premarket' | 'open' | 'momentum' | 'highdemand',
+    opts?: { force?: boolean },
+  ): Promise<{ results: any[]; computedAt: string | null }> => {
     const now = Date.now();
     const cacheKey = `SCREENER_${mode}`;
-    const cached = screenerCache.get(cacheKey);
-    if (cached && now - cached.timestamp < 15000) {
-      console.log(`[Frontend Cache] Serving screener ${mode} from memory.`);
-      return cached.data;
+    if (!opts?.force) {
+      const cached = screenerCache.get(cacheKey);
+      if (cached && now - cached.timestamp < 15000) {
+        console.log(`[Frontend Cache] Serving screener ${mode} from memory.`);
+        return { results: cached.data, computedAt: cached.computedAt };
+      }
     }
 
-    const data = await fetchWithAuth(`/screener?mode=${mode}`);
-    screenerCache.set(cacheKey, { timestamp: now, data });
-    return data;
+    const response = await fetchWithAuthRaw(`/screener?mode=${mode}`);
+    const data = response.status === 204 ? [] : await response.json();
+    const computedAt = response.headers.get('X-Screener-Computed-At');
+    screenerCache.set(cacheKey, { timestamp: now, data, computedAt });
+    return { results: data, computedAt };
   },
+
+  /** Kicks off an out-of-band rescan ("Refresh Scan" button) — a full scan takes minutes, so this returns as soon as it's handed off. Poll getScreener({force: true}) and watch computedAt to know when it lands. */
+  refreshScreener: (mode: 'premarket' | 'open' | 'momentum' | 'highdemand'): Promise<{ ok: boolean; mode: string; message: string }> =>
+    fetchWithAuth(`/screener/refresh?mode=${mode}`, { method: 'POST' }),
 
   getDiagonalScreener: (): Promise<any[]> =>
     fetchWithAuth('/screener/diagonal'),

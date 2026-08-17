@@ -10,6 +10,9 @@ import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 export class SpectralMicrostructureInertiaFactor implements PredictiveFactor {
   name = 'Spectral Microstructure Inertia';
   bucket = 'MOMENTUM' as const;
+  // Shared with the other AI-generated factors — see ai_factor_1786565158561.ts
+  // for why these dedupe as one correlation group instead of stacking.
+  correlationGroup = 'AI_MICROSTRUCTURE';
 
   private readonly memoryDepth = 20;
   private readonly dFraction = 0.45; // Optimal memory fraction for asset stationarity without loss of signal
@@ -127,9 +130,12 @@ export class SpectralMicrostructureInertiaFactor implements PredictiveFactor {
       bias = 'bearish';
     }
 
-    // Sigmoidal scaling for factor weight confidence [0.0, 1.0]
+    // Sigmoidal scaling for factor weight confidence, capped at 0.35 to match
+    // the hand-tuned factor convention (see factors/volumeProfile.ts) — an
+    // AI-generated factor with no live track record must not be able to
+    // out-weigh every reviewed factor in the engine.
     const rawWeight = 1 / (1 + Math.exp(-Math.abs(compositeSignal) + 1.5));
-    const weight = Math.min(Math.max(Math.round(rawWeight * 100) / 100, 0), 1);
+    const weight = Math.min(Math.max(Math.round(rawWeight * 100) / 100, 0), 0.35);
 
     // Dynamic Volatility Targets using ATR
     const atr = this.calculateATR(bars, 14);
@@ -144,6 +150,8 @@ export class SpectralMicrostructureInertiaFactor implements PredictiveFactor {
       factorName: this.name,
       bias,
       weight,
+      bucket: this.bucket,
+      correlationGroup: this.correlationGroup,
       reasoning: `FracDiff(d=${this.dFraction}) Z-Score: ${fracDiffZScore.toFixed(2)}, Microstructure Flow Inertia Corr: ${inertiaCorrelation.toFixed(2)}. Composite Intensity: ${compositeSignal.toFixed(2)}.`,
       buyTarget: Math.round(buyTarget * 100) / 100,
       sellTarget: Math.round(sellTarget * 100) / 100

@@ -24,13 +24,35 @@ export class VolumeProfileFactor implements PredictiveFactor {
     const bucketSize = (maxPrice - minPrice) / numBuckets;
     const buckets = new Array(numBuckets).fill(0);
 
-    for (const b of bars) {
+    // Weight each bar's volume by how recent it is, rather than treating six months
+    // of trade as equally informative.
+    //
+    // A flat profile describes where volume traded over the whole window, which stops
+    // being a statement about *current* value once a name has re-rated. On NBIS —
+    // which ran from $83 to $300 inside this window — the flat value area spanned
+    // $148–$300, i.e. essentially the entire move, and the "value area high" was
+    // effectively the all-time high. For a HORIZON_BARS-scale trade the relevant
+    // question is where trade has concentrated lately, so volume decays with age:
+    // a bar one half-life back counts half as much as today's.
+    const RECENCY_HALFLIFE_BARS = 30;
+    const lastIndex = bars.length - 1;
+    for (let i = 0; i < bars.length; i++) {
+      const b = bars[i];
       const avgPrice = (b.high + b.low + b.close) / 3;
       const bucketIdx = Math.min(numBuckets - 1, Math.max(0, Math.floor((avgPrice - minPrice) / bucketSize)));
-      buckets[bucketIdx] += b.volume || 1;
+      const recency = Math.pow(0.5, (lastIndex - i) / RECENCY_HALFLIFE_BARS);
+      buckets[bucketIdx] += (b.volume || 1) * recency;
     }
 
     // Find POC (Point of Control)
+    //
+    // NOTE: the top buckets are often near-tied (on WULF: 194M / 191M / 175M shares,
+    // a 1.5% spread across 50 buckets), and POC alone sets this factor's bias — price
+    // above POC reads bullish. So a 1.5% volume difference between two adjacent
+    // buckets can flip the directional call. Smoothing the histogram before the
+    // argmax was tried as a fix and measured no more stable across window sizes, so
+    // it was not kept; the raw argmax at least matches the textbook definition.
+    // Worth revisiting with a volume-weighted centroid if this bias proves noisy.
     let pocIdx = 0;
     let maxVol = 0;
     let totalVol = 0;
