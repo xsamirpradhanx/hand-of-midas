@@ -349,8 +349,36 @@ textarea:focus {
 
 @media (max-width: 768px) {
   :root {
+    /* 100% is intentional: on mobile the panels live inside fixed-width drawer
+       rails (Dashboard.module.css), so each panel fills its rail rather than
+       claiming a slice of the viewport. */
     --sidebar-width: 100%;
     --indicator-panel-width: 100%;
-    --topbar-height: 48px;
+    --topbar-height: 56px;
+  }
+
+  /* A single overflowing table or chart used to make the whole page pan
+     sideways, which on a phone reads as the layout being broken. */
+  html, body { max-width: 100%; overflow-x: hidden; }
+
+  /* iOS zooms the page when a focused input is under 16px, and never zooms back
+     out on blur. !important because component modules set their own smaller sizes
+     and this is a platform constraint, not a style preference. */
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Wide content scrolls inside its own box instead of widening the page. */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Comfortable minimum hit area for anything tappable. */
+  button, [role='button'], a.btn { min-height: 44px; }
+}
+
+/* Respect the OS reduce-motion setting — this UI animates a lot. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

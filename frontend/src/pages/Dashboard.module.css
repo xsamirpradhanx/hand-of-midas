@@ -35,6 +35,7 @@
   padding: 8px 20px;
   min-height: 48px;
   flex-shrink: 0;
+  flex-wrap: nowrap;
   background: var(--surface-main);
   border-bottom: 1px solid var(--border-color);
   gap: 16px;
@@ -43,20 +44,31 @@
   display: flex;
   align-items: baseline;
   gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 .symbolTitle h2 {
   margin: 0;
+  flex-shrink: 0;
   font-size: 1.05rem;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: 0.8px;
   font-family: var(--font-mono);
 }
+.companyName {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 
 .headerControlsContainer {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  flex-shrink: 0;
   gap: 4px;
 }
 
@@ -207,21 +219,130 @@
   height: 100%;
 }
 
+/* Rails are plain flex children on desktop; only mobile turns them into drawers. */
+.watchlistRail,
+.indicatorRail {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
 @media (max-width: 768px) {
-  .splitContainer {
-    flex-direction: column;
+  .splitContainer { flex-direction: column; }
+
+  .chartArea, .rightPane { width: 100% !important; }
+
+  /* Both panes share the height instead of each claiming 100% and overflowing. */
+  .splitContainer > .chartArea,
+  .splitContainer > .rightPane { height: auto !important; flex: 1 1 0; min-height: 0; }
+
+  .resizer { display: none; }
+  .splitToggleWrapper { display: none !important; }
+
+  /* ── Off-canvas rails ──────────────────────────────────────────────────── */
+  .watchlistRail,
+  .indicatorRail {
+    position: fixed;
+    top: var(--topbar-height, 56px);
+    bottom: 0;
+    z-index: 150;
+    width: min(290px, 84vw);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
   }
-  
-  .chartArea, .rightPane {
-    width: 100% !important;
+
+  .watchlistRail { left: 0; transform: translateX(-100%); }
+  .indicatorRail { right: 0; transform: translateX(100%); }
+  .railOpen { transform: translateX(0); }
+
+  /* The panels size themselves from --sidebar-width, which is 100% on mobile —
+     that is correct here because the rail itself is the one setting the width. */
+  .watchlistRail > *,
+  .indicatorRail > * { width: 100% !important; height: 100%; }
+
+  .drawerBackdrop {
+    position: fixed;
+    inset: 0;
+    top: var(--topbar-height, 56px);
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 140;
+    animation: dashFadeIn 0.2s ease;
   }
-  
-  .resizer {
-    display: none;
+
+  @keyframes dashFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Anchored bottom-LEFT: the chart renders its price scale down the right edge,
+     and buttons parked there sat directly on top of the price labels. */
+  .railToggles {
+    position: fixed;
+    left: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    z-index: 160;
   }
-  
-  .splitToggleWrapper {
-    display: none !important;
+
+  .railToggle {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--gold-bright, #f5c842);
+    background: linear-gradient(135deg, rgba(30, 24, 10, 0.97) 0%, rgba(14, 18, 36, 0.97) 100%);
+    border: 1px solid rgba(245, 200, 66, 0.45);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55), 0 0 14px rgba(245, 200, 66, 0.14);
+    transition: transform 0.18s ease, background 0.18s ease;
+  }
+
+  .railToggle:active { transform: scale(0.93); }
+
+  .railToggleActive {
+    background: linear-gradient(135deg, rgba(245, 200, 66, 0.3) 0%, rgba(200, 134, 10, 0.35) 100%);
+    border-color: rgba(245, 200, 66, 0.8);
+  }
+
+  /* ── Header + tabs ─────────────────────────────────────────────────────── */
+  .chartHeader {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .headerControlsContainer { width: 100%; align-items: flex-start; }
+
+  /* Timeframe/chart-type controls scroll sideways rather than wrapping the header
+     onto a third line. */
+  .headerControls {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .headerControls::-webkit-scrollbar { display: none; }
+
+  .symbolTitle { width: 100%; }
+  .symbolTitle h2 { font-size: 1rem; }
+  .companyName { font-size: 0.9rem !important; }
+
+  .tabBar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+  .tabBar::-webkit-scrollbar { display: none; }
+  .tabBar > div { flex-wrap: nowrap; }
+
+  .tab {
+    white-space: nowrap;
+    min-height: 40px;
+    flex-shrink: 0;
   }
 }
 

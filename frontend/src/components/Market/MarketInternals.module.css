@@ -182,3 +182,11 @@
   height: 20px;
   background: linear-gradient(180deg, transparent, rgba(249, 168, 37, 0.4), transparent);
 }
+
+@media (max-width: 768px) {
+  /* Match the heatmap's tightened gutters so the two strips align. */
+  .container { padding-left: 12px; padding-right: 12px; }
+  .item { font-size: 0.78rem; }
+  /* Hover-reveal scroll arrows have no touch equivalent — swiping is the gesture. */
+  .leftZone, .rightZone { display: none; }
+}

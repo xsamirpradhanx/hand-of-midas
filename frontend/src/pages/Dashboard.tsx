@@ -10,6 +10,7 @@ import { UnusualActivityFeed } from '../components/Options/UnusualActivityFeed';
 import { PortfolioDashboard } from './PortfolioDashboard';
 import { TradePlanPanel } from '../components/Screener/TradePlanPanel';
 
+import { useIsMobile } from '../hooks/useMediaQuery';
 import { api } from '../lib/api';
 import type { IndicatorConfig } from '../types';
 import styles from './Dashboard.module.css';
@@ -50,6 +51,27 @@ export const Dashboard: React.FC = () => {
   const [timezone, setTimezone] = useLocalStorage<'EST' | 'GMT'>('dashboard_timezone', 'EST');
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
   const [companyName, setCompanyName] = useState<string>('');
+
+  // On phones the watchlist and indicator rails become off-canvas drawers rather
+  // than columns — three side-by-side panels leave the chart a few dozen pixels wide.
+  const isMobile = useIsMobile();
+  const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+
+  // Returning to desktop with a drawer open would leave a fixed overlay covering
+  // the layout, so reset both whenever we leave mobile.
+  useEffect(() => {
+    if (!isMobile) { setWatchlistOpen(false); setIndicatorsOpen(false); }
+  }, [isMobile]);
+
+  // Body scroll lock while a drawer is open, so the page behind doesn't scroll.
+  useEffect(() => {
+    const open = isMobile && (watchlistOpen || indicatorsOpen);
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [isMobile, watchlistOpen, indicatorsOpen]);
   
   // Split View State
   const [isSplitView, setIsSplitView] = useLocalStorage<boolean>('dashboard_splitView', false);
@@ -102,11 +124,23 @@ export const Dashboard: React.FC = () => {
   return (
     <div className={styles.appLayout}>
       <div className={styles.dashboard}>
-          <WatchlistPanel
-            selectedSymbol={selectedSymbol}
-            onSelectSymbol={setSelectedSymbol}
-            showExtendedHours={showExtendedHours}
-          />
+          {isMobile && (watchlistOpen || indicatorsOpen) && (
+            <div
+              className={styles.drawerBackdrop}
+              onClick={() => { setWatchlistOpen(false); setIndicatorsOpen(false); }}
+            />
+          )}
+
+          <div className={`${styles.watchlistRail} ${watchlistOpen ? styles.railOpen : ''}`}>
+            <WatchlistPanel
+              selectedSymbol={selectedSymbol}
+              onSelectSymbol={(sym: string) => {
+                setSelectedSymbol(sym);
+                setWatchlistOpen(false);
+              }}
+              showExtendedHours={showExtendedHours}
+            />
+          </div>
 
           <div className={styles.mainArea}>
         {selectedSymbol && (
@@ -114,7 +148,11 @@ export const Dashboard: React.FC = () => {
             <div className={styles.symbolTitle}>
               <h2>{selectedSymbol}</h2>
               {companyName && (
-                <span style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                <span
+                  className={styles.companyName}
+                  title={companyName}
+                  style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', fontWeight: 400 }}
+                >
                   {companyName}
                 </span>
               )}
@@ -252,6 +290,7 @@ export const Dashboard: React.FC = () => {
         </div>
           </div>
           {activeTab === 'chart' && (
+            <div className={`${styles.indicatorRail} ${indicatorsOpen ? styles.railOpen : ''}`}>
             <IndicatorPanel
               indicators={indicators}
               onChange={handleIndicatorsChange}
@@ -263,6 +302,43 @@ export const Dashboard: React.FC = () => {
               setShowInstitutionalSignals={setShowInstitutionalSignals}
               currentInterval={interval}
             />
+            </div>
+          )}
+
+          {/* Mobile-only rail toggles. Rendered last so they stack above the panes. */}
+          {isMobile && (
+            <div className={styles.railToggles}>
+              <button
+                type="button"
+                className={`${styles.railToggle} ${watchlistOpen ? styles.railToggleActive : ''}`}
+                aria-label="Toggle watchlist"
+                aria-expanded={watchlistOpen}
+                onClick={() => { setWatchlistOpen(o => !o); setIndicatorsOpen(false); }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
+                  <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
+                  <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+                </svg>
+              </button>
+              {activeTab === 'chart' && (
+                <button
+                  type="button"
+                  className={`${styles.railToggle} ${indicatorsOpen ? styles.railToggleActive : ''}`}
+                  aria-label="Toggle indicators"
+                  aria-expanded={indicatorsOpen}
+                  onClick={() => { setIndicatorsOpen(o => !o); setWatchlistOpen(false); }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                </button>
+              )}
+            </div>
           )}
         </div>
     </div>

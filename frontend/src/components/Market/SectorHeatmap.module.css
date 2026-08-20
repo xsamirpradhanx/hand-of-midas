@@ -197,3 +197,39 @@
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
+
+/* ── Mobile ────────────────────────────────────────────────────────────────
+   The desktop tile is 140px wide with 14px padding and a 1.3rem symbol, so the
+   heatmap alone claimed roughly a fifth of a phone viewport before the chart got
+   a single pixel. Shrink the tile and its type; the row already scrolls
+   horizontally, so narrower tiles simply mean more of them are reachable. */
+@media (max-width: 768px) {
+  .tile {
+    width: 96px;
+    padding: 8px 8px;
+    border-radius: 5px;
+  }
+
+  .symbol { font-size: 0.95rem; margin-bottom: 1px; }
+
+  /* Sector names are long ("SEMICONDUCTORS"); one clipped line beats three wrapped. */
+  .name {
+    font-size: 0.6rem;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .change { font-size: 0.78rem; padding: 1px 7px; }
+}
+
+@media (max-width: 768px) {
+  /* Desktop pads these to 24px, which wastes scarce horizontal room on a phone. */
+  .container { padding: 8px 12px; }
+  .header { padding: 6px 12px; font-size: 0.85rem; }
+  .scrollContainer, .scrollWrapper { padding-left: 0; padding-right: 0; }
+  /* Edge fade/arrow affordances are mouse-oriented; touch users just swipe. */
+  .leftZone, .rightZone { display: none; }
+}

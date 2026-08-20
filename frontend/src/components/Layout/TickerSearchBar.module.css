@@ -283,8 +283,24 @@
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+  /* Previously `display: none` below 600px, which removed ticker lookup entirely
+     on phones — the single most-used control in the app. Keep it, just compact:
+     the topbar grid gives this the middle column with minmax(0, 1fr). */
   .container {
-    display: none;
+    display: flex;
+    max-width: none;
+    width: 100%;
   }
+
+  /* 16px exactly: iOS zooms the viewport when a focused input is any smaller,
+     and that zoom does not reverse on blur. */
+  .input {
+    font-size: 16px;
+    padding-right: 10px;
+    min-height: 40px;
+  }
+
+  /* The ⌘K hint is meaningless without a keyboard. */
+  .shortcut { display: none; }
 }

@@ -49,6 +49,7 @@ export interface ScreenerResult {
   
   // Phase 1 Statistical Metrics
   eventRisk: 'HIGH' | 'MEDIUM' | 'LOW';
+  eventRiskReasons?: string[];
   marketRegime: string;
   triggerStatus: string;
   expectedR: number;
@@ -393,7 +394,14 @@ const ScreenerDashboard: React.FC = () => {
             <div className={styles.avoidList}>
               {results.filter(r => r.eventRisk === 'HIGH').slice(0, 3).map(result => (
                 <div key={result.symbol} className={styles.avoidItem}>
-                  <strong>{result.symbol}</strong> — <span style={{ color: 'var(--color-text-dim)' }}>Earnings / Major Catalyst risk.</span>
+                  {/* The event-risk engine scores volume/volatility anomalies — it
+                      does not read an earnings calendar, so it cannot attribute the
+                      risk to earnings. Show the reasons it actually produced. */}
+                  <strong>{result.symbol}</strong> — <span style={{ color: 'var(--color-text-dim)' }}>
+                    {result.eventRiskReasons?.length
+                      ? result.eventRiskReasons.join('; ')
+                      : 'Unusual volume/volatility — cause unconfirmed.'}
+                  </span>
                 </div>
               ))}
             </div>

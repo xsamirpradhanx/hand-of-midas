@@ -38,3 +38,13 @@
   color: var(--accent-main);
   box-shadow: 0 4px 12px rgba(249, 168, 37, 0.15);
 }
+
+@media (max-width: 768px) {
+  /* 20px tall is well under a comfortable touch target; widen the strip's grab
+     handle vertically while keeping the same slim visual footprint. */
+  .marketToggleBtn {
+    width: 76px;
+    height: 28px;
+    font-size: 0.85rem;
+  }
+}
