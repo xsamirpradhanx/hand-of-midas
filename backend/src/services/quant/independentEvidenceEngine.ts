@@ -56,9 +56,24 @@ export function calculateIndependentEvidence(factors: FactorResult[]): Independe
   };
   if (!factors || factors.length === 0) return empty;
 
+  // Drop factors that never cast a directional vote (level providers, volatility
+  // regime reads — FactorResult.directional === false). A bucket's score is
+  // (bullish - bearish) / total with neutral weight in `total`, so a permanent
+  // non-voter only ever shrinks the voters' share: PRICE_STRUCTURE scores were
+  // understated ~31% because Swing Structure, the biggest weight in that bucket
+  // at 0.38, is a level provider that cannot vote by construction.
+  //
+  // A factor that CAN vote and returned neutral is NOT dropped — "I looked and
+  // found no edge" is real evidence and must keep diluting.
+  //
+  // Their levels are unaffected: compositeScore reads buyTarget/sellTarget off
+  // the factor list directly, not through this engine.
+  const votingFactors = factors.filter(f => f.directional !== false);
+  if (votingFactors.length === 0) return empty;
+
   // Group by bucket then by correlationGroup
   const byBucket = new Map<FactorBucket, Map<string, FactorResult[]>>();
-  for (const f of factors) {
+  for (const f of votingFactors) {
     const bucket = f.bucket ?? 'MOMENTUM';
     const group = f.correlationGroup ?? f.factorName;
     if (!byBucket.has(bucket)) byBucket.set(bucket, new Map());

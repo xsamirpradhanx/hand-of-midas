@@ -77,8 +77,23 @@ export interface CacheItem extends DynamoDBBaseItem {
 }
 
 /** A quant prediction result stored in DynamoDB. */
+/**
+ * Which engine produced a prediction.
+ *
+ * Both the AI Trade Plan and the screener write to the `PREDICTION#` keyspace,
+ * but they are different systems on different horizons (see the holding-horizon
+ * note: Trade Plan is a days-to-4-weeks swing engine, the screener is intraday).
+ * Learning must be partitioned by this, or the screener's far higher write rate
+ * buries the Trade Plan's outcomes in a shared FACTOR_STATS/SETUP_STATS pool.
+ *
+ * Absent on rows written before this field existed — those are LEGACY and are
+ * excluded from partitioned learning rather than guessed at.
+ */
+export type PredictionSource = 'TRADE_PLAN' | 'SCREENER';
+
 export interface PredictionItem extends DynamoDBBaseItem {
   readonly symbol: string;
+  readonly source?: PredictionSource;
   readonly currentPrice: number;
   readonly zones: any[];
   readonly aiThesis: any;

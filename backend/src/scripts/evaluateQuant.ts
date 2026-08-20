@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { scanItems, putItem, getItem } from '../services/dynamodb.js';
 import { fetchBarsWithFallback } from '../services/marketData/fetchBars.js';
 import type { PredictionItem, EvaluationItem, FactorStatsItem, SetupStatsItem } from '../types.js';
@@ -75,6 +76,14 @@ export async function evaluateQuant() {
       }
 
       const bias = thesis.tradePlan.bias;
+      // Namespaces every learning key below. The screener writes predictions on
+      // every scan (open/premarket every 5m, momentum/highdemand every 2m) while
+      // the AI Trade Plan writes once per day per symbol — sharing one keyspace
+      // let screener volume bury the Trade Plan's outcomes by orders of
+      // magnitude, so the swing engine calibrated largely on intraday results.
+      // Rows predating the field are LEGACY and stay in their own partition
+      // rather than being guessed into one engine or the other.
+      const source = pred.source ?? 'LEGACY';
       if (bias === 'NO TRADE') {
         console.log(`[Quant Evaluation] ⏭️ Bias was NO TRADE, skipping grading.`);
         continue;
@@ -83,7 +92,11 @@ export async function evaluateQuant() {
       const entryPrice = pred.currentPrice;
       // Prefer the target snapshot written with the prediction. Plan defaults
       // may evolve later, but a historical grade must use the original terms.
-      const target = pred.target ?? thesis.tradePlan.stretchTarget;
+      // majorResistance is T1 for both LONG and SHORT — the level rewardRisk is
+      // actually computed from — so it's the correct fallback for legacy
+      // predictions that predate persisting `target` (stretchTarget/T2 would
+      // grade SHORT trades against a farther level than promised).
+      const target = pred.target ?? thesis.tradePlan.majorResistance;
       const stop = thesis.tradePlan.stop;
 
       if (!target || !stop) {
@@ -173,7 +186,7 @@ export async function evaluateQuant() {
 
       if (thesis.factors && Array.isArray(thesis.factors)) {
         for (const f of thesis.factors) {
-          const fname = f.factorName;
+          const fname = `${source}|${f.factorName}`;
           if (!factorStats[fname]) {
             factorStats[fname] = { tries: 0, wins: 0, losses: 0, score: 0, ambiguous: 0 };
           }
@@ -190,11 +203,17 @@ export async function evaluateQuant() {
         }
       }
 
-      // 5. P2: Record setup-specific empirical stats
+      // 5. P2: Record setup-specific empirical stats.
+      // Namespaced by engine: the screener writes predictions on every scan
+      // (open/premarket every 5m, momentum/highdemand every 2m — several
+      // hundred scans a session), while the AI Trade Plan writes once per day
+      // per symbol. Sharing one keyspace let screener volume bury the Trade
+      // Plan's outcomes by orders of magnitude, so the swing engine was
+      // effectively calibrating on intraday results.
       const setupKey = pred.marketRegime && pred.setupType
-        ? `${pred.marketRegime}|${pred.setupType}`
+        ? `${source}|${pred.marketRegime}|${pred.setupType}`
         : undefined;
-      const keys = [learningKey(bias), ...(setupKey ? [setupKey] : [])];
+      const keys = [`${source}|${learningKey(bias)}`, ...(setupKey ? [setupKey] : [])];
       for (const key of keys) {
         if (!setupStats[key]) {
           setupStats[key] = { tries: 0, wins: 0, losses: 0, sumExpectedR: 0, sumActualR: 0, ambiguous: 0 };

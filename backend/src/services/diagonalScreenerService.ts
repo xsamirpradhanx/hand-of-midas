@@ -343,6 +343,7 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
   console.log(`[DiagonalScreener] Phase 1: Pre-filtered to ${topCandidates.length} candidates for deep scan.`);
 
   const results: DiagonalScreenerResult[] = [];
+  const funnel = { oversold: 0, viableChain: 0, bothLegs: 0 };
 
   // 4. Process deep scan in batches of 4
   const BATCH_SIZE = 4;
@@ -378,6 +379,7 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
         // crossing, with no sharp recent move.
         const isOversold = (rsi14 !== null && rsi14 <= 35) || selloffDepth5d <= -15;
         if (!isOversold) return null;
+        funnel.oversold++;
 
         // ── Options chain ─────────────────────────────────────────────────
         // Yahoo's options() only returns contracts for ONE expiration per call
@@ -442,6 +444,7 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
         }
 
         if (!hasViableChain) return null;
+        funnel.viableChain++;
 
         // ── Suggest spread legs & calculate metrics ───────────────────────
         // Each leg-finder now rejects contracts with no real two-sided market
@@ -450,6 +453,7 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
         const longLeg = suggestLongLeg(contracts, expirations, c.price);
         const shortLeg = suggestShortLeg(contracts, expirations, c.price);
         if (!longLeg || !shortLeg) return null;
+        funnel.bothLegs++;
 
         let netDebit: number | null = null;
         let strikeWidth: number | null = null;
@@ -556,6 +560,7 @@ export async function runDiagonalScreener(): Promise<DiagonalScreenerResult[]> {
   }
 
   results.sort((a, b) => b.setupScore - a.setupScore);
+  console.log(`[DiagonalScreener] Funnel: ${topCandidates.length} candidates -> ${funnel.oversold} oversold -> ${funnel.viableChain} viable chain -> ${funnel.bothLegs} both legs.`);
   console.log(`[DiagonalScreener] Found ${results.length} setups.`);
   return results;
 }

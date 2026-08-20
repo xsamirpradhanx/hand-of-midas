@@ -85,7 +85,21 @@ export async function buildActiveMarketUniverse(): Promise<UniverseCandidate[]> 
     'undervalued_wide_moat_stocks',
     'portfolio_anchors',
     'solid_large_growth_funds',
-    'solid_midcap_growth_funds'
+    'solid_midcap_growth_funds',
+    // Morningstar sector screeners — sector coverage independent of any
+    // momentum/value signal, so names like utilities/materials/real estate
+    // aren't only included when they happen to also be a factor outlier.
+    'ms_basic_materials',
+    'ms_communication_services',
+    'ms_consumer_cyclical',
+    'ms_consumer_defensive',
+    'ms_energy',
+    'ms_financial_services',
+    'ms_healthcare',
+    'ms_industrials',
+    'ms_real_estate',
+    'ms_technology',
+    'ms_utilities'
   ];
 
   // Fetch all screener lists concurrently

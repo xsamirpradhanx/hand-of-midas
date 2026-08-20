@@ -15,6 +15,12 @@ export type OutcomeCode = 'TARGET' | 'STOP' | 'TIMEOUT' | 'AMBIGUOUS';
 export interface GradeInput {
   readonly high: number;
   readonly low: number;
+  /**
+   * Optional — when present, enables `forwardReturn` and a realized R for
+   * TIMEOUT outcomes. Callers grading from OHLC always have it; the older
+   * high/low-only call sites still work and simply get nulls for those fields.
+   */
+  readonly close?: number;
 }
 
 export interface GradeResult {
@@ -28,6 +34,30 @@ export interface GradeResult {
   readonly maxExcursion: number;
   /** How many bars were consumed before resolution (0 if bars empty). */
   readonly barsElapsed: number;
+  /**
+   * Raw fractional price change from entry to the close of the LAST bar in the
+   * horizon — not the resolving bar. Positive means price ended higher,
+   * regardless of trade direction.
+   *
+   * Deliberately measured over the full window rather than to the exit: this
+   * grades a *directional claim* over the prediction horizon, which is what
+   * factor-level learning needs. Using the exit instead would score every
+   * factor on the plan's stop placement rather than on its own forecast.
+   *
+   * null when bars carry no `close`.
+   */
+  readonly forwardReturn: number | null;
+  /**
+   * Realized R of the trade: +planned R on TARGET, -1 on STOP, and the actual
+   * mark-to-close R on TIMEOUT.
+   *
+   * A TIMEOUT is not a loss. The original loop scored it 0.0, identical to a
+   * stop-out, which biased learning toward setups with targets tight enough to
+   * resolve inside the horizon and punished correct-but-slow theses.
+   *
+   * null for AMBIGUOUS (unknowable) and when risk-per-share is degenerate.
+   */
+  readonly realizedR: number | null;
 }
 
 export function gradeOutcome(
@@ -41,6 +71,18 @@ export function gradeOutcome(
   const isShort = bias === 'SHORT' || bias === 'BEARISH';
   let maxExcursion = 0;
   const bars = futureBars.slice(0, horizon);
+
+  // Measured across the whole horizon, independent of when (or whether) the
+  // trade resolved — see GradeResult.forwardReturn.
+  const horizonClose = bars.length > 0 ? bars[bars.length - 1].close : undefined;
+  const forwardReturn =
+    horizonClose != null && entryPrice > 0 ? (horizonClose - entryPrice) / entryPrice : null;
+
+  const riskPerShare = Math.abs(entryPrice - stop);
+  const rFor = (exit: number): number | null => {
+    if (!(riskPerShare > 0)) return null;
+    return (isShort ? entryPrice - exit : exit - entryPrice) / riskPerShare;
+  };
 
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
@@ -62,6 +104,9 @@ export function gradeOutcome(
         ambiguous: true,
         maxExcursion,
         barsElapsed: i + 1,
+        forwardReturn,
+        // Intrabar order unknowable, so the realized R is unknowable too.
+        realizedR: null,
       };
     }
     if (barHitTarget) {
@@ -73,6 +118,8 @@ export function gradeOutcome(
         ambiguous: false,
         maxExcursion,
         barsElapsed: i + 1,
+        forwardReturn,
+        realizedR: rFor(target),
       };
     }
     if (barHitStop) {
@@ -84,6 +131,9 @@ export function gradeOutcome(
         ambiguous: false,
         maxExcursion,
         barsElapsed: i + 1,
+        forwardReturn,
+        // Assume the stop filled at its level; slippage is not observable here.
+        realizedR: rFor(stop),
       };
     }
   }
@@ -96,5 +146,9 @@ export function gradeOutcome(
     ambiguous: false,
     maxExcursion,
     barsElapsed: bars.length,
+    forwardReturn,
+    // Marked to the horizon close rather than scored 0.0 — an unresolved plan
+    // that drifted favourably is not the same result as a stop-out.
+    realizedR: horizonClose != null ? rFor(horizonClose) : null,
   };
 }

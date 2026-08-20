@@ -24,7 +24,10 @@ async function persistPrediction(symbol: string, data: any): Promise<void> {
   if (!plan || !plan.bias || plan.bias === 'NO TRADE') return;
   if (typeof plan.trigger !== 'number' || typeof plan.stop !== 'number') return;
 
-  const target = plan.bias === 'LONG' ? plan.majorResistance : plan.stretchTarget;
+  // majorResistance is T1 for both LONG and SHORT (compositeScore.ts computes
+  // rewardRisk from it either way) — grading against stretchTarget (T2) for SHORT
+  // would score against a farther level than the R:R shown to the user promised.
+  const target = plan.majorResistance;
   if (typeof target !== 'number') return;
 
   const now = new Date();
@@ -32,6 +35,7 @@ async function persistPrediction(symbol: string, data: any): Promise<void> {
     pk: `PREDICTION#${symbol}`,
     sk: `TIMESTAMP#${now.toISOString().slice(0, 10)}`,
     symbol,
+    source: 'TRADE_PLAN',
     currentPrice: data.currentPrice,
     zones: data.zones,
     aiThesis: data.aiThesis,

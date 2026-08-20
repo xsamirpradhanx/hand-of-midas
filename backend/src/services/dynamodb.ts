@@ -187,6 +187,47 @@ export async function queryItems<T extends DynamoDBBaseItem>(
 }
 
 /**
+ * Query a contiguous sort-key range within one partition.
+ *
+ * `queryItems` can only express a prefix, which forces a caller wanting
+ * "bars from 2010 to 2015" to read every chunk in the partition and filter in
+ * memory. For the historical bar store that is the difference between reading
+ * six items and reading forty years of them, so the range condition belongs in
+ * DynamoDB rather than in the caller.
+ *
+ * Both bounds are inclusive, matching DynamoDB's BETWEEN semantics.
+ */
+export async function queryItemsBetween<T extends DynamoDBBaseItem>(
+  pk: string,
+  skFrom: string,
+  skTo: string,
+): Promise<T[]> {
+  const items: T[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'pk = :pk AND sk BETWEEN :from AND :to',
+        ExpressionAttributeValues: { ':pk': pk, ':from': skFrom, ':to': skTo },
+        ExclusiveStartKey: lastEvaluatedKey,
+      }),
+    );
+
+    if (result.Items) {
+      items.push(...(result.Items as T[]));
+    }
+
+    lastEvaluatedKey = result.LastEvaluatedKey as
+      | Record<string, unknown>
+      | undefined;
+  } while (lastEvaluatedKey);
+
+  return items;
+}
+
+/**
  * Perform a full table scan with an optional filter expression.
  * WARNING: Use sparingly — scans consume read capacity proportional to table size.
  * This is only used by background jobs (chainRefresh) that run infrequently.

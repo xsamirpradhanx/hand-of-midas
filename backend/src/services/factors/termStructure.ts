@@ -14,6 +14,7 @@ export class TermStructureFactor implements PredictiveFactor {
 
     try {
       const result = await evaluateTermStructureFactor(
+        input.symbol,
         optionsChain.contracts,
         optionsChain.expirations,
       );

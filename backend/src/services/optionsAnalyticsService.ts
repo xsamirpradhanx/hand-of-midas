@@ -234,7 +234,16 @@ async function buildTermStructure(
   maxPoints = 4,
 ): Promise<TermStructureResult | null> {
   if (existingContracts && existingContracts.length > 0) {
-    return buildTermStructureFromChain(expirations, existingContracts, maxPoints);
+    // A chain snapshot typically advertises every expiration but only carries
+    // contracts for the FRONT one (observed: NVDA returned 20 expirations and
+    // 193 contracts, all 2026-08-21). Term structure needs at least two points,
+    // so that snapshot always produced null — and because this returned
+    // unconditionally, the per-expiry fetch below was unreachable whenever a
+    // caller passed contracts. Both call sites did, so the whole factor was
+    // dead. Treat the snapshot as an optimisation and fall through when it is
+    // not enough rather than failing outright.
+    const fromChain = await buildTermStructureFromChain(expirations, existingContracts, maxPoints);
+    if (fromChain) return fromChain;
   }
 
   const slice = expirations.slice(0, maxPoints);
@@ -496,8 +505,12 @@ export async function evaluateRiskReversalFactor(
 
 /** Evaluate IV term structure from an in-memory options chain (for predictive factors). */
 export async function evaluateTermStructureFactor(
+  symbol: string,
   contracts: PolygonOptionsContract[],
   expirations: string[],
 ): Promise<TermStructureResult | null> {
-  return buildTermStructureFromChain(expirations, contracts);
+  // Routed through buildTermStructure (not ...FromChain directly) so a
+  // front-expiry-only snapshot can fall back to fetching the further expiries
+  // it needs. See the note in buildTermStructure.
+  return buildTermStructure(symbol, expirations, contracts);
 }

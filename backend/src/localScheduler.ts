@@ -1,4 +1,5 @@
 import { evaluateQuant } from './scripts/evaluateQuant.js';
+import { captureIntraday } from './services/backtest/intradayCapture.js';
 import { handler as screenerRefreshHandler } from './handlers/screenerRefresh.js';
 import { handler as diagonalRefreshHandler } from './handlers/diagonalRefresh.js';
 import { handler as valueRefreshHandler } from './handlers/valueRefresh.js';
@@ -113,6 +114,20 @@ if (process.env.LOCAL_SCREENER_REFRESH_ENABLED === 'true') {
   valueRefreshJob.start();
   growthRefreshJob.start();
   etfRefreshJob.start();
+}
+
+// Rolling intraday capture. Schwab only exposes ~31 days of minute bars, so
+// intraday history cannot be backfilled — it has to be accumulated forward from
+// today. This job runs here rather than in a Lambda because it needs the local
+// .schwab_token.json: Schwab refresh tokens expire after 7 days and the stack
+// doesn't carry Schwab credentials. Once daily is enough — each run re-reads a
+// trailing multi-day window, so a missed day heals on the next run.
+export const intradayCaptureJob = registerJob('intraday-capture', 1440, async () => {
+  await captureIntraday();
+});
+
+if (process.env.LOCAL_INTRADAY_CAPTURE_ENABLED === 'true') {
+  intradayCaptureJob.start();
 }
 
 export function getJob(name: string): JobHandle | undefined {

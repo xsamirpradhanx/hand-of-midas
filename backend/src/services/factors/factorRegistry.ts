@@ -24,6 +24,7 @@ import { VolumeInformationEntropyImbalanceFactor } from './ai_factor_17865651585
 import { VolumeSynchronizedEntropyDivergenceFactor } from './ai_factor_1786565842252.js';
 import { SpectralMicrostructureInertiaFactor } from './ai_factor_1786565850584.js';
 import { FractalEfficiencyLiquiditySweepFactor } from './ai_factor_1786641014202.js';
+import { AsymmetricKinematicEfficiencyFactor } from './ai_factor_1787191775255.js';
 // [AI_QUANT_IMPORTS_END]
 
 export function getFactors(): PredictiveFactor[] {
@@ -52,6 +53,7 @@ export function getFactors(): PredictiveFactor[] {
     new VolumeSynchronizedEntropyDivergenceFactor(),
     new SpectralMicrostructureInertiaFactor(),
     new FractalEfficiencyLiquiditySweepFactor(),
+    new AsymmetricKinematicEfficiencyFactor(),
     // [AI_QUANT_FACTOR_INSTANCES_END]
   ];
 }

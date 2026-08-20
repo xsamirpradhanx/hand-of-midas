@@ -147,6 +147,11 @@ export class IvRvRatioFactor implements PredictiveFactor {
       buyTarget,
       sellTarget,
       bias,
+      // Volatility-premium read: every branch above is expensive/cheap/equilibrium,
+      // none of which implies a direction (the "cheap" branch says so outright).
+      // `bias` is declared `let` here but never reassigned. See
+      // FactorResult.directional.
+      directional: false,
       weight: 0.20,
       bucket: 'OPTIONS',
       correlationGroup: 'IV_STRUCTURE',

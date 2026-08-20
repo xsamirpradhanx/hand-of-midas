@@ -143,6 +143,8 @@ export class SwingStructureFactor implements PredictiveFactor {
       buyTarget: bestSupport?.price,
       sellTarget: bestResistance?.price,
       bias: 'neutral',
+      // Level provider, never a voter — see FactorResult.directional.
+      directional: false,
       weight: 0.38,
       bucket: 'PRICE_STRUCTURE',
       correlationGroup: 'SWING_STRUCTURE',

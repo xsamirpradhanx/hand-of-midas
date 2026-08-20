@@ -165,6 +165,18 @@ export interface AISynthesisResult {
    */
   signalAgreement: number;
   agreementLevel: 'HIGH' | 'MODERATE' | 'LOW';
+  /**
+   * Zone-construction diagnostics. Populated on every call but only consumed by
+   * scripts/zoneAudit.ts — how many candidate levels survived the distance filter,
+   * how many clusters they formed, and how many of those clusters were credible.
+   * Without this the replay cannot tell a bad *pick* from an empty candidate set.
+   */
+  zoneDebug?: {
+    supportLevels: number; resistanceLevels: number;
+    supportClusters: number; resistanceClusters: number;
+    supportCredible: number; resistanceCredible: number;
+    maxZoneDistanceAtr: number; clusterThresholdAtr: number;
+  };
   /** Full bucketed evidence breakdown. */
   evidence: IndependentEvidence;
   demandZone: { top: number; bottom: number; confluence: string[] };
@@ -238,6 +250,42 @@ function computeAtrPercent(bars: OHLCVDataPoint[], currentPrice: number): number
   const slice = trValues.slice(-period);
   const atr = slice.reduce((a, b) => a + b, 0) / slice.length;
   return currentPrice > 0 ? atr / currentPrice : 0.015;
+}
+
+/**
+ * Standard normal CDF (Abramowitz & Stegun 7.1.26 erf approximation, |ε| < 1.5e-7).
+ * Local so the engine keeps zero numeric dependencies.
+ */
+function normalCdf(x: number): number {
+  const sign = x < 0 ? -1 : 1;
+  const z = Math.abs(x) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * z);
+  const y =
+    1 -
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t +
+      0.254829592) *
+      t *
+      Math.exp(-z * z);
+  return 0.5 * (1 + sign * y);
+}
+
+/**
+ * Probability that price trades through a level `distAtr` ATR away at least once
+ * within `bars` bars, under a driftless random walk (reflection principle):
+ *
+ *   P(max|W| >= d) = 2 * Phi(-d / (sigma * sqrt(n)))
+ *
+ * `BAR_SIGMA_PER_ATR` converts ATR into a per-bar sigma. ATR overstates
+ * close-to-close sigma because true range includes gaps and intrabar sweep; with
+ * sigma = 1 ATR the model predicts a median 20-bar excursion of ~3.6 ATR, whereas
+ * a 320-observation point-in-time replay across 40 symbols measured 2.72 ATR to
+ * the high and 1.65 ATR to the low. 0.7 reproduces that observed range.
+ */
+const BAR_SIGMA_PER_ATR = 0.7;
+function reachability(distAtr: number, bars: number): number {
+  const sigmaN = BAR_SIGMA_PER_ATR * Math.sqrt(bars);
+  if (sigmaN <= 0) return 1;
+  return 2 * normalCdf(-Math.abs(distAtr) / sigmaN);
 }
 
 export class CompositeScoreAgent {
@@ -430,12 +478,24 @@ export class CompositeScoreAgent {
         const distAtr = atrAbs > 0 ? Math.abs(c.center - currentPrice) / atrAbs : 0;
         // Corroboration counts for more than a single factor repeating itself.
         const corroboration = 1 + 0.5 * (c.sources.length - 1);
-        // Distance penalty is quadratic, not linear: the chance price reaches a level
-        // and reacts there inside HORIZON_BARS falls off much faster than 1/distance.
-        // A linear penalty let a heavily-corroborated but remote cluster win — on WULF
-        // it chose a value-area/VWAP-band pair 3.4×ATR away over a level 0.35×ATR out,
-        // and the resulting zone sat 8.9% from the nearest price pivot instead of 1.4%.
-        const score = (c.weight * corroboration) / Math.pow(1 + distAtr, 2);
+        // Distance is penalised by the probability price actually REACHES the level
+        // inside the horizon — not by an ad-hoc 1/(1+d)^2 curve.
+        //
+        // The quadratic was fitted to a single WULF anecdote (a remote value-area/VWAP
+        // pair beating a level 0.35×ATR out) and over-corrected by roughly 3×. It is
+        // already down to 25% of raw score at 1×ATR and 7% at 2.7×ATR, so the picker
+        // was structurally pinned to whatever sat nearest spot. A 320-observation
+        // point-in-time replay over 40 symbols (scripts/zoneAudit.ts) measured the
+        // consequence: supply zones landed a median 0.82×ATR above spot while the
+        // realised 20-bar high printed at 2.72×ATR — 3.3× too close, and price
+        // exceeded the supply zone in 72% of cases. Demand, which sits further out by
+        // construction, was close to calibrated at 1.41 vs 1.65×ATR.
+        //
+        // reachability() is near-flat inside ~1×ATR and decays smoothly beyond it, so
+        // a genuinely corroborated level 2-3×ATR out can win while a level past the
+        // horizon still cannot. isCredible()'s hard sqrt(HORIZON_BARS) ceiling is
+        // unchanged and still bounds the search.
+        const score = c.weight * corroboration * reachability(distAtr, HORIZON_BARS);
         if (score > bestScore) { bestScore = score; bestIdx = i; }
       });
       return bestIdx;
@@ -526,7 +586,7 @@ export class CompositeScoreAgent {
     const dailyExpectedMove = Number((currentPrice * atrPct * 0.35).toFixed(2));
 
     // Trade-plan geometry must be sized to the horizon it is graded on.
-    // evaluateQuant grades against EVALUATION_HORIZON_BARS = 5 daily bars (~1 week),
+    // evaluateQuant grades against EVALUATION_HORIZON_BARS = 20 daily bars (~4 weeks),
     // over which price covers several ATR of path. A target closer than
     // MIN_TARGET_ATR — or a stop tighter than MIN_STOP_ATR — sits inside a single
     // session's noise, so it resolves on random intrabar wiggle rather than on the
@@ -762,9 +822,21 @@ export class CompositeScoreAgent {
       ? await generateCommitteeSynthesis(symbol, summary, news)
       : summary;
 
+    const zoneDebug = {
+      supportLevels: supportLevels.length,
+      resistanceLevels: resistanceLevels.length,
+      supportClusters: supports.length,
+      resistanceClusters: resistances.length,
+      supportCredible: supports.filter(isCredible).length,
+      resistanceCredible: resistances.filter(isCredible).length,
+      maxZoneDistanceAtr: atrAbs > 0 ? Number((MAX_ZONE_DISTANCE / atrAbs).toFixed(2)) : 0,
+      clusterThresholdAtr: atrAbs > 0 ? Number((clusterThreshold / atrAbs).toFixed(2)) : 0,
+    };
+
     return {
       summary,
       aiSynthesis,
+      zoneDebug,
       bias,
       overallConviction,
       modelConviction,

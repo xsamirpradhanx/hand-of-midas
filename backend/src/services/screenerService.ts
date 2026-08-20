@@ -4,6 +4,7 @@ import { putItem, getItem } from './dynamodb.js';
 import type { PredictionItem, SetupStatsItem } from '../types.js';
 import { evaluateEventRisk } from './quant/eventRiskEngine.js';
 import { evaluateTrigger, triggerStateLabel } from './quant/triggerEngine.js';
+import { getMarketSession } from './tradingCalendar.js';
 
 // A thin/illiquid ticker's averageDailyVolume10Day can be tiny or stale (a
 // recent reverse split is a common cause), which turns a normal day's volume
@@ -55,13 +56,13 @@ export interface ScreenerResult {
   yahooSources: string[];
   yahooConsensus: number;
   reasons: string[];
-  
+
   // P1 Engine Updates
   tradeScore: number;
   opportunityScore: number;
   location: string;
   sentimentScore?: number;
-  
+
   // Phase 1 Statistical Metrics
   eventRisk: 'HIGH' | 'MEDIUM' | 'LOW';
   eventRiskReasons?: string[];
@@ -130,7 +131,7 @@ function computeRvol(volume: number, adv: number): number {
 
 function computeIntradayRvol(volume: number, adv: number): number {
   if (adv <= 0 || volume <= 0) return 0;
-  
+
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -147,12 +148,12 @@ function computeIntradayRvol(volume: number, adv: number): number {
   const closeMinutes = 16 * 60;    // 4:00 PM
 
   let elapsedRatio = 1.0;
-  
+
   if (currentMinutes < openMinutes) {
     const premarketStart = 4 * 60; // 4:00 AM
     const elapsedPre = Math.max(0, currentMinutes - premarketStart);
     const totalPre = openMinutes - premarketStart;
-    const premarketMaxRatio = 0.08; 
+    const premarketMaxRatio = 0.08;
     elapsedRatio = Math.max(0.01, (elapsedPre / totalPre) * premarketMaxRatio);
   } else if (currentMinutes < closeMinutes) {
     const elapsedOpen = currentMinutes - openMinutes;
@@ -180,22 +181,107 @@ function computeRSI14(closes: number[]): number | null {
   return Number((100 - 100 / (1 + rs)).toFixed(1));
 }
 
-function calculateIntradayMetrics(chart: any): { pmVwap: number | null, pmHigh: number | null, pmLow: number | null, volumeAcceleration: number, totalVolume: number } {
-  if (!chart?.quotes || chart.quotes.length === 0) return { pmVwap: null, pmHigh: null, pmLow: null, volumeAcceleration: 0, totalVolume: 0 };
+const REGULAR_OPEN_MINUTES = 9 * 60 + 30;
+
+// Constructing an Intl.DateTimeFormat is expensive and this runs per-bar across
+// every candidate (390+ bars x N tickers per scan), so build it once.
+const ET_BAR_FORMAT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+/**
+ * ET calendar day and minutes-since-ET-midnight for an intraday bar.
+ *
+ * Reads ET parts directly rather than re-parsing a formatted string back into a
+ * Date — same reasoning as tradingCalendar.getMarketSession: the server normally
+ * runs in UTC, which would reinterpret 14:30 ET as 14:30 UTC.
+ */
+function etBarParts(date: Date): { dayKey: string; minutesOfDay: number } {
+  const parts = ET_BAR_FORMAT.formatToParts(date);
+  const v = (t: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === t)?.value ?? '';
+  return {
+    dayKey: `${v('year')}-${v('month')}-${v('day')}`,
+    minutesOfDay: Number(v('hour')) * 60 + Number(v('minute')),
+  };
+}
+
+export interface IntradayMetrics {
+  /** VWAP anchored at today's first bar (4:00 AM ET pre-market open). */
+  pmVwap: number | null;
+  /** Pre-market-only high/low — stays a fixed reference level once the bell rings. */
+  pmHigh: number | null;
+  pmLow: number | null;
+  volumeAcceleration: number;
+  /** Today's 04:00–09:30 ET volume. */
+  premarketVolume: number;
+  /** Today's 09:30 ET onward volume. */
+  regularVolume: number;
+}
+
+export function calculateIntradayMetrics(chart: any): IntradayMetrics {
+  const empty: IntradayMetrics = {
+    pmVwap: null, pmHigh: null, pmLow: null,
+    volumeAcceleration: 0, premarketVolume: 0, regularVolume: 0,
+  };
+  if (!chart?.quotes || chart.quotes.length === 0) return empty;
+
+  const usable = chart.quotes.filter((q: any) => q?.date && q.close != null && q.volume != null);
+  if (usable.length === 0) return empty;
+
+  // The caller fetches ~2 days of bars so a weekend or holiday can't return an
+  // empty window. Everything below must therefore be scoped to the latest
+  // session first: without this filter the VWAP, high/low and volume totals
+  // accumulate across BOTH days, which (a) inflated RVOL by the ratio of a full
+  // prior session to today's pre-market — 4x to 700x in practice, enough to put
+  // a ticker that had traded 4,000 shares at the top of the list — and (b)
+  // turned "VWAP" into a two-day average that the setup classifier downstream
+  // reads as a pre-market level.
+  //
+  // Anchor on the most recent bar's ET day rather than the wall clock so a scan
+  // run before 4:00 AM ET, on a holiday, or over a weekend still describes the
+  // last real session instead of returning nothing.
+  const latestDayKey = etBarParts(usable[usable.length - 1].date).dayKey;
+  const todays: { bar: any; minutesOfDay: number }[] = [];
+  for (const bar of usable) {
+    const { dayKey, minutesOfDay } = etBarParts(bar.date);
+    if (dayKey === latestDayKey) todays.push({ bar, minutesOfDay });
+  }
+  if (todays.length === 0) return empty;
+
   let high = -Infinity;
   let low = Infinity;
   let cumVolPrice = 0;
   let cumVol = 0;
+  let premarketVolume = 0;
+  let regularVolume = 0;
   const barVolumes: number[] = [];
-  for (const q of chart.quotes) {
-    if (q.close == null || q.volume == null) continue;
-    if (q.high > high) high = q.high;
-    if (q.low < low) low = q.low;
-    const typicalPrice = (q.high + q.low + q.close) / 3;
-    cumVolPrice += typicalPrice * q.volume;
-    cumVol += q.volume;
-    barVolumes.push(q.volume || 0);
+
+  for (const { bar, minutesOfDay } of todays) {
+    const volume = bar.volume || 0;
+    const isPremarketBar = minutesOfDay < REGULAR_OPEN_MINUTES;
+
+    // High/low stay pre-market-only: the label these feed reads "% below PM
+    // high", and the pre-market extremes remain a meaningful reference level
+    // into the regular session. Widening them to session-to-date would silently
+    // relabel the session high as a pre-market high.
+    if (isPremarketBar) {
+      if (bar.high > high) high = bar.high;
+      if (bar.low < low) low = bar.low;
+      premarketVolume += volume;
+    } else {
+      regularVolume += volume;
+    }
+
+    // VWAP is session-anchored (4:00 AM ET onward), which is what the
+    // above/below-VWAP setup classification actually wants in both sessions.
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    cumVolPrice += typicalPrice * volume;
+    cumVol += volume;
+    barVolumes.push(volume);
   }
+
   const pmVwap = cumVol > 0 ? cumVolPrice / cumVol : null;
 
   // Volume Acceleration: ratio of last 5 bars' avg volume to full session avg volume.
@@ -208,7 +294,14 @@ function calculateIntradayMetrics(chart: any): { pmVwap: number | null, pmHigh: 
     volumeAcceleration = sessionAvg > 0 ? recentAvg / sessionAvg : 0;
   }
 
-  return { pmVwap, pmHigh: high === -Infinity ? null : high, pmLow: low === Infinity ? null : low, volumeAcceleration, totalVolume: cumVol };
+  return {
+    pmVwap,
+    pmHigh: high === -Infinity ? null : high,
+    pmLow: low === Infinity ? null : low,
+    volumeAcceleration,
+    premarketVolume,
+    regularVolume,
+  };
 }
 
 export async function runScreener(mode: ScreenerMode = 'open'): Promise<ScreenerResult[]> {
@@ -216,7 +309,7 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
   // Yahoo-screener universe regardless of mode; mode-specific filtering
   // happens below against that universe, not at fetch time.
   const universeCandidates = await buildActiveMarketUniverse();
-  
+
   if (universeCandidates.length === 0) {
     console.log(`[ScreenerService] Universe empty for mode ${mode}.`);
     return [];
@@ -299,7 +392,7 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
     // to avoid filtering out the entire market.
     const minVolume = isPreMarket ? 5_000 : 50_000;
     const failsVolumeGate = isPreMarket && volume === 0 ? false : volume < minVolume;
-    
+
     if (!symbol || price < 2 || failsVolumeGate) continue;
     if ((mode === 'momentum' || mode === 'highdemand') && price > 20) continue;
     if (mode === 'highdemand' && (changePercent < 10 || intradayRvol < 5)) continue;
@@ -356,7 +449,7 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
   // Phase 2: Fetch 1m intraday data to calculate volume acceleration and VWAP distance
   const phase2Candidates: (Candidate & { pmVwap: number | null, pmHigh: number | null, pmLow: number | null, volumeAcceleration: number })[] = [];
   const BATCH_SIZE_P2 = 10;
-  
+
   for (let i = 0; i < phase1Candidates.length; i += BATCH_SIZE_P2) {
     const batch = phase1Candidates.slice(i, i + BATCH_SIZE_P2);
     const batchResults = await Promise.allSettled(
@@ -372,8 +465,8 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
           // throwing and getting swallowed by the catch below: pmVwap/pmHigh/pmLow and
           // volumeAcceleration silently stayed null/0 for every candidate on every
           // scan. 2 days back comfortably covers today's session (including
-          // pre-market) even right after a weekend; calculateIntradayMetrics filters
-          // to the current session itself.
+          // pre-market) even right after a weekend — calculateIntradayMetrics scopes
+          // the window down to the latest session itself.
           const period1 = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
           const chart1m = await yf.chart(c.ticker, { interval: '1m', period1, includePrePost: true });
           const metrics = calculateIntradayMetrics(chart1m);
@@ -381,12 +474,48 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
           pmHigh = metrics.pmHigh;
           pmLow = metrics.pmLow;
           volumeAcceleration = metrics.volumeAcceleration;
-          
-          if (c.volume === 0 && metrics.totalVolume > 0) {
-            c.volume = metrics.totalVolume;
-            c.dollarVolume = c.price * c.volume;
-            c.rvol = computeRvol(c.volume, c.adv);
-            c.intradayRvol = computeIntradayRvol(c.volume, c.adv);
+
+          if (c.volume === 0) {
+            // Pick the block that matches the denominator computeIntradayRvol will
+            // divide by: its pre-market branch scales ADV to the pre-market share of
+            // a day, its regular branch scales by elapsed regular-session time.
+            // Handing session-to-date volume to the regular branch would count the
+            // pre-market block against a regular-hours-only baseline.
+            const isPre = getMarketSession() === 'PREMARKET';
+            let backfill = isPre ? metrics.premarketVolume : metrics.regularVolume;
+
+            // Yahoo returns pre-market 1m bars with OHLC but volume zeroed, so the
+            // 1m feed can price the session while reporting no size for it — and
+            // quote.preMarketVolume is undefined (the same gap noted above). The
+            // still-forming daily bar does carry pre-market volume, so it is the
+            // only usable source before the bell. Only fetched in the pre-market
+            // branch, where it is the difference between a real RVOL and a 0.
+            if (isPre && backfill === 0) {
+              try {
+                const daily = await yf.chart(c.ticker, {
+                  interval: '1d',
+                  period1: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                });
+                const forming = daily?.quotes?.[daily.quotes.length - 1];
+                // Guard the date. If Yahoo has not opened today's bar yet, the last
+                // daily bar is YESTERDAY'S COMPLETED SESSION — using it would put a
+                // full day's volume over a pre-market baseline and recreate the
+                // 20x-80x inflation this change exists to remove.
+                if (forming?.volume && forming.date
+                    && etBarParts(forming.date).dayKey === etBarParts(new Date()).dayKey) {
+                  backfill = forming.volume;
+                }
+              } catch {
+                // leave backfill at 0 — a missing RVOL beats an invented one
+              }
+            }
+
+            if (backfill > 0) {
+              c.volume = backfill;
+              c.dollarVolume = c.price * c.volume;
+              c.rvol = computeRvol(c.volume, c.adv);
+              c.intradayRvol = computeIntradayRvol(c.volume, c.adv);
+            }
           }
         } catch {
           // ignore intraday chart failure
@@ -449,7 +578,7 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
             if (stats?.floatShares?.raw != null) {
               c.floatTurnover = c.volume / stats.floatShares.raw;
             }
-            
+
             if (mode === 'highdemand') {
               const sharesOut = stats?.sharesOutstanding?.raw as number | undefined;
               if (sharesOut != null && sharesOut >= 20_000_000) {
@@ -474,21 +603,31 @@ export async function runScreener(mode: ScreenerMode = 'open'): Promise<Screener
       if (res.status !== 'fulfilled') continue;
       const { candidate, engineResult, rsi14, shortFloatPct } = res.value;
       const screenerResult = await evaluateSetup(
-        candidate, 
-        engineResult, 
-        mode, 
-        rsi14, 
-        shortFloatPct, 
-        candidate.pmVwap, 
-        candidate.pmHigh, 
-        candidate.pmLow, 
-        spyChange, 
+        candidate,
+        engineResult,
+        mode,
+        rsi14,
+        shortFloatPct,
+        candidate.pmVwap,
+        candidate.pmHigh,
+        candidate.pmLow,
+        spyChange,
         candidate.volumeAcceleration,
         setupStats
       );
-      
+
       const threshold = mode === 'premarket' ? 45 : 60;
-      if (screenerResult && screenerResult.midasScore >= threshold) {
+      // Mirrors evaluateSetup's own gate (midasScore < threshold is let through when
+      // riskScore or momentum is extreme) — re-requiring midasScore >= threshold here
+      // unconditionally made that override dead code: evaluateSetup would still build
+      // a full trade plan and persist the prediction, only for it to be silently
+      // dropped here, polluting SETUP_STATS/FACTOR_STATS with never-surfaced setups.
+      if (
+        screenerResult &&
+        (screenerResult.midasScore >= threshold ||
+          screenerResult.riskScore >= 80 ||
+          Math.max(screenerResult.longMomentum, screenerResult.shortMomentum) >= 80)
+      ) {
         results.push(screenerResult);
       }
     }
@@ -519,11 +658,11 @@ async function evaluateSetup(
   setupStats: Record<string, { wins: number; tries: number }> = {}
 ): Promise<ScreenerResult | null> {
   const relativeStrength = Number((candidate.changePercent - spyChange).toFixed(2));
-  
+
   let marketRegime = 'Neutral';
   if (spyChange > 0.5) marketRegime = 'Risk-On';
   else if (spyChange < -0.5) marketRegime = 'Risk-Off';
-  
+
   let dataQuality: 'VERIFIED' | 'CHECK' | 'SUSPICIOUS' = 'VERIFIED';
   if (candidate.intradayRvol > 100 || Math.abs(candidate.changePercent) > 200) {
     dataQuality = 'SUSPICIOUS';
@@ -644,7 +783,7 @@ async function evaluateSetup(
     rsi14,
     volumeAcceleration
   );
-  
+
   const threshold = mode === 'premarket' ? 45 : 60;
   if (midasScore < threshold && riskScore < 80 && Math.max(longMomentum, shortMomentum) < 80) return null;
 
@@ -654,18 +793,18 @@ async function evaluateSetup(
   let tsRS = Math.min(100, Math.max(0, 50 + relativeStrength * 10));
   let tsCatalyst = insider?.bias !== 'neutral' ? 100 : smf ? 80 : 50;
   let tsLiquidity = Math.min(100, candidate.dollarVolume / 1_000_000);
-  
+
   let tsStructure = engineResult.aiThesis.tradePlan?.bias !== 'NO TRADE' ? 90 : 30;
   let tsLocation = 50;
   let tsRR = 0;
-  
+
   const tp = engineResult.aiThesis.tradePlan;
   if (tp) {
     if (tp.rewardRisk >= 3) tsRR = 100;
     else if (tp.rewardRisk >= 2) tsRR = 80;
     else if (tp.rewardRisk >= 1.5) tsRR = 60;
     else tsRR = 0;
-    
+
     if (pmVwap) {
       const vwapDist = Math.abs(candidate.price - pmVwap) / pmVwap;
       if (vwapDist < 0.01) tsLocation = 95;
@@ -726,6 +865,7 @@ async function evaluateSetup(
   if (tp && tp.rewardRisk < 1.0) oppScore -= 30;
   if (isExtremeMover || (tp && tp.roomToSupport > 15)) oppScore -= 20;
   if (tp && tp.bias === 'LONG' && pmVwap && candidate.price < pmVwap) oppScore -= 10;
+  if (tp && tp.bias === 'SHORT' && pmVwap && candidate.price > pmVwap) oppScore -= 10;
   if (candidate.dollarVolume < 2_000_000) oppScore -= 15;
   // dataQuality was computed above but never penalized anything — a SUSPICIOUS
   // reading (RVOL/change-% far outside normal range, usually a thin/stale ADV
@@ -753,7 +893,7 @@ async function evaluateSetup(
   let expectedR = 0;
   let adjustedEV = 0;
   let triggerStatus = 'WAIT FOR TRIGGER';
-  
+
   let modelPT1 = 0;
   let modelPStop = 0;
   let modelPTimeout = 0;
@@ -762,7 +902,7 @@ async function evaluateSetup(
   if (tp && tp.bias !== 'NO TRADE') {
     // Use modelConviction from synthesis (not synthetic probability)
     modelPT1 = engineResult.aiThesis.modelConviction ?? (engineConviction / 100);
-    
+
     // P2: Override with Empirical Win Rate if sufficient historical data
     const setupKey = `${marketRegime}|${setupType}`;
     if (setupStats[setupKey] && setupStats[setupKey].tries >= 3) {
@@ -772,7 +912,7 @@ async function evaluateSetup(
 
     modelPTimeout = 0.05;
     modelPStop = Math.max(0, 1 - modelPT1 - modelPTimeout);
-    
+
     expectedR = (modelPT1 * tp.rewardRisk) - (modelPStop * 1.0);
     adjustedEV = expectedR * (legacyConfidenceScore / 100);
 
@@ -790,16 +930,17 @@ async function evaluateSetup(
       cvdBias: cvdFactor?.bias,
     });
     triggerStatus = triggerStateLabel(triggerState);
-    
+
     // Phase 1: Persist prediction to DynamoDB
     try {
       const timestamp = new Date().toISOString();
       const vwapDistPct = pmVwap ? Number((((candidate.price - pmVwap) / pmVwap) * 100).toFixed(2)) : undefined;
-      
+
       const predictionItem: PredictionItem = {
         pk: `PREDICTION#${candidate.ticker}`,
         sk: `TIMESTAMP#${timestamp}`,
         symbol: candidate.ticker,
+        source: 'SCREENER',
         currentPrice: candidate.price,
         zones: engineResult.zones,
         aiThesis: engineResult.aiThesis,
@@ -812,7 +953,11 @@ async function evaluateSetup(
         eventRisk: eventRisk as 'HIGH' | 'MEDIUM' | 'LOW',
         entry: tp.trigger,
         stop: tp.stop,
-        target: tp.bias === 'LONG' ? tp.majorResistance : tp.stretchTarget,
+        // majorResistance is T1 for both LONG and SHORT (compositeScore.ts computes
+        // rewardRisk from it either way) — using stretchTarget (T2) for SHORT graded
+        // trades against a farther level than the R:R shown to the user promised,
+        // undercounting SHORT wins that hit T1 but timed out before reaching T2.
+        target: tp.majorResistance,
       };
       await putItem(predictionItem);
     } catch (err) {

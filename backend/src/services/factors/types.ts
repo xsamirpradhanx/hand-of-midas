@@ -30,6 +30,31 @@ export interface FactorResult {
    * Example: 'GEX_COMPLEX' groups DealerHedging, VannaDelta, MaxPain, Squeeze.
    */
   correlationGroup?: string;
+  /**
+   * Whether this factor casts a directional vote. Defaults to true.
+   *
+   * Set false for factors that are structurally incapable of a direction —
+   * level providers (Swing Structure emits support/resistance for zone
+   * clustering) and volatility-regime reads (ATR, IV/RV measure how much price
+   * moves, not which way). Their `bias` is hardcoded neutral by design.
+   *
+   * This matters because IndependentEvidenceEngine computes a bucket's score as
+   * (bullish - bearish) / total, with total including neutral weight. A
+   * permanent non-voter therefore sat in the denominator forever and only ever
+   * shrank the numerator's share: measured across NVDA/GLD/JPM/XOM/AAPL/CAT,
+   * PRICE_STRUCTURE scores were understated by ~31% (0.528 where the voters
+   * alone said 0.765), because the largest single weight in that bucket —
+   * Swing Structure at 0.38 — could never vote.
+   *
+   * Note the distinction from a factor that CAN vote and chose neutral (KAMA,
+   * Hurst when not trending). That is a real "I looked and saw no edge" signal
+   * and must keep diluting. Only never-voters are excluded — the same
+   * ABSTAIN-vs-scored distinction learningCore.factorVote makes.
+   *
+   * Excluding them costs nothing elsewhere: compositeScore reads buyTarget /
+   * sellTarget straight off the factor list, so their levels still feed zones.
+   */
+  directional?: boolean;
 }
 
 export interface FactorInput {

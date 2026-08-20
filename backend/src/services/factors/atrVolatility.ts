@@ -43,6 +43,8 @@ export class AtrVolatilityFactor implements PredictiveFactor {
       buyTarget,
       sellTarget,
       bias: 'neutral',
+      // Volatility regime read — measures how much price moves, not which way.
+      directional: false,
       weight: 0.25,
       bucket: 'POSITIONING',
       correlationGroup: 'REGIME',
