@@ -9,7 +9,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "ai-quant": "tsx src/scripts/aiQuant.ts",
-    "evaluate-quant": "tsx src/scripts/runEvaluateQuant.ts"
+    "evaluate-quant": "tsx src/scripts/runEvaluateQuant.ts",
+    "factor-doctor": "tsx src/scripts/factorDoctor.ts",
+    "schwab-auth": "tsx src/scripts/schwab-auth-setup.ts",
+    "zone-audit": "tsx src/scripts/zoneAudit.ts",
+    "backfill-bars": "tsx src/scripts/backfillBars.ts",
+    "capture-intraday": "tsx src/scripts/captureIntradayOnce.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.1091.0",

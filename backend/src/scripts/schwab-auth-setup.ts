@@ -82,7 +82,7 @@ async function main() {
       throw new Error(`API Error: ${response.status} ${errText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     console.log(`✅ Successfully fetched options chain for ${symbol}`);
     console.log('Underlying Price:', data.underlyingPrice);
     

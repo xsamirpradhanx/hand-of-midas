@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 export interface SchwabTokenInfo {
   access_token: string;
@@ -12,7 +13,41 @@ export interface SchwabTokenInfo {
   timestamp?: number;
 }
 
-const TOKEN_PATH = path.join(process.cwd(), '.schwab_token.json');
+/**
+ * Token location, resolved robustly rather than from process.cwd() alone.
+ *
+ * cwd differs by entry point — `npm run dev --workspace=backend` starts at the repo
+ * root while `tsx src/scripts/*.ts` starts in backend/ — so a cwd-only path silently
+ * looked for the token in a directory that never had it and reported "not
+ * authenticated" on a perfectly good token file.
+ *
+ * Order: explicit env override, then cwd (backward compatible), then the backend
+ * package root derived from this module's own location.
+ */
+const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const TOKEN_CANDIDATES = [
+  process.env.SCHWAB_TOKEN_PATH,
+  path.join(process.cwd(), '.schwab_token.json'),
+  path.join(MODULE_ROOT, '.schwab_token.json'),
+].filter((p): p is string => typeof p === 'string' && p.length > 0);
+
+function resolveTokenPath(): string {
+  return TOKEN_CANDIDATES.find(p => fs.existsSync(p)) ?? TOKEN_CANDIDATES[TOKEN_CANDIDATES.length - 1];
+}
+
+const TOKEN_PATH = resolveTokenPath();
+
+/**
+ * Latched once Schwab rejects the refresh token with invalid_grant.
+ *
+ * That error is terminal: refresh tokens carry a hard 7-day life and cannot be
+ * renewed programmatically — only a browser re-authorization mints a new one.
+ * Without this latch every subsequent quote and options call fired its own doomed
+ * POST to Schwab and logged a full stack trace, which on one screener pass meant
+ * hundreds of pointless round-trips and a log so noisy that real errors were buried.
+ * Cleared by saveToken() when a fresh token arrives.
+ */
+let refreshTokenRevoked = false;
 const SCHWAB_AUTH_URL = 'https://api.schwabapi.com/v1/oauth/authorize';
 const SCHWAB_TOKEN_URL = 'https://api.schwabapi.com/v1/oauth/token';
 
@@ -82,6 +117,17 @@ export class SchwabAuth {
 
     if (!response.ok) {
       const errorText = await response.text();
+      // Schwab nests the real reason inside error_description, so match on the
+      // substring rather than trying to parse a doubly-encoded body.
+      if (errorText.includes('invalid_grant') || errorText.includes('expired or revoked')) {
+        refreshTokenRevoked = true;
+        console.error(
+          '\n❌ Schwab refresh token is expired or revoked — Schwab data is unavailable.\n' +
+          '   Refresh tokens last 7 days and cannot be renewed automatically.\n' +
+          '   Re-authorize with:  npm run schwab-auth --workspace=backend\n' +
+          '   All providers fall back to Yahoo until then.\n',
+        );
+      }
       throw new Error(`Failed to refresh token: ${response.status} ${errorText}`);
     }
 
@@ -93,6 +139,7 @@ export class SchwabAuth {
 
   saveToken(tokenInfo: SchwabTokenInfo) {
     this.currentToken = tokenInfo;
+    refreshTokenRevoked = false;
     try {
       fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenInfo, null, 2), 'utf-8');
     } catch (e) {
@@ -135,6 +182,9 @@ export class SchwabAuth {
   }
 
   async getValidAccessToken(): Promise<string | null> {
+    // Already known dead — fail fast instead of issuing another doomed request.
+    if (refreshTokenRevoked) return null;
+
     const tokenInfo = this.loadToken();
     if (!tokenInfo) return null;
 
@@ -149,7 +199,9 @@ export class SchwabAuth {
         const newTokenInfo = await this.refreshAccessToken(tokenInfo.refresh_token);
         return newTokenInfo.access_token;
       } catch (e) {
-        console.error('Failed to refresh token', e);
+        // The terminal invalid_grant case has already printed a single actionable
+        // message in refreshAccessToken(); repeating the stack per call buries it.
+        if (!refreshTokenRevoked) console.error('Failed to refresh token', e);
         this.currentToken = null; // Clear from memory so it can read from disk next time
         return null;
       }
