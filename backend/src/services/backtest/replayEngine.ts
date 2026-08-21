@@ -68,6 +68,13 @@ export interface TradeRecord {
   readonly conviction: number | null;
   readonly regime: string | null;
   readonly coverage: number | null;
+  /**
+   * Each factor's vote at decision time, retained so a scoring rule can be
+   * re-derived offline WITHOUT re-running the engine. Needed for walk-forward
+   * experiments: to ask whether measured factor accuracy would have ranked
+   * better than the weight sum, you must know who voted which way on each trade.
+   */
+  readonly factorVotes: readonly { factorName: string; bias: string }[];
 }
 
 export interface ReplayResult {
@@ -228,6 +235,7 @@ export async function replay(
         conviction: plan.conviction ?? null,
         regime: plan.regime ?? null,
         coverage: plan.coverage ?? null,
+        factorVotes: (plan.factors ?? []).map(f => ({ factorName: f.factorName, bias: f.bias })),
       });
 
       // ── Learning: setups graded on realized R ──────────────────────────────
