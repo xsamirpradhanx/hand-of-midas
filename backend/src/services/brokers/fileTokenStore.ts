@@ -81,7 +81,16 @@ export class FileBrokerTokenStore implements BrokerTokenStore {
       accessToken: raw.access_token,
       refreshToken: raw.refresh_token,
       accessExpiresAt: issued + (raw.expires_in ?? 1800) * 1000,
-      refreshExpiresAt: issued + (raw.refresh_token_expires_in ?? 0) * 1000 || issued + REFRESH_GRANT_MS,
+      // `+` binds tighter than `||`, so the previous
+      //   issued + (x ?? 0) * 1000 || issued + REFRESH_GRANT_MS
+      // always took the left branch: `issued + 0` is a large truthy epoch, so the
+      // fallback was unreachable and refreshExpiresAt collapsed to the ISSUE time.
+      // Every healthy token then read as an expired grant. Schwab omits
+      // refresh_token_expires_in entirely, so this was the normal path, not an edge.
+      refreshExpiresAt:
+        typeof raw.refresh_token_expires_in === 'number' && raw.refresh_token_expires_in > 0
+          ? issued + raw.refresh_token_expires_in * 1000
+          : issued + REFRESH_GRANT_MS,
       scope: raw.scope,
       revokedAt: raw.revokedAt,
       version: raw.version ?? 1,
