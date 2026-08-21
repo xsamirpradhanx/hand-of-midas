@@ -3,6 +3,7 @@ import type { OHLCVDataPoint } from '../types.js';
 import { calculateIndependentEvidence, type IndependentEvidence } from './quant/independentEvidenceEngine.js';
 import { getFactors } from './factors/factorRegistry.js';
 import { computeConviction, accuracyEdge } from './quant/conviction.js';
+import { computeSizing, type SizingSignal } from './quant/positionSizing.js';
 import type { PolygonNewsArticle } from './polygon.js';
 import { generateCommitteeSynthesis } from './aiInsights.js';
 
@@ -167,6 +168,16 @@ export interface AISynthesisResult {
    */
   signalAgreement: number;
   agreementLevel: 'HIGH' | 'MODERATE' | 'LOW';
+  /**
+   * Suggested position size from measured factor accuracy — ADVISORY.
+   *
+   * Kept separate from conviction because they measure different things and only
+   * one of them has ever separated outcomes. It is not applied automatically:
+   * backtested over 2,897 trades, sizing by this signal moved return-per-drawdown
+   * by -4.3%, so it is surfaced for a human or a bot to weigh rather than wired
+   * into position size.
+   */
+  sizing?: SizingSignal;
   /**
    * Zone-construction diagnostics. Populated on every call but only consumed by
    * scripts/zoneAudit.ts — how many candidate levels survived the distance filter,
@@ -900,6 +911,11 @@ export class CompositeScoreAgent {
       summary,
       aiSynthesis,
       zoneDebug,
+      sizing: computeSizing(
+        factors.map(f => ({ factorName: f.factorName, bias: f.bias })),
+        evidence.pluralityBias,
+        factorStats,
+      ),
       bias,
       overallConviction,
       modelConviction,

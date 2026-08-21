@@ -74,6 +74,12 @@ export interface BacktestPlan {
    * conviction drives ranking and display throughout the product.
    */
   readonly conviction?: number;
+  /**
+   * Position size as a multiple of the baseline unit, from the accuracy signal.
+   * The replay reports a size-weighted equity curve alongside the flat one so
+   * the two can be compared on identical trades.
+   */
+  readonly sizeMultiplier?: number;
   readonly regime?: string;
   /** Fraction of the factor set that reported — the coverage term's input. */
   readonly coverage?: number;

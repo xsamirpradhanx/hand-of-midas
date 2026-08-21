@@ -122,6 +122,15 @@ async function main() {
     console.log(`  expectancy    ${num(s.expectancyR)}R per resolved trade`);
     console.log(`  total         ${s.totalR.toFixed(1)}R`);
     console.log(`  max drawdown  ${s.maxDrawdownR.toFixed(1)}R`);
+    // Same trades, weighted by the accuracy sizing signal, mean-normalised so
+    // any gain comes from concentration rather than from betting bigger.
+    const flatRatio = s.maxDrawdownR > 0 ? s.totalR / s.maxDrawdownR : 0;
+    const sizedRatio = s.sizedMaxDrawdownR > 0 ? s.sizedTotalR / s.sizedMaxDrawdownR : 0;
+    console.log(`\n  ── accuracy-weighted sizing (mean size ${s.meanSize.toFixed(2)}x, normalised) ──`);
+    console.log(`  flat      ${s.totalR.toFixed(1).padStart(8)}R   maxDD ${s.maxDrawdownR.toFixed(1).padStart(6)}R   R/DD ${flatRatio.toFixed(2)}`);
+    console.log(`  sized     ${s.sizedTotalR.toFixed(1).padStart(8)}R   maxDD ${s.sizedMaxDrawdownR.toFixed(1).padStart(6)}R   R/DD ${sizedRatio.toFixed(2)}`);
+    const lift = flatRatio > 0 ? (sizedRatio / flatRatio - 1) * 100 : 0;
+    console.log(`  sizing ${lift >= 0 ? 'improves' : 'WORSENS'} return-per-drawdown by ${Math.abs(lift).toFixed(1)}%`);
   }
 
   const z = result.zoneError;

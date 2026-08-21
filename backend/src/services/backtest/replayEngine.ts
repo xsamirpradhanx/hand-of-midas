@@ -67,6 +67,7 @@ export interface TradeRecord {
   readonly demandZoneErrorAtr: number | null;
   readonly supplyZoneErrorAtr: number | null;
   readonly conviction: number | null;
+  readonly sizeMultiplier: number | null;
   readonly regime: string | null;
   readonly coverage: number | null;
   /**
@@ -94,6 +95,17 @@ export interface ReplayResult {
     /** Largest peak-to-trough decline of the cumulative-R curve. */
     readonly maxDrawdownR: number;
     readonly equityCurveR: readonly number[];
+    /**
+     * The same trades weighted by sizeMultiplier, normalised so mean size is 1.
+     *
+     * Normalising matters: an unnormalised comparison would reward any sizing
+     * rule that simply bets bigger on average, which is leverage rather than
+     * skill. With mean size held at 1, a gain here can only come from
+     * concentrating into the better trades.
+     */
+    readonly sizedTotalR: number;
+    readonly sizedMaxDrawdownR: number;
+    readonly meanSize: number;
   };
   /**
    * Median distance from each zone to the price extreme actually reached, in ATR.
@@ -164,152 +176,155 @@ export async function replay(
    * Undecayed win/loss tallies handed back to the strategy, in the shape
    * compositeScore's accuracy multiplier expects. Separate from `factorStats`
    * above, which is the decayed learning state reported in the result.
+   *
+   * Declared here for the type, but RESET PER SYMBOL below — see the note at the
+   * top of the symbol loop.
    */
-  const learnedStats: Record<string, { wins: number; losses: number; score: number; tries: number }> = {};
+  type LearnedTally = Record<string, { wins: number; losses: number; score: number; tries: number }>;
   const setupStats: Record<string, DecayedStats> = {};
 
   const symbols = await dataSource.symbols();
 
+  /**
+   * Every symbol's series is loaded up front and walked in GLOBAL CHRONOLOGICAL
+   * ORDER rather than symbol by symbol.
+   *
+   * Ordering by symbol makes shared learning impossible to do honestly: a tally
+   * accumulated across symbols would hold the first symbol's 2026 outcomes while
+   * the second symbol's 1985 bars were still being decided. Per-symbol tallies
+   * avoid that but are far too thin to act on — a single name yields tens of
+   * trades per factor, where the pooled estimate that showed a real edge rests on
+   * thousands.
+   *
+   * Walking the merged timeline gives both: one tally, pooled across the whole
+   * universe, that at any instant contains only outcomes which had actually
+   * resolved by that date.
+   */
+  const loaded: { symbol: string; bars: readonly BacktestBar[] }[] = [];
   for (const symbol of symbols) {
     const bars = await dataSource.bars(symbol);
-    if (bars.length < warmup + horizon + 1) continue;
+    if (bars.length >= warmup + horizon + 1) loaded.push({ symbol, bars });
+  }
 
-    // Datetimes of plans still inside their grading horizon, used to enforce
-    // maxConcurrentPerSymbol without letting a later plan see earlier results.
-    let openUntilIndex: number[] = [];
-
-    // Graded trades waiting to become visible to the strategy. Each is held
-    // until the decision index passes the bar it actually resolved on — see the
-    // note on DecisionContext.factorStats. Without this the loop would hand the
-    // strategy outcomes from bars it has not reached.
-    let pendingFeedback: { readyAtIndex: number; votes: readonly BacktestFactorVote[]; forwardReturn: number }[] = [];
-
-    // Stop early enough that every plan gets a full horizon of future bars —
-    // otherwise the tail of the series grades against a truncated window and
-    // systematically over-reports TIMEOUT.
-    for (let i = warmup; i < bars.length - horizon; i++) {
-      const decisionBar = bars[i];
-      const t = Date.parse(decisionBar.datetime);
+  interface Decision { s: number; i: number; t: number }
+  const timeline: Decision[] = [];
+  loaded.forEach((entry, s) => {
+    for (let i = warmup; i < entry.bars.length - horizon; i++) {
+      const t = Date.parse(entry.bars[i].datetime);
       if (t < fromMs || t > toMs) continue;
+      timeline.push({ s, i, t });
+    }
+  });
+  timeline.sort((a, b) => a.t - b.t || a.s - b.s);
 
-      openUntilIndex = openUntilIndex.filter(end => end > i);
-      if (openUntilIndex.length >= maxConcurrent) continue;
+  const learnedStats: LearnedTally = {};
+  /** Per-symbol concurrency bookkeeping, preserved across the merged walk. */
+  const openUntil: number[][] = loaded.map(() => []);
+  /** Graded trades awaiting the date they actually resolved on. */
+  let pendingFeedback: { readyAt: number; votes: readonly BacktestFactorVote[]; forwardReturn: number }[] = [];
 
-      // Release any feedback whose trade has now resolved, then hand the
-      // strategy only what a live system could have known at this instant.
-      const stillPending: typeof pendingFeedback = [];
-      for (const p of pendingFeedback) {
-        if (p.readyAtIndex <= i) {
-          for (const v of p.votes) {
-            const sc = directionalScore(v.bias, p.forwardReturn);
-            if (sc === null) continue;
-            const cur = learnedStats[v.factorName] ??= { wins: 0, losses: 0, score: 0, tries: 0 };
-            cur.tries += 1;
-            if (sc > 0) { cur.wins += 1; cur.score += 1; } else { cur.losses += 1; }
-          }
-        } else {
-          stillPending.push(p);
+  for (const d of timeline) {
+    const { symbol, bars } = loaded[d.s];
+    const i = d.i;
+    const decisionBar = bars[i];
+
+    // Release feedback whose trade resolved on or before this DATE. Comparing
+    // dates rather than bar indices is what makes pooling across symbols sound.
+    const stillPending: typeof pendingFeedback = [];
+    for (const p of pendingFeedback) {
+      if (p.readyAt <= d.t) {
+        for (const v of p.votes) {
+          const sc = directionalScore(v.bias, p.forwardReturn);
+          if (sc === null) continue;
+          const cur = learnedStats[v.factorName] ??= { wins: 0, losses: 0, score: 0, tries: 0 };
+          cur.tries += 1;
+          if (sc > 0) { cur.wins += 1; cur.score += 1; } else { cur.losses += 1; }
         }
+      } else {
+        stillPending.push(p);
       }
-      pendingFeedback = stillPending;
+    }
+    pendingFeedback = stillPending;
 
-      const ctx: DecisionContext = {
-        symbol,
-        asOf: decisionBar.datetime,
-        bars: visibleSlice(bars, i),
-        factorStats: learnedStats,
-      };
+    const open = openUntil[d.s].filter(end => end > i);
+    openUntil[d.s] = open;
+    if (open.length >= maxConcurrent) continue;
 
-      const plan = await strategy.plan(ctx);
-      if (!plan) continue;
+    const ctx: DecisionContext = {
+      symbol,
+      asOf: decisionBar.datetime,
+      bars: visibleSlice(bars, i),
+      factorStats: learnedStats,
+    };
 
-      // Future bars start at i+1: a plan decided on bar i cannot be filled or
-      // graded against bar i itself, which the strategy has already seen.
-      const futureBars: GradeInput[] = bars
-        .slice(i + 1, i + 1 + horizon)
-        .map(b => ({ high: b.high, low: b.low, close: b.close }));
+    const plan = await strategy.plan(ctx);
+    if (!plan) continue;
 
-      const grade = gradeOutcome(
-        futureBars,
-        plan.target,
-        plan.stop,
-        plan.bias,
-        plan.entry,
-        horizon,
-      );
+    const futureBars: GradeInput[] = bars
+      .slice(i + 1, i + 1 + horizon)
+      .map(b => ({ high: b.high, low: b.low, close: b.close }));
 
-      openUntilIndex.push(i + grade.barsElapsed);
+    const grade = gradeOutcome(futureBars, plan.target, plan.stop, plan.bias, plan.entry, horizon);
+    openUntil[d.s].push(i + grade.barsElapsed);
 
-      // Queue this trade's factor votes; they become visible only once the
-      // decision loop reaches the bar the trade resolved on.
-      if (plan.factors?.length && grade.forwardReturn !== null && !grade.ambiguous) {
-        pendingFeedback.push({
-          readyAtIndex: i + Math.max(1, grade.barsElapsed),
-          votes: plan.factors,
-          forwardReturn: grade.forwardReturn,
-        });
-      }
+    const horizonLow = Math.min(...futureBars.map(b => b.low));
+    const horizonHigh = Math.max(...futureBars.map(b => b.high));
+    const zoneErr = (zone: { top: number; bottom: number } | undefined, actual: number) =>
+      zone && plan.atr && plan.atr > 0
+        ? Number((Math.abs((zone.top + zone.bottom) / 2 - actual) / plan.atr).toFixed(3))
+        : null;
 
-      // Zone placement, scored against where price actually turned over the same
-      // horizon the plan was graded on. Demand is judged against the realised
-      // low, supply against the realised high.
-      const horizonLow = Math.min(...futureBars.map(b => b.low));
-      const horizonHigh = Math.max(...futureBars.map(b => b.high));
-      const zoneErr = (zone: { top: number; bottom: number } | undefined, actual: number) =>
-        zone && plan.atr && plan.atr > 0
-          ? Number((Math.abs((zone.top + zone.bottom) / 2 - actual) / plan.atr).toFixed(3))
-          : null;
+    trades.push({
+      symbol,
+      asOf: decisionBar.datetime,
+      bias: plan.bias,
+      entry: plan.entry,
+      stop: plan.stop,
+      target: plan.target,
+      outcome: grade.outcome,
+      realizedR: grade.realizedR,
+      forwardReturn: grade.forwardReturn,
+      barsElapsed: grade.barsElapsed,
+      setupKey: plan.setupKey,
+      demandZoneErrorAtr: zoneErr(plan.demandZone, horizonLow),
+      supplyZoneErrorAtr: zoneErr(plan.supplyZone, horizonHigh),
+      conviction: plan.conviction ?? null,
+      sizeMultiplier: plan.sizeMultiplier ?? null,
+      regime: plan.regime ?? null,
+      coverage: plan.coverage ?? null,
+      factorVotes: (plan.factors ?? []).map(f => ({ factorName: f.factorName, bias: f.bias })),
+    });
 
-      trades.push({
-        symbol,
-        asOf: decisionBar.datetime,
-        bias: plan.bias,
-        entry: plan.entry,
-        stop: plan.stop,
-        target: plan.target,
-        outcome: grade.outcome,
-        realizedR: grade.realizedR,
+    // Becomes visible once the calendar reaches the bar this trade resolved on.
+    if (plan.factors?.length && grade.forwardReturn !== null && !grade.ambiguous) {
+      const resolveIdx = Math.min(bars.length - 1, i + Math.max(1, grade.barsElapsed));
+      pendingFeedback.push({
+        readyAt: Date.parse(bars[resolveIdx].datetime),
+        votes: plan.factors,
         forwardReturn: grade.forwardReturn,
-        barsElapsed: grade.barsElapsed,
-        setupKey: plan.setupKey,
-        demandZoneErrorAtr: zoneErr(plan.demandZone, horizonLow),
-        supplyZoneErrorAtr: zoneErr(plan.supplyZone, horizonHigh),
-        conviction: plan.conviction ?? null,
-        regime: plan.regime ?? null,
-        coverage: plan.coverage ?? null,
-        factorVotes: (plan.factors ?? []).map(f => ({ factorName: f.factorName, bias: f.bias })),
       });
+    }
 
-      // ── Learning: setups graded on realized R ──────────────────────────────
-      const setupKey = plan.setupKey ?? `GLOBAL|${plan.bias}`;
-      setupStats[setupKey] ??= emptyStats(decisionBar.datetime);
-      setupStats[setupKey] = observe(
-        setupStats[setupKey],
-        {
-          score: grade.realizedR ?? 0,
-          won: grade.outcome === 'TARGET',
-          ambiguous: grade.ambiguous,
-        },
-        decisionBar.datetime,
-        halfLife,
-      );
+    const setupKey = plan.setupKey ?? `GLOBAL|${plan.bias}`;
+    setupStats[setupKey] ??= emptyStats(decisionBar.datetime);
+    setupStats[setupKey] = observe(
+      setupStats[setupKey],
+      { score: grade.realizedR ?? 0, won: grade.outcome === 'TARGET', ambiguous: grade.ambiguous },
+      decisionBar.datetime,
+      halfLife,
+    );
 
-      // ── Learning: factors graded on their own directional claim ────────────
-      // Note this uses forwardReturn, NOT the trade's outcome — a factor is
-      // right or wrong about direction regardless of where the stop sat.
-      if (plan.factors && grade.forwardReturn !== null && !grade.ambiguous) {
-        for (const f of plan.factors) {
-          const score = directionalScore(f.bias, grade.forwardReturn);
-          if (score === null) continue; // neutral: abstains, never scored
-
-          factorStats[f.factorName] ??= emptyStats(decisionBar.datetime);
-          factorStats[f.factorName] = observe(
-            factorStats[f.factorName],
-            { score, won: score > 0 },
-            decisionBar.datetime,
-            halfLife,
-          );
-        }
+    if (plan.factors && grade.forwardReturn !== null && !grade.ambiguous) {
+      for (const f of plan.factors) {
+        const score = directionalScore(f.bias, grade.forwardReturn);
+        if (score === null) continue;
+        factorStats[f.factorName] ??= emptyStats(decisionBar.datetime);
+        factorStats[f.factorName] = observe(
+          factorStats[f.factorName],
+          { score, won: score > 0 },
+          decisionBar.datetime,
+          halfLife,
+        );
       }
     }
   }
@@ -333,6 +348,16 @@ export async function replay(
     equityCurveR.push(Number(cumulative.toFixed(4)));
   }
 
+  // Size-weighted curve on the same resolved trades, mean-normalised.
+  const sizes = resolvedTrades.map(t => t.sizeMultiplier ?? 1);
+  const meanSize = sizes.length ? sizes.reduce((a, b) => a + b, 0) / sizes.length : 1;
+  const sizedCurve: number[] = [];
+  let sizedCum = 0;
+  resolvedTrades.forEach((t, i) => {
+    sizedCum += (t.realizedR ?? 0) * ((sizes[i] ?? 1) / (meanSize || 1));
+    sizedCurve.push(Number(sizedCum.toFixed(4)));
+  });
+
   const wins = resolvedTrades.filter(t => t.outcome === 'TARGET').length;
   const losses = resolvedTrades.length - wins;
   const ambiguous = trades.filter(t => t.outcome === 'AMBIGUOUS').length;
@@ -351,6 +376,9 @@ export async function replay(
       totalR: Number(cumulative.toFixed(4)),
       maxDrawdownR: Number(maxDrawdown(equityCurveR).toFixed(4)),
       equityCurveR,
+      sizedTotalR: Number(sizedCum.toFixed(4)),
+      sizedMaxDrawdownR: Number(maxDrawdown(sizedCurve).toFixed(4)),
+      meanSize: Number(meanSize.toFixed(3)),
     },
     zoneError: {
       demandMedianAtr: median(trades.map(t => t.demandZoneErrorAtr)),

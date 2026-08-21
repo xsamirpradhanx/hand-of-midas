@@ -44,7 +44,9 @@ const tradePlan: ToolDef = {
   description:
     'Full engine output for a symbol: bias, conviction, demand/supply zones, trigger/stop/targets, ' +
     'and every contributing factor with its vote. Conviction is an evidence-strength score in [0.05, 0.95], ' +
-    'NOT a win probability — do not present it as one. Most symbols correctly resolve to NO TRADE.',
+    'NOT a win probability — do not present it as one. Most symbols correctly resolve to NO TRADE. ' +
+    'The `sizing` field is an ADVISORY size multiplier derived from each factor\'s measured historical ' +
+    'accuracy; it is a separate signal from conviction and is deliberately not applied automatically.',
   inputSchema: { symbol: SYMBOL, expiry: z.string().optional().describe('Options expiry YYYY-MM-DD') },
   handler: async ({ symbol, expiry }) => {
     const r = await getPredictiveZones(String(symbol).toUpperCase(), expiry);
@@ -57,6 +59,9 @@ const tradePlan: ToolDef = {
       convictionNote: 'Evidence strength, not a win probability.',
       agreement: t.agreementLevel,
       tradePlan: t.tradePlan,
+      // Advisory only — see the note on AISynthesisResult.sizing. Backtesting
+      // says do not apply this automatically; it is here to be weighed.
+      sizing: t.sizing ? { ...t.sizing, advisory: true } : undefined,
       zones: r.zones,
       factors: (t.factors ?? []).map((f: any) => ({
         name: f.factorName, bias: f.bias, weight: f.weight, reasoning: f.reasoning,

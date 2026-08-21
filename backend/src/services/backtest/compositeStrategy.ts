@@ -17,6 +17,7 @@
  * live conviction.
  */
 import { getFactors } from '../factors/factorRegistry.js';
+import { computeSizing } from '../quant/positionSizing.js';
 import { CompositeScoreAgent } from '../compositeScore.js';
 import type { FactorInput, FactorResult } from '../factors/types.js';
 import type { OHLCVDataPoint } from '../../types.js';
@@ -70,6 +71,9 @@ export class CompositeStrategy implements BacktestStrategy {
   constructor(private readonly options: CompositeStrategyOptions = {}) {}
 
   async plan(ctx: DecisionContext): Promise<BacktestPlan | null> {
+    // A/B switch: NO_LEARNING=1 withholds learned accuracy so the feedback loop
+    // can be measured against an otherwise identical run.
+    const learned = process.env['NO_LEARNING'] === '1' ? undefined : (ctx.factorStats as any);
     const bars = toOhlcv(ctx.bars);
     if (bars.length < 2) return null;
     const spot = bars[bars.length - 1].close;
@@ -101,9 +105,7 @@ export class CompositeStrategy implements BacktestStrategy {
     // Pass learned accuracy through so compositeScore's accuracy multiplier is
     // actually exercised. The replay only supplies outcomes that had resolved by
     // this bar, so this is walk-forward rather than hindsight.
-    const synth = await this.agent.synthesize(
-      ctx.symbol, spot, results, bars, ctx.factorStats as any,
-    );
+    const synth = await this.agent.synthesize(ctx.symbol, spot, results, bars, learned);
     const tp: any = synth.tradePlan;
     if (!tp) return null;
 
@@ -116,8 +118,14 @@ export class CompositeStrategy implements BacktestStrategy {
     };
 
     const factorVotes = results.map(r => ({ factorName: r.factorName, bias: r.bias }));
+    const sizing = computeSizing(
+      results.map(r => ({ factorName: r.factorName, bias: r.bias })),
+      synth.bias,
+      learned,
+    );
     const meta = {
       conviction: synth.modelConviction,
+      sizeMultiplier: sizing.sizeMultiplier,
       regime: (tp.archetype as string) ?? undefined,
       coverage: this.factors.length > 0 ? results.length / this.factors.length : undefined,
     };
