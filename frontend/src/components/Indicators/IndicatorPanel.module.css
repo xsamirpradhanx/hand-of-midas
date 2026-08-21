@@ -217,12 +217,39 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
   transition: all 0.2s ease;
   position: relative;
+  /* It is a <button> now — reset the UA styling the rail never wanted. */
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .collapsedItem:hover {
   background: rgba(184, 120, 10, 0.15);
   border-color: rgba(245, 200, 66, 0.3);
   transform: scale(1.04);
+}
+
+.collapsedItem:focus-visible {
+  outline: 2px solid rgba(245, 200, 66, 0.6);
+  outline-offset: 1px;
+}
+
+/* Hidden. A grey scrim washes over the tile — the letters stay readable
+   underneath, so a glance down the rail still tells you which overlays are on
+   the chart, without adding a second glyph to every widget. */
+.collapsedItemOff::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(140, 140, 140, 0.3);
+  pointer-events: none;
+}
+
+.collapsedItemOff .collapsedSymbol {
+  color: var(--text-tertiary);
 }
 
 .collapsedSymbol {

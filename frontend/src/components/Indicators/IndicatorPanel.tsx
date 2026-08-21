@@ -191,9 +191,16 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
       <div className={styles.list}>
         {isCollapsed ? (
           indicators.map((ind, i) => (
-            <div key={`${ind.type}-${i}`} className={styles.collapsedItem} title={ind.type}>
+            <button
+              key={`${ind.type}-${i}`}
+              type="button"
+              onClick={() => handleUpdate(i, { ...ind, enabled: !ind.enabled })}
+              className={`${styles.collapsedItem} ${ind.enabled ? '' : styles.collapsedItemOff}`}
+              title={`${ind.type} — click to ${ind.enabled ? 'hide' : 'show'}`}
+              aria-pressed={ind.enabled}
+            >
               <span className={styles.collapsedSymbol}>{ind.type.slice(0, 3)}</span>
-            </div>
+            </button>
           ))
         ) : indicators.length === 0 ? (
           <div className={styles.empty}>
