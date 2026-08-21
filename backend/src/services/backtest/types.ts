@@ -68,6 +68,15 @@ export interface BacktestPlan {
   readonly demandZone?: BacktestZone;
   readonly supplyZone?: BacktestZone;
   readonly atr?: number;
+  /**
+   * The engine's conviction at decision time, carried so the replay can test
+   * whether it PREDICTS anything. A score nothing validates is decoration, and
+   * conviction drives ranking and display throughout the product.
+   */
+  readonly conviction?: number;
+  readonly regime?: string;
+  /** Fraction of the factor set that reported — the coverage term's input. */
+  readonly coverage?: number;
 }
 
 /**

@@ -111,6 +111,11 @@ export class CompositeStrategy implements BacktestStrategy {
     };
 
     const factorVotes = results.map(r => ({ factorName: r.factorName, bias: r.bias }));
+    const meta = {
+      conviction: synth.modelConviction,
+      regime: (tp.archetype as string) ?? undefined,
+      coverage: this.factors.length > 0 ? results.length / this.factors.length : undefined,
+    };
     const actionable = tp.bias === 'LONG' || tp.bias === 'SHORT';
 
     if (!actionable) {
@@ -125,7 +130,7 @@ export class CompositeStrategy implements BacktestStrategy {
         target: tp.majorResistance ?? spot,
         factors: factorVotes,
         setupKey: `NO_TRADE|${tp.archetype ?? 'unknown'}`,
-        ...zones,
+        ...zones, ...meta,
       };
     }
 
@@ -136,7 +141,7 @@ export class CompositeStrategy implements BacktestStrategy {
       target: tp.majorResistance,
       factors: factorVotes,
       setupKey: `${tp.archetype ?? 'unknown'}|${tp.bias}`,
-      ...zones,
+      ...zones, ...meta,
     };
   }
 }

@@ -154,6 +154,58 @@ async function main() {
     console.log(`  ✅ baseline saved for this run's parameters`);
   }
 
+  // ── Does conviction predict? ────────────────────────────────────────────
+  // The question the score has never been asked. Conviction drives ranking and
+  // display; if outcome does not improve with it, it is decoration.
+  const withConv = result.trades.filter(t => t.conviction !== null && t.realizedR !== null && t.outcome !== 'AMBIGUOUS');
+  if (withConv.length >= 30 && !includeNoTrade) {
+    const sorted = [...withConv].sort((a, b) => a.conviction! - b.conviction!);
+    const bucketCount = 4;
+    const size = Math.floor(sorted.length / bucketCount);
+    console.log(`\n═══ does conviction predict? (${withConv.length} graded plans, equal-count buckets) ═══`);
+    console.log('  conviction range      n     win%    expectancy');
+    const points: Array<{ mid: number; exp: number }> = [];
+    for (let b = 0; b < bucketCount; b++) {
+      const slice = b === bucketCount - 1 ? sorted.slice(b * size) : sorted.slice(b * size, (b + 1) * size);
+      if (!slice.length) continue;
+      const lo = slice[0].conviction!, hi = slice[slice.length - 1].conviction!;
+      const wins = slice.filter(t => t.outcome === 'TARGET').length;
+      const exp = slice.reduce((sum, t) => sum + (t.realizedR ?? 0), 0) / slice.length;
+      points.push({ mid: (lo + hi) / 2, exp });
+      console.log(`  ${lo.toFixed(2)}–${hi.toFixed(2)}  ${String(slice.length).padStart(9)}  ${pct(wins / slice.length).padStart(6)}  ${exp.toFixed(3).padStart(10)}R`);
+    }
+    // Correlation between conviction and realised R across every trade.
+    const xs = withConv.map(t => t.conviction!), ys = withConv.map(t => t.realizedR!);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let num2 = 0, dx = 0, dy = 0;
+    for (let i = 0; i < xs.length; i++) { num2 += (xs[i] - mx) * (ys[i] - my); dx += (xs[i] - mx) ** 2; dy += (ys[i] - my) ** 2; }
+    const r = dx > 0 && dy > 0 ? num2 / Math.sqrt(dx * dy) : 0;
+    const monotone = points.every((p, i) => i === 0 || p.exp >= points[i - 1].exp - 0.02);
+    console.log(`  correlation(conviction, realised R) = ${r.toFixed(3)}  ${Math.abs(r) < 0.05 ? '— effectively none' : ''}`);
+    console.log(`  monotonic across buckets: ${monotone ? 'yes' : 'NO — higher conviction is not better'}`);
+  }
+
+  // ── Direction and era ───────────────────────────────────────────────────
+  if (!includeNoTrade) {
+    const graded = result.trades.filter(t => t.realizedR !== null && t.outcome !== 'AMBIGUOUS');
+    const group = (label: string, keyOf: (t: typeof graded[number]) => string) => {
+      const m: Record<string, { n: number; w: number; r: number }> = {};
+      for (const t of graded) {
+        const k = keyOf(t);
+        m[k] ??= { n: 0, w: 0, r: 0 };
+        m[k].n++; m[k].r += t.realizedR!;
+        if (t.outcome === 'TARGET') m[k].w++;
+      }
+      console.log(`\n═══ by ${label} ═══`);
+      for (const [k, v] of Object.entries(m).sort((a, b) => b[1].n - a[1].n)) {
+        if (v.n < 5) continue;
+        console.log(`  ${k.padEnd(14)} n=${String(v.n).padStart(5)}  win=${pct(v.w / v.n).padStart(6)}  exp=${(v.r / v.n).toFixed(3).padStart(7)}R  total=${v.r.toFixed(1).padStart(8)}R`);
+      }
+    };
+    group('direction', t => t.bias);
+    group('decade', t => `${t.asOf.slice(0, 3)}0s`);
+  }
+
   const factors = Object.entries(result.factorStats)
     .filter(([, v]) => v.n >= 5)
     .sort((a, b) => b[1].n - a[1].n)
@@ -174,6 +226,12 @@ async function main() {
     for (const [name, v] of setups) {
       console.log(`  ${name.slice(0, 36).padEnd(36)} n=${v.n.toFixed(1).padStart(6)}  win=${pct(winRate(v))}  exp=${num(expectancy(v))}R`);
     }
+  }
+  // Raw trades, for analysis the built-in summaries do not cover.
+  const dump = process.env['DUMP'];
+  if (dump) {
+    fs.writeFileSync(dump, result.trades.map(t => JSON.stringify(t)).join('\n'));
+    console.log(`\n  wrote ${result.trades.length} trades -> ${dump}`);
   }
   console.log('');
 }

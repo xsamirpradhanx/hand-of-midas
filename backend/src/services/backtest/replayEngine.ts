@@ -65,6 +65,9 @@ export interface TradeRecord {
    */
   readonly demandZoneErrorAtr: number | null;
   readonly supplyZoneErrorAtr: number | null;
+  readonly conviction: number | null;
+  readonly regime: string | null;
+  readonly coverage: number | null;
 }
 
 export interface ReplayResult {
@@ -222,6 +225,9 @@ export async function replay(
         setupKey: plan.setupKey,
         demandZoneErrorAtr: zoneErr(plan.demandZone, horizonLow),
         supplyZoneErrorAtr: zoneErr(plan.supplyZone, horizonHigh),
+        conviction: plan.conviction ?? null,
+        regime: plan.regime ?? null,
+        coverage: plan.coverage ?? null,
       });
 
       // ── Learning: setups graded on realized R ──────────────────────────────
