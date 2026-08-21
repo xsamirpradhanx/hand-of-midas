@@ -14,6 +14,7 @@
     "schwab-auth": "tsx src/scripts/schwabAuthServer.ts",
     "schwab-auth:legacy": "tsx src/scripts/schwab-auth-setup.ts",
     "broker-status": "tsx src/scripts/brokerStatus.ts",
+    "mcp": "tsx src/mcp/server.ts",
     "backtest": "tsx src/scripts/runBacktest.ts",
     "zone-audit": "tsx src/scripts/zoneAudit.ts",
     "quant-report": "tsx src/scripts/quantReport.ts",
@@ -38,8 +39,10 @@
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1115.0",
     "@google/genai": "^2.12.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",
     "groq-sdk": "^1.5.0",
-    "yahoo-finance2": "^4.0.0"
+    "yahoo-finance2": "^4.0.0",
+    "zod": "^4.4.3"
   }
 }
