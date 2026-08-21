@@ -14,6 +14,7 @@
     "schwab-auth": "tsx src/scripts/schwabAuthServer.ts",
     "schwab-auth:legacy": "tsx src/scripts/schwab-auth-setup.ts",
     "broker-status": "tsx src/scripts/brokerStatus.ts",
+    "backtest": "tsx src/scripts/runBacktest.ts",
     "zone-audit": "tsx src/scripts/zoneAudit.ts",
     "quant-report": "tsx src/scripts/quantReport.ts",
     "rebuild-stats": "tsx src/scripts/rebuildStats.ts",

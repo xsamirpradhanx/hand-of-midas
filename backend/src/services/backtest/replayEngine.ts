@@ -58,6 +58,13 @@ export interface TradeRecord {
   readonly forwardReturn: number | null;
   readonly barsElapsed: number;
   readonly setupKey?: string;
+  /**
+   * |zone midpoint - the extreme price actually reached| in ATR units, or null
+   * when the plan carried no zone. Lower is better; this measures PLACEMENT, not
+   * profitability, so it stays meaningful on losing trades.
+   */
+  readonly demandZoneErrorAtr: number | null;
+  readonly supplyZoneErrorAtr: number | null;
 }
 
 export interface ReplayResult {
@@ -77,6 +84,19 @@ export interface ReplayResult {
     readonly maxDrawdownR: number;
     readonly equityCurveR: readonly number[];
   };
+  /**
+   * Median distance from each zone to the price extreme actually reached, in ATR.
+   *
+   * The regression metric for zone geometry. Kept separate from win rate on
+   * purpose: a change can improve placement while expectancy is still dominated
+   * by stop sizing, and conflating them hides which half moved.
+   */
+  readonly zoneError: {
+    readonly demandMedianAtr: number | null;
+    readonly supplyMedianAtr: number | null;
+    readonly demandN: number;
+    readonly supplyN: number;
+  };
   /** Decayed learning state, keyed by factor name. */
   readonly factorStats: Record<string, DecayedStats>;
   /** Decayed learning state, keyed by the plan's setupKey. */
@@ -93,6 +113,15 @@ export interface ReplayResult {
  */
 function visibleSlice(bars: readonly BacktestBar[], index: number): readonly BacktestBar[] {
   return Object.freeze(bars.slice(0, index + 1).map(b => Object.freeze({ ...b })));
+}
+
+/** Median of the non-null values, or null when there are none. */
+function median(values: readonly (number | null)[]): number | null {
+  const xs = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
+  if (xs.length === 0) return null;
+  const mid = Math.floor(xs.length / 2);
+  const m = xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
+  return Number(m.toFixed(3));
 }
 
 function maxDrawdown(curve: readonly number[]): number {
@@ -149,7 +178,7 @@ export async function replay(
         bars: visibleSlice(bars, i),
       };
 
-      const plan = strategy.plan(ctx);
+      const plan = await strategy.plan(ctx);
       if (!plan) continue;
 
       // Future bars start at i+1: a plan decided on bar i cannot be filled or
@@ -169,6 +198,16 @@ export async function replay(
 
       openUntilIndex.push(i + grade.barsElapsed);
 
+      // Zone placement, scored against where price actually turned over the same
+      // horizon the plan was graded on. Demand is judged against the realised
+      // low, supply against the realised high.
+      const horizonLow = Math.min(...futureBars.map(b => b.low));
+      const horizonHigh = Math.max(...futureBars.map(b => b.high));
+      const zoneErr = (zone: { top: number; bottom: number } | undefined, actual: number) =>
+        zone && plan.atr && plan.atr > 0
+          ? Number((Math.abs((zone.top + zone.bottom) / 2 - actual) / plan.atr).toFixed(3))
+          : null;
+
       trades.push({
         symbol,
         asOf: decisionBar.datetime,
@@ -181,6 +220,8 @@ export async function replay(
         forwardReturn: grade.forwardReturn,
         barsElapsed: grade.barsElapsed,
         setupKey: plan.setupKey,
+        demandZoneErrorAtr: zoneErr(plan.demandZone, horizonLow),
+        supplyZoneErrorAtr: zoneErr(plan.supplyZone, horizonHigh),
       });
 
       // ── Learning: setups graded on realized R ──────────────────────────────
@@ -254,6 +295,12 @@ export async function replay(
       totalR: Number(cumulative.toFixed(4)),
       maxDrawdownR: Number(maxDrawdown(equityCurveR).toFixed(4)),
       equityCurveR,
+    },
+    zoneError: {
+      demandMedianAtr: median(trades.map(t => t.demandZoneErrorAtr)),
+      supplyMedianAtr: median(trades.map(t => t.supplyZoneErrorAtr)),
+      demandN: trades.filter(t => t.demandZoneErrorAtr !== null).length,
+      supplyN: trades.filter(t => t.supplyZoneErrorAtr !== null).length,
     },
     factorStats,
     setupStats,

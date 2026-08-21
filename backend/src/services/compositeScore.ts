@@ -836,7 +836,14 @@ export class CompositeScoreAgent {
     // requests/day) for zero benefit. Mirrors the same gate already used for
     // generateGroundedTradeNarrative below — only ACTIONABLE plans get the
     // qualitative pass; everything else uses the deterministic report as-is.
-    const aiSynthesis = tradeBias !== 'NO TRADE'
+    //
+    // Also skipped wholesale during replay. A backtest decides on thousands of
+    // historical bars; narrating each one bills a live LLM for prose no human
+    // will read, and the rate limit then throttles the replay itself. The
+    // deterministic summary is what the graded plan is built from either way, so
+    // suppressing the narrative changes no measured outcome.
+    const narrativeDisabled = process.env['DISABLE_LLM_NARRATIVE'] === '1';
+    const aiSynthesis = tradeBias !== 'NO TRADE' && !narrativeDisabled
       ? await generateCommitteeSynthesis(symbol, summary, news)
       : summary;
 

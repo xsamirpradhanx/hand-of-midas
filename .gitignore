@@ -40,3 +40,6 @@ coverage/
 
 # Local backups of derived stat aggregates
 stats-backup-*.json
+
+# Backtest regression baselines are machine-local
+backtest-baselines.json

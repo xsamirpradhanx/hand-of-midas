@@ -38,6 +38,14 @@ export interface BacktestFactorVote {
   readonly bias: 'bullish' | 'bearish' | 'neutral';
 }
 
+/** A price band the strategy expects price to react at. */
+export interface BacktestZone {
+  readonly top: number;
+  readonly bottom: number;
+  /** False when the engine fell back to a placeholder band around spot. */
+  readonly structural: boolean;
+}
+
 /** A trade plan a strategy emits at one point in time. */
 export interface BacktestPlan {
   readonly bias: 'LONG' | 'SHORT';
@@ -48,6 +56,18 @@ export interface BacktestPlan {
   readonly factors?: readonly BacktestFactorVote[];
   /** Free-form grouping key for setup stats, e.g. `${regime}|${setupType}`. */
   readonly setupKey?: string;
+  /**
+   * Zones and the ATR they were sized against, so the replay can score zone
+   * PLACEMENT independently of whether the trade won.
+   *
+   * The strategy cannot measure this itself without seeing the future; the engine
+   * holds the forward bars, so it does the scoring. A zone can be well placed on a
+   * losing trade and badly placed on a winning one, and the two failures need
+   * different fixes.
+   */
+  readonly demandZone?: BacktestZone;
+  readonly supplyZone?: BacktestZone;
+  readonly atr?: number;
 }
 
 /**
@@ -66,6 +86,12 @@ export interface DecisionContext {
 
 export interface BacktestStrategy {
   readonly name: string;
-  /** Return null to stand aside on this bar. */
-  plan(ctx: DecisionContext): BacktestPlan | null;
+  /**
+   * Return null to stand aside on this bar.
+   *
+   * May be async: the production engine evaluates factors asynchronously, and a
+   * harness that could only host synchronous strategies could never replay the
+   * system actually being run. Synchronous strategies still satisfy this.
+   */
+  plan(ctx: DecisionContext): Promise<BacktestPlan | null> | BacktestPlan | null;
 }

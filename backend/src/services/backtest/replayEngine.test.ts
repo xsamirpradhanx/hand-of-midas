@@ -194,3 +194,88 @@ describe('replay — factor learning uses directional credit', () => {
     expect(res.factorStats['AbstainFactor']).toBeUndefined();
   });
 });
+
+describe('replay — zone placement scoring', () => {
+  /** Flat 100 with a ±1 wick, so the realised extremes over any horizon are 99 / 101. */
+  const flat = () => series(200, () => 100);
+
+  function zoneStrategy(demandMid: number, supplyMid: number, atr: number): BacktestStrategy {
+    return {
+      name: 'zones',
+      plan: () => ({
+        bias: 'LONG',
+        entry: 100,
+        stop: 90,
+        target: 110,
+        atr,
+        demandZone: { top: demandMid + 0.5, bottom: demandMid - 0.5, structural: true },
+        supplyZone: { top: supplyMid + 0.5, bottom: supplyMid - 0.5, structural: true },
+      }),
+    };
+  }
+
+  it('scores a zone by its distance to the extreme price actually reached', async () => {
+    // Demand midpoint 97 vs a realised low of 99 => 2 points of error, ATR 2 => 1.0.
+    // Supply midpoint 105 vs a realised high of 101 => 4 points, ATR 2 => 2.0.
+    const r = await replay(source({ X: flat() }), zoneStrategy(97, 105, 2), {
+      warmupBars: WARMUP,
+      horizonBars: HORIZON,
+    });
+    expect(r.zoneError.demandMedianAtr).toBeCloseTo(1.0, 3);
+    expect(r.zoneError.supplyMedianAtr).toBeCloseTo(2.0, 3);
+    expect(r.zoneError.demandN).toBe(r.stats.total);
+  });
+
+  it('rewards a zone placed where price actually turned', async () => {
+    // Demand sitting exactly on the realised low is a perfect placement.
+    const good = await replay(source({ X: flat() }), zoneStrategy(99, 101, 2), {
+      warmupBars: WARMUP, horizonBars: HORIZON,
+    });
+    const bad = await replay(source({ X: flat() }), zoneStrategy(80, 130, 2), {
+      warmupBars: WARMUP, horizonBars: HORIZON,
+    });
+    expect(good.zoneError.demandMedianAtr!).toBeLessThan(bad.zoneError.demandMedianAtr!);
+    expect(good.zoneError.demandMedianAtr!).toBeCloseTo(0, 3);
+  });
+
+  it('is independent of whether the trade won', async () => {
+    // Same zones, opposite trade outcomes: placement must not move.
+    const winner: BacktestStrategy = {
+      name: 'w',
+      plan: () => ({ bias: 'LONG', entry: 100, stop: 90, target: 100.5, atr: 2,
+        demandZone: { top: 97.5, bottom: 96.5, structural: true } }),
+    };
+    const loser: BacktestStrategy = {
+      name: 'l',
+      plan: () => ({ bias: 'LONG', entry: 100, stop: 99.5, target: 130, atr: 2,
+        demandZone: { top: 97.5, bottom: 96.5, structural: true } }),
+    };
+    const w = await replay(source({ X: flat() }), winner, { warmupBars: WARMUP, horizonBars: HORIZON });
+    const l = await replay(source({ X: flat() }), loser, { warmupBars: WARMUP, horizonBars: HORIZON });
+    expect(w.stats.wins).toBeGreaterThan(0);
+    expect(l.stats.losses).toBeGreaterThan(0);
+    expect(w.zoneError.demandMedianAtr).toBeCloseTo(l.zoneError.demandMedianAtr!, 3);
+  });
+
+  it('reports null rather than guessing when a plan carries no zone', async () => {
+    const noZones: BacktestStrategy = {
+      name: 'nz',
+      plan: () => ({ bias: 'LONG', entry: 100, stop: 90, target: 110 }),
+    };
+    const r = await replay(source({ X: flat() }), noZones, { warmupBars: WARMUP, horizonBars: HORIZON });
+    expect(r.zoneError.demandMedianAtr).toBeNull();
+    expect(r.zoneError.demandN).toBe(0);
+  });
+
+  it('accepts an async strategy, so the production engine can be replayed', async () => {
+    const asyncStrategy: BacktestStrategy = {
+      name: 'async',
+      plan: async () => {
+        await Promise.resolve();
+        return { bias: 'LONG', entry: 100, stop: 90, target: 110 };
+      },
+    };
+    const r = await replay(source({ X: flat() }), asyncStrategy, { warmupBars: WARMUP, horizonBars: HORIZON });
+    expect(r.stats.total).toBeGreaterThan(0);
+  });
+});
