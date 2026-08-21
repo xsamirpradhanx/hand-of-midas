@@ -11,7 +11,9 @@
     "ai-quant": "tsx src/scripts/aiQuant.ts",
     "evaluate-quant": "tsx src/scripts/runEvaluateQuant.ts",
     "factor-doctor": "tsx src/scripts/factorDoctor.ts",
-    "schwab-auth": "tsx src/scripts/schwab-auth-setup.ts",
+    "schwab-auth": "tsx src/scripts/schwabAuthServer.ts",
+    "schwab-auth:legacy": "tsx src/scripts/schwab-auth-setup.ts",
+    "broker-status": "tsx src/scripts/brokerStatus.ts",
     "zone-audit": "tsx src/scripts/zoneAudit.ts",
     "backfill-bars": "tsx src/scripts/backfillBars.ts",
     "capture-intraday": "tsx src/scripts/captureIntradayOnce.ts"
