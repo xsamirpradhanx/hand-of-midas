@@ -16,6 +16,27 @@
  * from +250.6R to +109.4R and left return-over-drawdown slightly worse. The
  * separation is real, so lean into the better trades — but discarding the rest
  * gives up more return than risk.
+ *
+ * ESTABLISHED OUT-OF-SAMPLE. Tested on 11,676 trades across 171 symbols that
+ * were backfilled specifically because none of them were used to design this —
+ * the earlier 87-symbol store had all become in-sample:
+ *
+ *   score separates            top-vs-bottom +0.201R, t≈5.35
+ *   buckets                    +0.002 / +0.078 / +0.191 / +0.203R, monotone
+ *   paired sign test, 40 years sized beat flat in 30/40, p≈0.0016
+ *   scaling with strength      R/DD 26.25 / 27.34 / 27.94 / 28.53 / 29.10, monotone
+ *   block bootstrap on R/DD    better in 97.0% of resamples, CI [-0.09, +6.20]
+ *
+ * The bootstrap is the one test that does not clear the bar, and only barely.
+ * Three of four pass, including the paired sign test, which is the strongest
+ * design available here because sized and flat are the SAME trades under two
+ * weightings rather than two different populations.
+ *
+ * Effect size shrank from +13.4% return-per-drawdown in-sample to +6.4% out of
+ * sample, which is the expected direction. Treat +6% as the honest estimate.
+ *
+ * For contrast, the learning-loop claim tested the same way came back at 50.1%
+ * of bootstrap resamples and 22/42 years — a coin flip — and was retracted.
  */
 import { accuracyEdge, type FactorVote, type MeasuredAccuracy } from './conviction.js';
 

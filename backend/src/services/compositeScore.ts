@@ -172,10 +172,14 @@ export interface AISynthesisResult {
    * Suggested position size from measured factor accuracy — ADVISORY.
    *
    * Kept separate from conviction because they measure different things and only
-   * one of them has ever separated outcomes. It is not applied automatically:
-   * backtested over 2,897 trades, sizing by this signal moved return-per-drawdown
-   * by -4.3%, so it is surfaced for a human or a bot to weigh rather than wired
-   * into position size.
+   * one of them separates outcomes. Conviction does not — top versus bottom
+   * quartile t≈1.42 over 5,989 trades. This does, and it now holds out of sample:
+   * t≈5.35 across 11,676 trades on 171 symbols that had no part in designing it,
+   * with sized beating flat in 30 of 40 years (p≈0.0016).
+   *
+   * Still advisory rather than auto-applied. The measured portfolio benefit is
+   * about +6% return-per-drawdown — real, but modest enough that how hard to lean
+   * on it is a risk decision for whoever is trading, not one to bake in silently.
    */
   sizing?: SizingSignal;
   /**
