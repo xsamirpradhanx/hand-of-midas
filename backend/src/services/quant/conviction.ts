@@ -7,6 +7,13 @@
  *
  * Conviction is NOT a probability. It is an evidence-strength score in [0.05,
  * 0.95] and must never be presented as a win rate.
+ *
+ * MEASURED, AND NEGATIVE: conviction does not separate outcomes. Over 5,989
+ * replayed trades its top and bottom quartiles differ by +0.074R at t≈1.42.
+ * Tilting it by measured factor accuracy was tried and moved that to t≈1.50 —
+ * no improvement — so the tilt was removed rather than left in to look busy.
+ * accuracyEdge() below is retained because positionSizing.ts uses it, where the
+ * same information DOES separate (t≈3.25).
  */
 
 export type AgreementLevel = 'HIGH' | 'MODERATE' | 'LOW';
@@ -21,12 +28,6 @@ export interface ConvictionInput {
   readonly agreementLevel: AgreementLevel;
   /** Factors that reported, over factors registered. 1 = full coverage. */
   readonly coverage: number;
-  /**
-   * Output of accuracyEdge(), in roughly [-0.1, +0.1]. Positive means the
-   * factors with track records lean the way the plan does, adjusting for those
-   * known to be reliably wrong. Zero when nothing has a track record yet.
-   */
-  readonly accuracyEdge?: number;
 }
 
 const AGREEMENT_MULTIPLIER: Record<AgreementLevel, number> = {
@@ -115,14 +116,6 @@ export function computeConviction(input: ConvictionInput): number {
   const coverageMultiplier = 0.5 + 0.5 * Math.max(0, Math.min(1, coverage));
 
   const raw = Math.min(MAX_CONVICTION, normalizedBias);
-
-  // Measured accuracy tilts conviction rather than setting it. The edge is
-  // small in absolute terms (roughly +/-0.1) but it is the only component here
-  // with any demonstrated relationship to outcome — the weight-sum terms above
-  // do not separate top from bottom quartile at all.
-  const ACCURACY_GAIN = 3.0;
-  const tilt = 1 + ACCURACY_GAIN * (input.accuracyEdge ?? 0);
-
-  const scaled = raw * AGREEMENT_MULTIPLIER[agreementLevel] * coverageMultiplier * Math.max(0.1, tilt);
+  const scaled = raw * AGREEMENT_MULTIPLIER[agreementLevel] * coverageMultiplier;
   return Number(Math.max(MIN_CONVICTION, Math.min(MAX_CONVICTION, scaled)).toFixed(3));
 }

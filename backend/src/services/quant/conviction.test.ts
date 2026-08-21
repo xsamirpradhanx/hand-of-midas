@@ -50,31 +50,26 @@ describe('accuracyEdge', () => {
   });
 });
 
-describe('computeConviction with accuracyEdge', () => {
+describe('computeConviction', () => {
   const base = {
     bullishScore: 1, bearishScore: 0, neutralScore: 1,
     netBias: 1, agreementLevel: 'HIGH' as const, coverage: 1,
   };
 
-  it('raises conviction when measured accuracy backs the plan', () => {
-    expect(computeConviction({ ...base, accuracyEdge: 0.1 }))
-      .toBeGreaterThan(computeConviction(base));
-  });
-
-  it('lowers it when measured accuracy contradicts the plan', () => {
-    expect(computeConviction({ ...base, accuracyEdge: -0.1 }))
-      .toBeLessThan(computeConviction(base));
-  });
-
-  it('stays inside bounds under an extreme tilt', () => {
-    for (const e of [-1, -0.5, 0, 0.5, 1]) {
-      const c = computeConviction({ ...base, accuracyEdge: e });
-      expect(c).toBeGreaterThanOrEqual(0.05);
-      expect(c).toBeLessThanOrEqual(0.95);
+  it('stays inside bounds across the input range', () => {
+    for (const nb of [-2, -1, 0, 1, 2]) {
+      for (const lvl of ['HIGH', 'MODERATE', 'LOW'] as const) {
+        const c = computeConviction({ ...base, netBias: nb, agreementLevel: lvl });
+        expect(c).toBeGreaterThanOrEqual(0.05);
+        expect(c).toBeLessThanOrEqual(0.95);
+      }
     }
   });
 
-  it('is unchanged when there is no measured accuracy', () => {
-    expect(computeConviction({ ...base, accuracyEdge: 0 })).toBe(computeConviction(base));
+  it('no longer accepts an accuracy tilt — it measured null and was removed', () => {
+    // Guards against the tilt being reintroduced without fresh evidence: it moved
+    // conviction separation from t=1.42 to t=1.50 over 5,989 trades.
+    const c = computeConviction({ ...base, ...({ accuracyEdge: 0.5 } as any) });
+    expect(c).toBe(computeConviction(base));
   });
 });
