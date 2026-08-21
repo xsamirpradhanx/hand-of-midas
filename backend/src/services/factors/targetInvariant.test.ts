@@ -106,3 +106,61 @@ describe('factor target invariant: buyTarget <= sellTarget', () => {
     }
   }
 });
+
+/** Every regime x length combination the invariant suite already exercises. */
+const SERIES = REGIMES.flatMap(r => LENGTHS.map(l => syntheticBars(l, r)));
+const inputFor = (bars: FactorInput['bars']): FactorInput => ({
+  symbol: 'TEST',
+  currentPrice: bars[bars.length - 1].close,
+  bars,
+});
+
+describe('FactorResult.levels invariants', () => {
+  /**
+   * `levels` feeds the same zone clustering as buyTarget/sellTarget
+   * (compositeScore bins each by side), so the same invariants apply. The
+   * regression this guards: emitting a level that duplicates the factor's own
+   * buyTarget/sellTarget double-weights it in clustering, which measurably cost
+   * 0.03R of expectancy before it was caught.
+   */
+  it('never emits a level that duplicates the factor\'s own buy/sell target', async () => {
+    const offenders: string[] = [];
+    for (const factor of getFactors()) {
+      for (const bars of SERIES) {
+        let r;
+        try { r = await factor.evaluate(inputFor(bars)); } catch { continue; }
+        if (!r?.levels?.length) continue;
+        for (const lvl of r.levels) {
+          const dupBuy = r.buyTarget !== undefined && Math.abs(lvl.price - r.buyTarget) < 1e-9;
+          const dupSell = r.sellTarget !== undefined && Math.abs(lvl.price - r.sellTarget) < 1e-9;
+          if (dupBuy || dupSell) {
+            offenders.push(`${factor.name}: level ${lvl.price} (${lvl.label ?? '?'}) duplicates ${dupBuy ? 'buyTarget' : 'sellTarget'}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('emits only finite, positive level prices with in-range strength', async () => {
+    const offenders: string[] = [];
+    for (const factor of getFactors()) {
+      for (const bars of SERIES) {
+        let r;
+        try { r = await factor.evaluate(inputFor(bars)); } catch { continue; }
+        for (const lvl of r?.levels ?? []) {
+          if (!Number.isFinite(lvl.price) || lvl.price <= 0) {
+            offenders.push(`${factor.name}: bad price ${lvl.price}`);
+          }
+          if (lvl.strength !== undefined && (lvl.strength < 0 || lvl.strength > 1)) {
+            offenders.push(`${factor.name}: strength ${lvl.strength} outside [0,1]`);
+          }
+          if (!['support', 'resistance', 'pivot'].includes(lvl.kind)) {
+            offenders.push(`${factor.name}: bad kind ${lvl.kind}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

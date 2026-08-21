@@ -102,6 +102,24 @@ export class VolumeProfileFactor implements PredictiveFactor {
       factorName: this.name,
       buyTarget,
       sellTarget,
+      // POC is the single highest-volume price in the window — the most-traded
+      // level in the whole profile — and it was computed, narrated in `reasoning`,
+      // and then discarded. buyTarget/sellTarget only carry the value-area EDGES,
+      // so whenever VAH sat beyond the reachable distance this factor contributed
+      // nothing at all to the resistance side. That is exactly what happened on
+      // WULX: VAH at $31.25 was dropped as unreachable while POC sat at $19.75,
+      // a perfectly usable structural level, and Volume Profile ended up
+      // supplying zero resistance candidates.
+      //
+      // POC carries full strength; the value-area edges are emitted at 0.6 since
+      // an edge is where participation thinned out rather than where it
+      // concentrated.
+      //
+      // ONLY the POC. buyTarget already IS `val` (clamped) and sellTarget IS
+      // `vah`, so emitting the value-area edges here again would double-weight
+      // them in clustering — pulling zones harder toward the edges rather than
+      // adding a new candidate. Measured: doing that cost 0.03R of expectancy.
+      levels: [{ price: poc, kind: 'pivot', strength: 1.0, label: 'POC' }],
       bias,
       weight: 0.35,
       bucket: 'PRICE_STRUCTURE',

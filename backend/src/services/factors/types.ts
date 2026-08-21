@@ -15,10 +15,43 @@ export type FactorBucket =
   | 'MOMENTUM'         // AI-generated alpha factors
   | 'LIQUIDITY';       // (reserved for future liquidity factors)
 
+/**
+ * One price level a factor believes price may react at.
+ *
+ * `buyTarget` / `sellTarget` allow exactly one level per side, which starved the
+ * zone picker: measured over 320 point-in-time observations, it had two or more
+ * credible clusters to choose from in only 34% (demand) and 42% (supply) of
+ * cases, and exactly ONE in half of them. No scoring rule can improve a choice
+ * of one, which is why the reachability prior — a scoring change — moved so
+ * little. `levels` lifts that cap.
+ */
+export interface FactorLevel {
+  readonly price: number;
+  /**
+   * Which side of the book this level belongs on. `pivot` lets a factor emit a
+   * level without asserting a side; compositeScore assigns it by position
+   * relative to spot, the same way it already treats buy/sell targets.
+   */
+  readonly kind: 'support' | 'resistance' | 'pivot';
+  /**
+   * Relative importance within this factor's own emissions, 0-1. Scales the
+   * factor's weight when clustering, so a POC and a far value-area edge do not
+   * carry identical influence. Defaults to 1.
+   */
+  readonly strength?: number;
+  /** Short human label, e.g. "POC", "VAH", "pivot cluster 2". */
+  readonly label?: string;
+}
+
 export interface FactorResult {
   factorName: string;
   buyTarget?: number;
   sellTarget?: number;
+  /**
+   * Additional levels beyond the single buy/sell pair. Optional and additive —
+   * a factor that emits neither behaves exactly as before.
+   */
+  levels?: readonly FactorLevel[];
   bias: 'bullish' | 'bearish' | 'neutral';
   weight: number; // 0.0 to 1.0
   reasoning: string;

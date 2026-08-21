@@ -413,6 +413,34 @@ export class CompositeScoreAgent {
       if (f.sellTarget !== undefined && f.sellTarget > 0 && Math.abs(f.sellTarget - currentPrice) <= MAX_ZONE_DISTANCE) {
         (f.sellTarget < currentPrice ? supportLevels : resistanceLevels).push({ price: f.sellTarget, weight: adjustedWeight, source: f.factorName });
       }
+
+      // Additional levels beyond the single buy/sell pair. This is what lifts
+      // candidate starvation: with one level per side, the picker had exactly ONE
+      // credible cluster to choose from in half of all cases, so no scoring rule
+      // could improve the choice.
+      //
+      // `strength` scales the factor's weight so a high-volume node and a distant
+      // value-area edge do not carry identical influence. A `pivot` is assigned a
+      // side by position, exactly as buy/sell targets already are.
+      for (const lvl of f.levels ?? []) {
+        if (!(lvl.price > 0) || Math.abs(lvl.price - currentPrice) > MAX_ZONE_DISTANCE) continue;
+        const below = lvl.price < currentPrice;
+        const side =
+          lvl.kind === 'support' ? supportLevels
+          : lvl.kind === 'resistance' ? resistanceLevels
+          : below ? supportLevels : resistanceLevels;
+        // A level explicitly labelled support but sitting above spot (or vice
+        // versa) is stale rather than wrong — keep it, but on the side its price
+        // actually puts it, or the cluster would straddle spot.
+        const target = (lvl.kind === 'support' && !below) || (lvl.kind === 'resistance' && below)
+          ? (below ? supportLevels : resistanceLevels)
+          : side;
+        target.push({
+          price: lvl.price,
+          weight: adjustedWeight * Math.max(0, Math.min(1, lvl.strength ?? 1)),
+          source: f.factorName,
+        });
+      }
     }
 
     // How close two independent levels must be to count as the same zone.

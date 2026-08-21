@@ -138,10 +138,39 @@ export class SwingStructureFactor implements PredictiveFactor {
       parts.push(`resistance $${bestResistance.price.toFixed(2)} (${bestResistance.touches} pivot${bestResistance.touches === 1 ? '' : 's'}, ${((bestResistance.price - currentPrice) / currentPrice * 100).toFixed(1)}% above)`);
     }
 
+    // The full pivot ladder, not just the single best level per side.
+    //
+    // buildLevels already ranks every clustered pivot by score; emitting only the
+    // argmax threw the rest away. Since this is one of just three factors the
+    // zone picker counts as STRUCTURAL, discarding its runners-up was a large
+    // part of why the picker so often had exactly one credible cluster to choose
+    // between — and no scoring rule can improve a choice of one.
+    //
+    // Capped at the top few per side: beyond that the tail is single-touch noise,
+    // and each extra level dilutes the clustering rather than informing it.
+    // Strength is the level's score relative to the best on its side, so a
+    // heavily-defended pivot outweighs one that was touched once.
+    // RUNNERS-UP ONLY. Rank 1 is already emitted as buyTarget/sellTarget, so
+    // including it here would double-weight the primary in clustering — pulling
+    // the zone harder onto a level the picker already had, which is the opposite
+    // of relieving candidate starvation.
+    const TOP_N = 3;
+    const ladder = (levels: typeof supports, kind: 'support' | 'resistance') => {
+      const ranked = [...levels].sort((a, b) => b.score - a.score);
+      const top = ranked[0]?.score ?? 0;
+      return ranked.slice(1, TOP_N).map(l => ({
+        price: l.price,
+        kind,
+        strength: top > 0 ? Math.max(0.25, l.score / top) : 1,
+        label: `${kind} ${l.touches} pivot${l.touches === 1 ? '' : 's'}`,
+      }));
+    };
+
     return {
       factorName: this.name,
       buyTarget: bestSupport?.price,
       sellTarget: bestResistance?.price,
+      levels: [...ladder(supports, 'support'), ...ladder(resistances, 'resistance')],
       bias: 'neutral',
       // Level provider, never a voter — see FactorResult.directional.
       directional: false,
