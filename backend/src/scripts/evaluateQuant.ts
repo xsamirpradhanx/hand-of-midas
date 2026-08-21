@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { scanItems, putItem, getItem } from '../services/dynamodb.js';
 import { fetchBarsWithFallback } from '../services/marketData/fetchBars.js';
+import { realizedDirection, factorWasCorrect } from '../services/quant/factorAttribution.js';
 import type { PredictionItem, EvaluationItem, FactorStatsItem, SetupStatsItem } from '../types.js';
 import { learningKey } from '../services/quant/learningEngine.js';
 import { gradeOutcome } from '../services/quant/gradeOutcome.js';
@@ -185,20 +186,33 @@ export async function evaluateQuant() {
       console.log(`[Quant Evaluation] 💾 Saved evaluation for ${pred.symbol} to database.`);
 
       if (thesis.factors && Array.isArray(thesis.factors)) {
+        // Credit each factor by its OWN vote against the realised move, not by
+        // the plan's outcome. Crediting by presence made every always-on factor
+        // converge on the book win rate — Volume Profile, Anchored VWAP, KAMA and
+        // ATR Volatility all reported an identical n=1210 / 20.9% / score 253 —
+        // so applyRegimeMultiplier could only move the whole book together and
+        // never favour a factor that was actually right.
+        const realized = realizedDirection(bias as 'LONG' | 'SHORT' | 'BEARISH', outcome);
         for (const f of thesis.factors) {
           const fname = `${source}|${f.factorName}`;
           if (!factorStats[fname]) {
             factorStats[fname] = { tries: 0, wins: 0, losses: 0, score: 0, ambiguous: 0 };
           }
           const fs = factorStats[fname];
+          const correct = realized ? factorWasCorrect(f.bias, realized) : null;
+
+          // A neutral factor abstained; an unknowable move (ambiguous/timeout)
+          // teaches nothing. Both are recorded as ambiguous so `tries` still
+          // reflects exposure while accuracy stays computed on resolved votes
+          // only — the policy applyRegimeMultiplier already assumes.
           fs.tries = (fs.wins ?? 0) + (fs.losses ?? 0) + (fs.ambiguous ?? 0) + 1;
-          if (ambiguous) {
-            // Excluded from score/wins/losses so calibration is unbiased.
+          if (correct === null) {
             fs.ambiguous = (fs.ambiguous ?? 0) + 1;
+          } else if (correct) {
+            fs.wins += 1;
+            fs.score += 1;
           } else {
-            fs.score += score;
-            if (outcome === 'TARGET') fs.wins += 1;
-            else fs.losses += 1;
+            fs.losses += 1;
           }
         }
       }

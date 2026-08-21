@@ -1,6 +1,8 @@
 import type { FactorResult } from './factors/types.js';
 import type { OHLCVDataPoint } from '../types.js';
 import { calculateIndependentEvidence, type IndependentEvidence } from './quant/independentEvidenceEngine.js';
+import { getFactors } from './factors/factorRegistry.js';
+import { computeConviction } from './quant/conviction.js';
 import type { PolygonNewsArticle } from './polygon.js';
 import { generateCommitteeSynthesis } from './aiInsights.js';
 
@@ -288,6 +290,19 @@ function reachability(distAtr: number, bars: number): number {
   return 2 * normalCdf(-Math.abs(distAtr) / sigmaN);
 }
 
+/**
+ * How many factors the registry defines, memoised.
+ *
+ * Used as the denominator for conviction coverage. Read lazily rather than at
+ * module load because aiQuant rewrites factorRegistry.ts and the count should
+ * follow the registry rather than a hardcoded constant that silently drifts.
+ */
+let _factorCount: number | undefined;
+function registeredFactorCount(): number {
+  if (_factorCount === undefined) _factorCount = getFactors().length;
+  return _factorCount;
+}
+
 export class CompositeScoreAgent {
   async synthesize(
     symbol: string,
@@ -325,12 +340,15 @@ export class CompositeScoreAgent {
     // ── 3. Derive model conviction from evidence (NOT synthetic probability) ──
     //   Agreement penalty: LOW agreement reduces conviction even if netBias is strong.
     //   This is the WULF fix: mixed signals should yield LOW conviction, not 78%.
-    const agreementMultiplier =
-      evidence.agreementLevel === 'HIGH' ? 1.0 :
-      evidence.agreementLevel === 'MODERATE' ? 0.80 : 0.60;
-
-    const rawConviction = Math.min(0.95, Math.abs(evidence.netBias) / 2);
-    let modelConviction = Number(Math.max(0.05, rawConviction * agreementMultiplier).toFixed(3));
+    const expected = registeredFactorCount();
+    let modelConviction = computeConviction({
+      bullishScore: evidence.bullishScore,
+      bearishScore: evidence.bearishScore,
+      neutralScore: evidence.neutralScore,
+      netBias: evidence.netBias,
+      agreementLevel: evidence.agreementLevel,
+      coverage: expected > 0 ? factors.length / expected : 1,
+    });
 
     // ── 4. Normalize regime-adjusted weights for zone clustering only ──────────
     // (Regime multipliers still applied to zone/target calc, not to conviction)

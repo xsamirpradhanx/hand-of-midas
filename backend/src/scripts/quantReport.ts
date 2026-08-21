@@ -44,10 +44,20 @@ async function main() {
   const stats = fs?.stats ?? fs?.factors ?? {};
   const rows = Object.entries(stats) as [string, any][];
   if (!rows.length) { console.log('  (empty)'); }
+  // Accuracy is reported on RESOLVED votes (wins + losses), which is what
+  // applyRegimeMultiplier consumes. Dividing by `tries` would fold in
+  // abstentions and make a neutral-by-design factor like ATR Dynamic Volatility
+  // read as 0% accurate rather than as never having voted.
+  console.log('  factor                                        votes   acc    abstained');
   for (const [name, v] of rows.sort((a, b) => (b[1].tries ?? 0) - (a[1].tries ?? 0)).slice(0, 25)) {
-    const tries = v.tries ?? (v.wins ?? 0) + (v.losses ?? 0);
-    const wr = tries ? ((v.wins ?? 0) / tries * 100).toFixed(1) : '—';
-    console.log(`  ${name.slice(0, 44).padEnd(44)} n=${String(tries).padStart(5)}  win=${String(wr).padStart(5)}%  score=${(v.score ?? 0).toFixed?.(3) ?? v.score}`);
+    const wins = v.wins ?? 0, losses = v.losses ?? 0;
+    const resolved = wins + losses;
+    const tries = v.tries ?? resolved;
+    const abst = Math.max(0, tries - resolved);
+    const acc = resolved >= 3 ? `${(wins / resolved * 100).toFixed(1)}%` : 'n/a';
+    const abstPct = tries ? `${(abst / tries * 100).toFixed(0)}%` : '—';
+    const note = resolved < 3 ? '  (never votes directionally)' : '';
+    console.log(`  ${name.slice(0, 44).padEnd(44)} ${String(resolved).padStart(5)} ${acc.padStart(6)} ${abstPct.padStart(9)}${note}`);
   }
   // Cross-tab of direction x setupType, recovered by joining outcomes back to
   // their prediction — outcome rows do not carry setupType themselves.

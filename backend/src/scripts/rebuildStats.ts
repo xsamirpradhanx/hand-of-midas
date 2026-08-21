@@ -19,6 +19,7 @@ import 'dotenv/config';
  * modified; only the two derived aggregates are rewritten.
  */
 import { getItem, putItem, scanItems } from '../services/dynamodb.js';
+import { realizedDirection, factorWasCorrect } from '../services/quant/factorAttribution.js';
 
 const APPLY = process.argv.includes('--apply');
 
@@ -51,7 +52,7 @@ async function main() {
   }
 
   const setupStats: Record<string, Stat> = {};
-  const factorStats: Record<string, { wins: number; losses: number; tries: number; score: number }> = {};
+  const factorStats: Record<string, { wins: number; losses: number; tries: number; score: number; ambiguous: number }> = {};
 
   for (const { ev, pred } of seen.values()) {
     const thesis = pred.aiThesis;
@@ -73,12 +74,17 @@ async function main() {
       if (won) { st.wins++; st.sumActualR += rr; } else { st.losses++; st.sumActualR -= 1.0; }
     }
 
-    if (ambiguous) continue;
+    // Same directional attribution the live evaluator uses — a rebuild that
+    // scored factors differently from production would measure a system nobody runs.
+    const realized = realizedDirection(bias, ev.outcome);
     for (const f of thesis.factors ?? []) {
       const fk = `${source}|${f.factorName}`;
-      const fs = (factorStats[fk] ??= { wins: 0, losses: 0, tries: 0, score: 0 });
+      const fs = (factorStats[fk] ??= { wins: 0, losses: 0, tries: 0, score: 0, ambiguous: 0 });
       fs.tries++;
-      if (won) { fs.wins++; fs.score++; } else { fs.losses++; }
+      const correct = realized ? factorWasCorrect(f.bias, realized) : null;
+      if (correct === null) fs.ambiguous++;
+      else if (correct) { fs.wins++; fs.score++; }
+      else fs.losses++;
     }
   }
 

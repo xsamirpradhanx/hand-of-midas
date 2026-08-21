@@ -22,6 +22,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FactorInput } from '../../services/factors/types.js';
 import type { OHLCVDataPoint } from '../../types.js';
+import { computeConviction, MIN_CONVICTION, MAX_CONVICTION } from '../../services/quant/conviction.js';
 
 const __filename_pr1 = fileURLToPath(import.meta.url);
 const __dirname_pr1 = dirname(__filename_pr1);
@@ -399,38 +400,62 @@ describe('DTE Properties', () => {
 // ---------------------------------------------------------------------------
 
 describe('Conviction / Model Confidence', () => {
-  function computeConviction(netBias: number, agreementLevel: 'HIGH' | 'MODERATE' | 'LOW'): number {
-    const agreementMultiplier = agreementLevel === 'HIGH' ? 1.0 : agreementLevel === 'MODERATE' ? 0.80 : 0.60;
-    const rawConviction = Math.min(0.95, Math.abs(netBias) / 2);
-    return Number(Math.max(0.05, rawConviction * agreementMultiplier).toFixed(3));
+  function conv(netBias: number, level: 'HIGH' | 'MODERATE' | 'LOW', opts: { total?: number; coverage?: number } = {}) {
+    // Express netBias as a directional split so the real function sees a coherent
+    // evidence set: |netBias| of directional weight out of `total` weighed.
+    const total = opts.total ?? 2;
+    const mag = Math.min(Math.abs(netBias), total);
+    const bullishScore = netBias >= 0 ? mag : 0;
+    const bearishScore = netBias < 0 ? mag : 0;
+    return computeConviction({
+      bullishScore,
+      bearishScore,
+      neutralScore: Math.max(0, total - mag),
+      netBias,
+      agreementLevel: level,
+      coverage: opts.coverage ?? 1,
+    });
   }
 
   it('conviction is always in [0.05, 0.95]', () => {
     for (const netBias of [-2, -1, -0.5, 0, 0.5, 1, 2]) {
       for (const level of ['HIGH', 'MODERATE', 'LOW'] as const) {
-        const c = computeConviction(netBias, level);
-        expect(c).toBeGreaterThanOrEqual(0.05);
-        expect(c).toBeLessThanOrEqual(0.95);
+        const c = conv(netBias, level);
+        expect(c).toBeGreaterThanOrEqual(MIN_CONVICTION);
+        expect(c).toBeLessThanOrEqual(MAX_CONVICTION);
       }
     }
   });
 
   it('LOW agreement reduces conviction even at maximum netBias', () => {
-    const high = computeConviction(2, 'HIGH');   // 0.95 * 1.0 = 0.95
-    const low  = computeConviction(2, 'LOW');    // 0.95 * 0.6 = 0.57
-    expect(high).toBeGreaterThan(low);
+    expect(conv(2, 'HIGH')).toBeGreaterThan(conv(2, 'LOW'));
   });
 
-  it('conviction with zero netBias is minimum (0.05)', () => {
-    const c = computeConviction(0, 'HIGH');
-    expect(c).toBe(0.05);
+  it('conviction with zero netBias is the floor', () => {
+    expect(conv(0, 'HIGH')).toBe(MIN_CONVICTION);
   });
 
-  it('conviction * 100 gives the confidence percentage displayed in UI', () => {
-    const c = computeConviction(1.0, 'MODERATE');
-    const displayed = Math.round(c * 100);
-    expect(displayed).toBeGreaterThan(0);
-    expect(displayed).toBeLessThanOrEqual(100);
+  it('is a RATIO, so more factors firing the same way does not raise it', () => {
+    // The defect this replaced: conviction was |netBias| / 2 on an unnormalised
+    // weight sum, so doubling the number of agreeing factors doubled conviction
+    // without adding any information.
+    const small = conv(1, 'HIGH', { total: 2 });
+    const doubled = conv(2, 'HIGH', { total: 4 });
+    expect(doubled).toBeCloseTo(small, 10);
+  });
+
+  it('penalises thin factor coverage', () => {
+    const full = conv(2, 'HIGH', { coverage: 1 });
+    const thin = conv(2, 'HIGH', { coverage: 0.25 });
+    expect(thin).toBeLessThan(full);
+    // Dampened, not erased.
+    expect(thin).toBeGreaterThan(MIN_CONVICTION);
+  });
+
+  it('neutral evidence dilutes conviction', () => {
+    const decisive = conv(2, 'HIGH', { total: 2 });   // no neutral weight
+    const muddied  = conv(2, 'HIGH', { total: 8 });   // same net, lots of neutral
+    expect(muddied).toBeLessThan(decisive);
   });
 });
 
