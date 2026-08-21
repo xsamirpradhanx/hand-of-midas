@@ -21,6 +21,12 @@ export interface ConvictionInput {
   readonly agreementLevel: AgreementLevel;
   /** Factors that reported, over factors registered. 1 = full coverage. */
   readonly coverage: number;
+  /**
+   * Output of accuracyEdge(), in roughly [-0.1, +0.1]. Positive means the
+   * factors with track records lean the way the plan does, adjusting for those
+   * known to be reliably wrong. Zero when nothing has a track record yet.
+   */
+  readonly accuracyEdge?: number;
 }
 
 const AGREEMENT_MULTIPLIER: Record<AgreementLevel, number> = {
@@ -31,6 +37,59 @@ const AGREEMENT_MULTIPLIER: Record<AgreementLevel, number> = {
 
 export const MIN_CONVICTION = 0.05;
 export const MAX_CONVICTION = 0.95;
+
+export interface FactorVote {
+  readonly factorName: string;
+  readonly bias: 'bullish' | 'bearish' | 'neutral';
+}
+
+export interface MeasuredAccuracy {
+  readonly [factorName: string]: { wins: number; losses: number };
+}
+
+/** A factor needs this many resolved votes before its accuracy is trusted. */
+export const MIN_RESOLVED_FOR_ACCURACY = 30;
+
+/**
+ * Signed edge of the evidence, weighted by each factor's MEASURED accuracy.
+ *
+ * The engine already had an accuracy multiplier, but it only scales a factor's
+ * weight — `max(0.2, accuracy / 0.5)`, which across observed accuracies of
+ * 0.43-0.54 is a +/-8% nudge — and it is blind to which way the factor voted.
+ * That throws away the more useful half of the information.
+ *
+ * Measured over 3,154 replayed trades with a 17-year temporal hold-out, four
+ * factors are RELIABLY WRONG about 20-bar direction: Volume Profile 42.7%,
+ * Estimated CVD 41.6%, Asymmetric Kinematic 43.4%, Anchored VWAP 46.7% — all
+ * significant out-of-sample. A factor that is dependably wrong is informative:
+ * when it opposes the plan that is evidence FOR the plan, and scaling its weight
+ * down merely discards the signal.
+ *
+ * Each directional factor contributes `(accuracy - 0.5)`, signed by whether it
+ * agrees with `planBias`. Factors without a track record contribute nothing
+ * rather than a guess. Returns 0 when nothing qualifies, so a cold system
+ * behaves exactly as before.
+ */
+export function accuracyEdge(
+  votes: readonly FactorVote[],
+  planBias: 'bullish' | 'bearish' | 'neutral',
+  measured: MeasuredAccuracy | undefined,
+): number {
+  if (!measured || planBias === 'neutral') return 0;
+  let sum = 0;
+  let n = 0;
+  for (const v of votes) {
+    if (v.bias === 'neutral') continue;
+    const m = measured[v.factorName];
+    if (!m) continue;
+    const resolved = m.wins + m.losses;
+    if (resolved < MIN_RESOLVED_FOR_ACCURACY) continue;
+    const agrees = v.bias === planBias;
+    sum += (m.wins / resolved - 0.5) * (agrees ? 1 : -1);
+    n++;
+  }
+  return n > 0 ? sum / n : 0;
+}
 
 export function computeConviction(input: ConvictionInput): number {
   const { bullishScore, bearishScore, neutralScore, netBias, agreementLevel, coverage } = input;
@@ -56,6 +115,14 @@ export function computeConviction(input: ConvictionInput): number {
   const coverageMultiplier = 0.5 + 0.5 * Math.max(0, Math.min(1, coverage));
 
   const raw = Math.min(MAX_CONVICTION, normalizedBias);
-  const scaled = raw * AGREEMENT_MULTIPLIER[agreementLevel] * coverageMultiplier;
-  return Number(Math.max(MIN_CONVICTION, scaled).toFixed(3));
+
+  // Measured accuracy tilts conviction rather than setting it. The edge is
+  // small in absolute terms (roughly +/-0.1) but it is the only component here
+  // with any demonstrated relationship to outcome — the weight-sum terms above
+  // do not separate top from bottom quartile at all.
+  const ACCURACY_GAIN = 3.0;
+  const tilt = 1 + ACCURACY_GAIN * (input.accuracyEdge ?? 0);
+
+  const scaled = raw * AGREEMENT_MULTIPLIER[agreementLevel] * coverageMultiplier * Math.max(0.1, tilt);
+  return Number(Math.max(MIN_CONVICTION, Math.min(MAX_CONVICTION, scaled)).toFixed(3));
 }

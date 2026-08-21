@@ -86,11 +86,30 @@ export interface BacktestPlan {
  * The replay engine constructs this slice itself and freezes it; a strategy
  * cannot reach past it to peek at the future even by accident.
  */
+/** Per-factor learned accuracy, in the shape compositeScore consumes. */
+export interface LearnedFactorStats {
+  readonly [factorName: string]: {
+    wins: number; losses: number; score: number; tries: number; ambiguous?: number;
+  };
+}
+
 export interface DecisionContext {
   readonly symbol: string;
   /** Datetime of the most recent visible bar — the moment the decision is made. */
   readonly asOf: string;
   readonly bars: readonly BacktestBar[];
+  /**
+   * Factor accuracy learned from trades that had already RESOLVED by `asOf`.
+   *
+   * The gating is the whole point. A replay grades a plan decided at bar i using
+   * bars i+1..i+20, so that grade is available to the loop long before it would
+   * have been available in life. Feeding it into a decision at bar i+8 would leak
+   * twelve bars of future — the kind of look-ahead that silently inflates a
+   * backtest while every individual step looks reasonable. The engine therefore
+   * holds each graded trade until the decision index passes the bar on which it
+   * actually resolved.
+   */
+  readonly factorStats?: LearnedFactorStats;
 }
 
 export interface BacktestStrategy {

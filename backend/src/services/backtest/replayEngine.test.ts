@@ -279,3 +279,61 @@ describe('replay — zone placement scoring', () => {
     expect(r.stats.total).toBeGreaterThan(0);
   });
 });
+
+describe('replay — walk-forward learning feedback', () => {
+  const flat = () => series(300, () => 100);
+
+  it('never shows a strategy an outcome from a bar it has not reached', async () => {
+    // The trap this guards: a plan decided at bar i is graded here using bars
+    // i+1..i+20, so the loop knows the outcome long before a live system would.
+    //
+    // maxConcurrentPerSymbol is raised so plans overlap and the lag is
+    // observable — with the default of 1 a new plan only starts after the last
+    // resolves, which hides the very gap being tested.
+    //
+    // On a flat series every plan runs the full horizon, so a decision at index
+    // k may only see trades decided at index <= k - HORIZON.
+    const seen: Array<{ index: number; tries: number }> = [];
+    let index = 0;
+    const spy: BacktestStrategy = {
+      name: 'feedback-spy',
+      plan: ctx => {
+        const tries = Object.values(ctx.factorStats ?? {}).reduce((s, v) => s + v.tries, 0);
+        seen.push({ index: index++, tries });
+        return {
+          bias: 'LONG', entry: 100, stop: 90, target: 110,
+          factors: [{ factorName: 'F', bias: 'bullish' }],
+        };
+      },
+    };
+    await replay(source({ X: flat() }), spy, {
+      warmupBars: WARMUP, horizonBars: HORIZON, maxConcurrentPerSymbol: 100,
+    });
+
+    expect(seen.length).toBeGreaterThan(HORIZON * 2);
+    expect(seen[0].tries).toBe(0);
+    for (const s of seen) {
+      // Strictly bounded by how many trades could actually have resolved.
+      expect(s.tries).toBeLessThanOrEqual(Math.max(0, s.index - HORIZON + 1));
+    }
+  });
+
+  it('does eventually deliver feedback once trades resolve', async () => {
+    // Rising series: a LONG with a near target resolves in a bar or two, so
+    // feedback should accumulate rather than stay empty.
+    const rising = series(300, i => 100 + i * 0.5);
+    let lastTries = 0;
+    const s: BacktestStrategy = {
+      name: 'fb',
+      plan: ctx => {
+        lastTries = Object.values(ctx.factorStats ?? {}).reduce((a, v) => a + v.tries, 0);
+        return {
+          bias: 'LONG', entry: 100, stop: 1, target: 100.4,
+          factors: [{ factorName: 'F', bias: 'bullish' }],
+        };
+      },
+    };
+    await replay(source({ X: rising }), s, { warmupBars: WARMUP, horizonBars: HORIZON });
+    expect(lastTries).toBeGreaterThan(0);
+  });
+});

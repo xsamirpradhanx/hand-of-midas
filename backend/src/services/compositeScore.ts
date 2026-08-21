@@ -2,7 +2,7 @@ import type { FactorResult } from './factors/types.js';
 import type { OHLCVDataPoint } from '../types.js';
 import { calculateIndependentEvidence, type IndependentEvidence } from './quant/independentEvidenceEngine.js';
 import { getFactors } from './factors/factorRegistry.js';
-import { computeConviction } from './quant/conviction.js';
+import { computeConviction, accuracyEdge } from './quant/conviction.js';
 import type { PolygonNewsArticle } from './polygon.js';
 import { generateCommitteeSynthesis } from './aiInsights.js';
 
@@ -348,6 +348,16 @@ export class CompositeScoreAgent {
       netBias: evidence.netBias,
       agreementLevel: evidence.agreementLevel,
       coverage: expected > 0 ? factors.length / expected : 1,
+      // Tilt by measured per-factor accuracy. Unlike applyRegimeMultiplier this
+      // uses the SIGN of each factor's agreement, so a factor that is reliably
+      // wrong counts as evidence when it opposes the plan.
+      accuracyEdge: accuracyEdge(
+        factors.map(f => ({ factorName: f.factorName, bias: f.bias })),
+        // evidence.pluralityBias directly: the local `bias` alias is declared
+        // further down, after conviction is computed.
+        evidence.pluralityBias,
+        factorStats,
+      ),
     });
 
     // ── 4. Normalize regime-adjusted weights for zone clustering only ──────────

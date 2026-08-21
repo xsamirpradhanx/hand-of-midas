@@ -24,6 +24,7 @@ import {
 import type {
   BacktestBar,
   BacktestDataSource,
+  BacktestFactorVote,
   BacktestStrategy,
   DecisionContext,
 } from './types.js';
@@ -159,6 +160,12 @@ export async function replay(
 
   const trades: TradeRecord[] = [];
   const factorStats: Record<string, DecayedStats> = {};
+  /**
+   * Undecayed win/loss tallies handed back to the strategy, in the shape
+   * compositeScore's accuracy multiplier expects. Separate from `factorStats`
+   * above, which is the decayed learning state reported in the result.
+   */
+  const learnedStats: Record<string, { wins: number; losses: number; score: number; tries: number }> = {};
   const setupStats: Record<string, DecayedStats> = {};
 
   const symbols = await dataSource.symbols();
@@ -171,6 +178,12 @@ export async function replay(
     // maxConcurrentPerSymbol without letting a later plan see earlier results.
     let openUntilIndex: number[] = [];
 
+    // Graded trades waiting to become visible to the strategy. Each is held
+    // until the decision index passes the bar it actually resolved on — see the
+    // note on DecisionContext.factorStats. Without this the loop would hand the
+    // strategy outcomes from bars it has not reached.
+    let pendingFeedback: { readyAtIndex: number; votes: readonly BacktestFactorVote[]; forwardReturn: number }[] = [];
+
     // Stop early enough that every plan gets a full horizon of future bars —
     // otherwise the tail of the series grades against a truncated window and
     // systematically over-reports TIMEOUT.
@@ -182,10 +195,29 @@ export async function replay(
       openUntilIndex = openUntilIndex.filter(end => end > i);
       if (openUntilIndex.length >= maxConcurrent) continue;
 
+      // Release any feedback whose trade has now resolved, then hand the
+      // strategy only what a live system could have known at this instant.
+      const stillPending: typeof pendingFeedback = [];
+      for (const p of pendingFeedback) {
+        if (p.readyAtIndex <= i) {
+          for (const v of p.votes) {
+            const sc = directionalScore(v.bias, p.forwardReturn);
+            if (sc === null) continue;
+            const cur = learnedStats[v.factorName] ??= { wins: 0, losses: 0, score: 0, tries: 0 };
+            cur.tries += 1;
+            if (sc > 0) { cur.wins += 1; cur.score += 1; } else { cur.losses += 1; }
+          }
+        } else {
+          stillPending.push(p);
+        }
+      }
+      pendingFeedback = stillPending;
+
       const ctx: DecisionContext = {
         symbol,
         asOf: decisionBar.datetime,
         bars: visibleSlice(bars, i),
+        factorStats: learnedStats,
       };
 
       const plan = await strategy.plan(ctx);
@@ -207,6 +239,16 @@ export async function replay(
       );
 
       openUntilIndex.push(i + grade.barsElapsed);
+
+      // Queue this trade's factor votes; they become visible only once the
+      // decision loop reaches the bar the trade resolved on.
+      if (plan.factors?.length && grade.forwardReturn !== null && !grade.ambiguous) {
+        pendingFeedback.push({
+          readyAtIndex: i + Math.max(1, grade.barsElapsed),
+          votes: plan.factors,
+          forwardReturn: grade.forwardReturn,
+        });
+      }
 
       // Zone placement, scored against where price actually turned over the same
       // horizon the plan was graded on. Demand is judged against the realised

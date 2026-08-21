@@ -98,7 +98,12 @@ export class CompositeStrategy implements BacktestStrategy {
     }
     if (results.length === 0) return null;
 
-    const synth = await this.agent.synthesize(ctx.symbol, spot, results, bars);
+    // Pass learned accuracy through so compositeScore's accuracy multiplier is
+    // actually exercised. The replay only supplies outcomes that had resolved by
+    // this bar, so this is walk-forward rather than hindsight.
+    const synth = await this.agent.synthesize(
+      ctx.symbol, spot, results, bars, ctx.factorStats as any,
+    );
     const tp: any = synth.tradePlan;
     if (!tp) return null;
 
