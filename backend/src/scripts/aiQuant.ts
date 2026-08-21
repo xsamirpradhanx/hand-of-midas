@@ -380,4 +380,37 @@ Generate ONLY the markdown code block with the complete, valid TypeScript code. 
   }
 }
 
+/**
+ * PAUSED 2026-08-21.
+ *
+ * This script asks an LLM to write a new factor, then REWRITES the tracked
+ * factorRegistry.ts to inject it — a side effect on source that the running
+ * engine loads at module scope (predictiveEngine.ts:77). Six factors have been
+ * injected this way since 2026-08-12 and none has a graded track record: grading
+ * needs EVALUATION_HORIZON_BARS=20 daily bars, and the oldest is nine days old.
+ *
+ * Meanwhile they measurably inflate conviction. All six share bucket MOMENTUM and
+ * correlationGroup AI_MICROSTRUCTURE, so the evidence engine keeps one
+ * representative — but that representative's bias correlates +0.70 with Anchored
+ * VWAP and +0.59 with Volume Profile, higher than the strongest hand-written pair
+ * the engine bothers to de-duplicate, while sitting in a bucket where nothing can
+ * see the overlap. Conviction is an unnormalised weight sum (compositeScore.ts),
+ * so this reads as independent corroboration that is not independent.
+ *
+ * Requiring an explicit --generate flag rather than an env var is deliberate: an
+ * env var set once in .env silently un-pauses this months later, whereas a flag
+ * must be retyped and shows up in shell history.
+ *
+ * Unpause once the injected factors have real graded outcomes to judge them by.
+ */
+if (!process.argv.includes('--generate')) {
+  console.log(
+    '[AI Quant] PAUSED — factor generation is disabled.\n' +
+      '  Six LLM-written factors are already registered with no graded track record,\n' +
+      '  and they inflate conviction without adding independent evidence.\n' +
+      '  Re-run with --generate to override deliberately.',
+  );
+  process.exit(0);
+}
+
 runAIQuant();

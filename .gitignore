@@ -37,3 +37,6 @@ cdk.context.json
 # Test
 coverage/
 /backend/.schwab_token.json
+
+# Local backups of derived stat aggregates
+stats-backup-*.json

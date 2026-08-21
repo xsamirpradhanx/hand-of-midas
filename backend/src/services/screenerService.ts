@@ -932,13 +932,34 @@ async function evaluateSetup(
     triggerStatus = triggerStateLabel(triggerState);
 
     // Phase 1: Persist prediction to DynamoDB
+    //
+    // The sort key is bucketed to the CALENDAR DAY and the write is conditional,
+    // so the first signal of the day for a symbol is recorded and later scan
+    // passes leave it alone.
+    //
+    // Previously this used `TIMESTAMP#${full ISO}` with an unconditional put, so
+    // a fresh row was appended on every pass. EventBridge runs four screener modes
+    // every 2-5 minutes (handlers/screenerRefresh.ts), so a symbol that camped on
+    // the scanner for a session produced up to 159 identical rows. Measured before
+    // this fix: 2,672 prediction rows collapsed to 693 distinct plans (3.7x), and
+    // because evaluateQuant grades every row independently the learning stats were
+    // weighted by how long a ticker sat on the scanner rather than by how often a
+    // thesis was right. SLE alone contributed 184 of 1,043 graded outcomes — all
+    // losses, all the same plan — and MSS another 122. Whole-book conclusions
+    // ("shorts lose, longs win") were five tickers wearing a large-n costume.
+    //
+    // First-write-wins rather than last: the screener is a scanner, and the moment
+    // a setup first appears is the moment it could have been acted on. Overwriting
+    // through the day would grade a plan formed minutes before the close that
+    // nobody could have taken. This differs deliberately from routes/predictive.ts,
+    // where the user re-opening a panel should refresh that day's row.
     try {
       const timestamp = new Date().toISOString();
       const vwapDistPct = pmVwap ? Number((((candidate.price - pmVwap) / pmVwap) * 100).toFixed(2)) : undefined;
 
       const predictionItem: PredictionItem = {
         pk: `PREDICTION#${candidate.ticker}`,
-        sk: `TIMESTAMP#${timestamp}`,
+        sk: `TIMESTAMP#${timestamp.slice(0, 10)}`,
         symbol: candidate.ticker,
         source: 'SCREENER',
         currentPrice: candidate.price,
@@ -959,9 +980,15 @@ async function evaluateSetup(
         // undercounting SHORT wins that hit T1 but timed out before reaching T2.
         target: tp.majorResistance,
       };
-      await putItem(predictionItem);
+      // expectedVersion 0 asserts the item does not exist yet (dynamodb.ts:113).
+      await putItem(predictionItem, 0);
     } catch (err) {
-      console.error(`[ScreenerService] Failed to persist prediction for ${candidate.ticker}:`, err);
+      // A conditional failure means today's signal for this symbol is already
+      // recorded. That is the normal path on every scan pass after the first,
+      // not an error worth logging.
+      if ((err as { name?: string } | null)?.name !== 'ConditionalCheckFailedException') {
+        console.error(`[ScreenerService] Failed to persist prediction for ${candidate.ticker}:`, err);
+      }
     }
   } else {
     triggerStatus = 'NO TRADE';
