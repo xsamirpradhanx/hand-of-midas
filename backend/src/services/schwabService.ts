@@ -1,7 +1,9 @@
-import { SchwabAuth } from '../schwabAuth.js';
+import { schwabFor } from './brokers/index.js';
 import type { PolygonOptionsContract } from './polygon.js';
 
-const auth = new SchwabAuth();
+// NOTE: no module-level connection. A Lambda container is reused across
+// invocations, so a cached token would authorize the next user's request with
+// the previous user's credential. Build one per call via schwabFor().
 
 function getSchwabSymbol(symbol: string): string {
   let schwabSymbol = symbol.toUpperCase();
@@ -20,7 +22,7 @@ export async function fetchOptionsChainSchwab(
   symbol: string,
   expiryStr?: string
 ): Promise<{ expirations: string[]; contracts: PolygonOptionsContract[]; quote?: any }> {
-  const accessToken = await auth.getValidAccessToken();
+  const accessToken = await schwabFor().getAccessToken();
   if (!accessToken) {
     throw new Error('Failed to obtain Schwab access token. User may need to authenticate.');
   }
@@ -117,7 +119,7 @@ export async function fetchOptionsChainSchwab(
 }
 
 export async function getQuoteSchwab(symbol: string): Promise<any> {
-  const accessToken = await auth.getValidAccessToken();
+  const accessToken = await schwabFor().getAccessToken();
   if (!accessToken) {
     throw new Error('Failed to obtain Schwab access token. User may need to authenticate.');
   }
@@ -152,7 +154,7 @@ export async function getQuoteSchwab(symbol: string): Promise<any> {
 }
 
 export async function getPriceHistorySchwab(symbol: string, interval: string, extendedHours: boolean = true): Promise<any[]> {
-  const accessToken = await auth.getValidAccessToken();
+  const accessToken = await schwabFor().getAccessToken();
   if (!accessToken) {
     throw new Error('Failed to obtain Schwab access token. User may need to authenticate.');
   }

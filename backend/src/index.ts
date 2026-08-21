@@ -15,6 +15,7 @@ import * as insights from './routes/insights.js';
 import * as alerts from './routes/alerts.js';
 import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
+import { runWithBrokerPrincipal, SYSTEM_PRINCIPAL } from './services/brokers/index.js';
 import * as screener from './routes/screener.js';
 import * as diagonalScreener from './routes/diagonalScreener.js';
 import * as valueScreener from './routes/valueScreener.js';
@@ -483,7 +484,16 @@ export async function handler(
     };
   }
 
+  // Pin the broker identity for the whole invocation. Anything downstream that
+  // opens a broker connection resolves to this principal and nothing beyond it —
+  // a Lambda container is reused across invocations, so an unscoped credential
+  // would leak from one caller to the next. Unauthenticated paths fall through
+  // to SYSTEM (the app's own connection), never to the previous caller.
+  const principal =
+    (apiEvent.requestContext as any)?.authorizer?.jwt?.claims?.['sub'] ?? SYSTEM_PRINCIPAL;
+
   try {
+    return await runWithBrokerPrincipal(String(principal), async () => {
     // Find the first matching route
     for (const route of routes) {
       if (route.method !== method) continue;
@@ -497,6 +507,7 @@ export async function handler(
     // No route matched
     return jsonResponse(404, {
       error: `No route matched: ${method} ${path}`,
+    });
     });
   } catch (error: unknown) {
     console.error('Unhandled error in Lambda handler:', error);

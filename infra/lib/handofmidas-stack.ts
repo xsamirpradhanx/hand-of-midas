@@ -9,6 +9,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -202,8 +203,31 @@ export class HandOfMidasStack extends cdk.Stack {
     // D. Backend API Lambda
     // ──────────────────────────────────────────────
 
+    /**
+     * Customer-managed key for broker credentials.
+     *
+     * A Schwab/E*TRADE refresh token is a bearer credential for a real
+     * brokerage account. DynamoDB's encryption at rest is table-level and
+     * transparent to anyone who can read the table, so it does not protect
+     * these fields from an over-broad IAM grant, a console reader, or a table
+     * export. They are envelope-encrypted with this key before being written.
+     *
+     * Rotation is enabled: KMS keeps old key material, so tokens encrypted
+     * before a rotation stay decryptable.
+     *
+     * RETAIN on destroy — deleting the key would permanently orphan every
+     * stored credential and force all users to re-authorize.
+     */
+    const brokerTokenKey = new kms.Key(this, 'BrokerTokenKey', {
+      alias: 'handofmidas/broker-tokens',
+      description: 'Envelope encryption for stored brokerage OAuth credentials',
+      enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const sharedEnv = {
       TABLE_NAME: table.tableName,
+      BROKER_TOKEN_KMS_KEY_ID: brokerTokenKey.keyId,
       SSM_API_KEY_PATH: ssmTwelveDataPath,
       SSM_POLYGON_KEY_PATH: ssmPolygonPath,
       COGNITO_USER_POOL_ID: userPool.userPoolId,
@@ -233,6 +257,9 @@ export class HandOfMidasStack extends cdk.Stack {
     table.grantReadWriteData(backendFn);
     twelveDataApiKeyParam.grantRead(backendFn);
     polygonApiKeyParam.grantRead(backendFn);
+    // The API Lambda both stores tokens (OAuth callback) and reads them (every
+    // authorized broker call), so it needs both directions.
+    brokerTokenKey.grantEncryptDecrypt(backendFn);
 
     // ──────────────────────────────────────────────
     // D2. Chain Refresh Lambda (scheduled)
@@ -260,6 +287,8 @@ export class HandOfMidasStack extends cdk.Stack {
     });
 
     table.grantReadWriteData(chainRefreshFn);
+    // Background jobs read the SYSTEM connection but never mint tokens.
+    brokerTokenKey.grantDecrypt(chainRefreshFn);
     twelveDataApiKeyParam.grantRead(chainRefreshFn);
     polygonApiKeyParam.grantRead(chainRefreshFn);
 
@@ -312,6 +341,8 @@ export class HandOfMidasStack extends cdk.Stack {
     });
 
     table.grantReadWriteData(evaluateQuantFn);
+    // Background jobs read the SYSTEM connection but never mint tokens.
+    brokerTokenKey.grantDecrypt(evaluateQuantFn);
     twelveDataApiKeyParam.grantRead(evaluateQuantFn);
     polygonApiKeyParam.grantRead(evaluateQuantFn);
 
@@ -362,6 +393,8 @@ export class HandOfMidasStack extends cdk.Stack {
     });
 
     table.grantReadWriteData(screenerRefreshFn);
+    // Background jobs read the SYSTEM connection but never mint tokens.
+    brokerTokenKey.grantDecrypt(screenerRefreshFn);
     twelveDataApiKeyParam.grantRead(screenerRefreshFn);
     polygonApiKeyParam.grantRead(screenerRefreshFn);
 
@@ -435,6 +468,8 @@ export class HandOfMidasStack extends cdk.Stack {
     });
 
     table.grantReadWriteData(diagonalRefreshFn);
+    // Background jobs read the SYSTEM connection but never mint tokens.
+    brokerTokenKey.grantDecrypt(diagonalRefreshFn);
     twelveDataApiKeyParam.grantRead(diagonalRefreshFn);
     polygonApiKeyParam.grantRead(diagonalRefreshFn);
 
@@ -478,6 +513,8 @@ export class HandOfMidasStack extends cdk.Stack {
     });
 
     table.grantReadWriteData(valueRefreshFn);
+    // Background jobs read the SYSTEM connection but never mint tokens.
+    brokerTokenKey.grantDecrypt(valueRefreshFn);
     twelveDataApiKeyParam.grantRead(valueRefreshFn);
     polygonApiKeyParam.grantRead(valueRefreshFn);
 
@@ -508,6 +545,8 @@ export class HandOfMidasStack extends cdk.Stack {
     });
 
     table.grantReadWriteData(growthRefreshFn);
+    // Background jobs read the SYSTEM connection but never mint tokens.
+    brokerTokenKey.grantDecrypt(growthRefreshFn);
     twelveDataApiKeyParam.grantRead(growthRefreshFn);
     polygonApiKeyParam.grantRead(growthRefreshFn);
 

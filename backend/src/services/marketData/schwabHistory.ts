@@ -23,12 +23,14 @@
  * ^VIX back to 1990.
  */
 
-import { SchwabAuth } from '../../schwabAuth.js';
+import { schwabFor } from '../brokers/index.js';
 import { yf } from '../yahoo.js';
 import type { BarInterval } from './fetchBars.js';
 import type { RawBar, BarSourceProvider } from '../backtest/barStore.js';
 
-const auth = new SchwabAuth();
+// NOTE: no module-level connection. A Lambda container is reused across
+// invocations, so a cached token would authorize the next user's request with
+// the previous user's credential. Build one per call via schwabFor().
 
 /**
  * Schwab documents 120 requests/minute. 550 ms between calls holds us to ~109,
@@ -164,7 +166,7 @@ export async function fetchHistoryRange(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     await throttle();
 
-    const accessToken = await auth.getValidAccessToken();
+    const accessToken = await schwabFor().getAccessToken();
     if (!accessToken) {
       throw new Error(
         'No valid Schwab access token. Refresh tokens last 7 days — re-run the Schwab auth setup script.',
