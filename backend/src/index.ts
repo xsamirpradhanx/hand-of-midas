@@ -16,6 +16,7 @@ import * as alerts from './routes/alerts.js';
 import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
 import { runWithBrokerPrincipal, SYSTEM_PRINCIPAL } from './services/brokers/index.js';
+import { getBrokerStatusRoute } from './routes/brokerStatus.js';
 import * as screener from './routes/screener.js';
 import * as diagonalScreener from './routes/diagonalScreener.js';
 import * as valueScreener from './routes/valueScreener.js';
@@ -247,6 +248,11 @@ const routes: readonly Route[] = [
     handler: async (event, params) => {
       return news.getWatchlistNews(event);
     },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/broker/status',
+    handler: async (event) => getBrokerStatusRoute(event),
   },
   {
     method: 'GET',

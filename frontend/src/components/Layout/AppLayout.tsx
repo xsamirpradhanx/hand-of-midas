@@ -4,6 +4,7 @@ import { AlertsMenu } from './AlertsMenu';
 import { ProviderSelector } from './ProviderSelector';
 import { TickerSearchBar } from './TickerSearchBar';
 import { ToastManager } from './ToastManager';
+import { BrokerStatusBanner } from './BrokerStatusBanner';
 import { MarketOverview } from '../Market/MarketOverview';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import styles from './AppLayout.module.css';
@@ -196,6 +197,7 @@ export const AppLayout: React.FC = () => {
         </div>
       </nav>
 
+      <BrokerStatusBanner />
       <MarketOverview />
       <main className={styles.mainContent}>
         <Outlet />

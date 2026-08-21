@@ -93,6 +93,21 @@ async function fetchWithAuth(path: string, options: RequestInit = {}) {
 
 const screenerCache = new Map<string, { timestamp: number; data: any; computedAt: string | null }>();
 
+export interface BrokerStatusEntry {
+  broker: string;
+  connected: boolean;
+  needsReauth: boolean;
+  accessExpiresAt?: number;
+  refreshExpiresAt?: number;
+  reason?: string;
+}
+
+export interface BrokerStatusResponse {
+  principal: string;
+  brokers: BrokerStatusEntry[];
+  anyNeedsReauth: boolean;
+}
+
 export const api = {
   getWatchlist: async (): Promise<WatchlistEntry[]> => {
     const res = await fetchWithAuth('/watchlist');
@@ -113,6 +128,9 @@ export const api = {
 
   getQuote: (symbol: string): Promise<QuoteResponse> => 
     fetchWithAuth(`/quote/${symbol}`),
+
+  getBrokerStatus: (): Promise<BrokerStatusResponse> =>
+    fetchWithAuth('/broker/status'),
 
   searchSymbols: async (query: string): Promise<SymbolSearchResult[]> => {
     const res = await fetchWithAuth(`/search/symbols?q=${encodeURIComponent(query)}`);

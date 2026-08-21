@@ -1,0 +1,77 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: linear-gradient(90deg, rgba(255, 152, 0, 0.14) 0%, rgba(255, 152, 0, 0.06) 100%);
+  border-bottom: 1px solid rgba(255, 152, 0, 0.35);
+  color: var(--text-primary, #fff);
+}
+
+.icon { font-size: 1rem; line-height: 1; flex-shrink: 0; }
+
+.content {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #ffb74d;
+  flex-shrink: 0;
+}
+
+.detail {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #e0e0e0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.retry {
+  background: rgba(255, 183, 77, 0.12);
+  border: 1px solid rgba(255, 183, 77, 0.45);
+  color: #ffb74d;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.retry:hover { background: rgba(255, 183, 77, 0.22); }
+
+.dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #9e9eb8);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+}
+
+.dismiss:hover { color: var(--text-primary, #fff); }
+
+@media (max-width: 768px) {
+  .banner { padding: 8px 12px; gap: 8px; align-items: flex-start; }
+  /* Stack so the reason is readable rather than clipped to a few words. */
+  .content { flex-direction: column; gap: 2px; }
+  .detail { white-space: normal; font-size: 0.74rem; }
+  .retry { min-height: 36px; }
+}

@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { getQuoteSchwab, getPriceHistorySchwab } from '../../services/schwabService.js';
-import { SchwabAuth } from '../../schwabAuth.js';
+import { schwabFor } from '../../services/brokers/index.js';
 
 describe('Schwab API Integration', () => {
   let hasValidToken = false;
 
   beforeAll(async () => {
     try {
-      const auth = new SchwabAuth();
-      const token = await auth.getValidAccessToken();
+      const token = await schwabFor().getAccessToken();
       if (token) hasValidToken = true;
     } catch (e) {
       console.warn('Could not get valid Schwab token for tests', e);
@@ -31,8 +30,7 @@ describe('Schwab API Integration', () => {
       console.warn('Skipping test: No valid Schwab token');
       return;
     }
-    const auth = new SchwabAuth();
-    const token = await auth.getValidAccessToken();
+    const token = await schwabFor().getAccessToken();
     const endDate = Date.now();
     const startDate = endDate - 60 * 24 * 60 * 60 * 1000; // 60 days
     
