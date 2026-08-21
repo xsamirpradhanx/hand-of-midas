@@ -17,6 +17,7 @@ import * as predictive from './routes/predictive.js';
 import * as optionsAnalytics from './routes/optionsAnalytics.js';
 import { runWithBrokerPrincipal, SYSTEM_PRINCIPAL } from './services/brokers/index.js';
 import { getBrokerStatusRoute } from './routes/brokerStatus.js';
+import { startSchwabConnect, schwabCallback } from './routes/brokerConnect.js';
 import * as screener from './routes/screener.js';
 import * as diagonalScreener from './routes/diagonalScreener.js';
 import * as valueScreener from './routes/valueScreener.js';
@@ -253,6 +254,19 @@ const routes: readonly Route[] = [
     method: 'GET',
     pattern: '/api/broker/status',
     handler: async (event) => getBrokerStatusRoute(event),
+  },
+  {
+    method: 'GET',
+    pattern: '/api/broker/schwab/connect',
+    handler: async (event) => startSchwabConnect(event),
+  },
+  {
+    // Unauthenticated by necessity: this is a redirect from Schwab and carries
+    // no JWT. The caller is recovered from the single-use `state` nonce, which
+    // is also what makes it CSRF-safe.
+    method: 'GET',
+    pattern: '/api/broker/schwab/callback',
+    handler: async (event) => schwabCallback(event),
   },
   {
     method: 'GET',
