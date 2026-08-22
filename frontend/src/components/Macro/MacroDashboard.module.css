@@ -179,6 +179,88 @@
   letter-spacing: 0.03em;
 }
 
+/* ─── risk gauge ─── */
+.gauge {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: var(--space-xl);
+  padding: var(--space-xl);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+@media (max-width: 720px) { .gauge { grid-template-columns: 1fr; } }
+
+.gaugeMain { display: flex; flex-direction: column; gap: var(--space-sm); justify-content: center; }
+.gaugeScore {
+  font-family: var(--font-mono);
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.gaugeLabel { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.02em; }
+
+/* Fear at the left, greed at the right — the reading is a marker, not a fill,
+   because the value is a position on a scale rather than a quantity. */
+.gaugeTrack {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #ff1744 0%, #ff8a3d 30%, #f5c842 50%, #7ed957 72%, #00e676 100%);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  margin-top: var(--space-xs);
+}
+.gaugeMarker {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--text-primary);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+}
+.gaugeScale { display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--text-muted); letter-spacing: 0.08em; }
+
+.gaugeComponents { display: flex; flex-direction: column; gap: var(--space-md); justify-content: center; }
+.comp {
+  display: grid;
+  /* Label column is bounded so the BAR takes the slack — with `1fr` on the
+     label the bars collapsed to 90px against a wide dead gap. */
+  grid-template-columns: minmax(190px, 300px) 1fr 40px;
+  align-items: center;
+  gap: var(--space-lg);
+}
+.compLabel { font-size: 0.8rem; color: var(--text-secondary); }
+.compDetail { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-muted); }
+.compTrack {
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  min-width: 80px;
+}
+.compFill { display: block; height: 100%; border-radius: var(--radius-full); transition: width 0.4s ease; }
+.compScore { font-family: var(--font-mono); font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+
+.extremeFear { color: #ff1744; }
+.fear { color: #ff8a3d; }
+.neutral { color: var(--gold-mid); }
+.greed { color: #7ed957; }
+.extremeGreed { color: var(--color-up); }
+
+/* Marks a row whose latest observation is old enough to matter. */
+.staleTag {
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
 /* ─── central banks ─── */
 .stancePill {
   display: inline-block;

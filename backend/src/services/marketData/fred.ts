@@ -29,6 +29,7 @@
  */
 
 import fs from 'node:fs';
+import { fetchKeyRate } from './cbr.js';
 import path from 'node:path';
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
@@ -276,6 +277,14 @@ export interface CentralBankRate {
   lastChangeDelta: number | null;
   monthsSinceChange: number | null;
   stance: 'HIKING' | 'CUTTING' | 'ON HOLD' | 'UNKNOWN';
+  /**
+   * Days between the latest observation and now.
+   *
+   * Published so a stale row is visibly stale. Monthly series run ~30-60 days
+   * behind by nature, so the UI only warns past a threshold — but the number is
+   * always available rather than inferred from `asOf` by each consumer.
+   */
+  staleDays: number | null;
 }
 
 interface BankSpec {
@@ -291,6 +300,8 @@ interface BankSpec {
  * Presenting a proxy as the official rate would be a small lie that compounds:
  * a reader would take a 4bp drift as a policy move.
  */
+export interface BankSpecPublic extends BankSpec {}
+
 export const CENTRAL_BANKS: BankSpec[] = [
   { bank: 'Federal Reserve', region: 'United States', seriesId: 'DFF', official: true,
     note: 'Effective federal funds rate' },
@@ -319,12 +330,25 @@ const MOVE_THRESHOLD = 0.12;
 const HOLD_MONTHS = 9;
 
 export function centralBankStance(series: FredSeries, spec: BankSpec): CentralBankRate {
-  const valued = series.points.filter((p): p is { date: string; value: number } =>
+  return stanceFromPoints(series.points, spec);
+}
+
+/**
+ * The stance calculation, over plain observations.
+ *
+ * Split out from `centralBankStance` so a non-FRED source can use the identical
+ * logic — the Bank of Russia comes from the CBR's own service because FRED's
+ * Russian series stopped updating. Two banks scored by two different code paths
+ * would drift apart silently.
+ */
+export function stanceFromPoints(points: readonly FredPoint[], spec: BankSpec): CentralBankRate {
+  const valued = points.filter((p): p is { date: string; value: number } =>
     p.value !== null && Number.isFinite(p.value));
   const base: CentralBankRate = {
     bank: spec.bank, region: spec.region, seriesId: spec.seriesId, official: spec.official,
     rate: null, asOf: null, change3m: null, change12m: null,
     lastChangeDate: null, lastChangeDelta: null, monthsSinceChange: null, stance: 'UNKNOWN',
+    staleDays: null,
   };
   if (valued.length < 2) return base;
 
@@ -381,12 +405,26 @@ export function centralBankStance(series: FredSeries, spec: BankSpec): CentralBa
     lastChangeDelta,
     monthsSinceChange: monthsSince,
     stance,
+    staleDays: Math.max(0, Math.round((Date.now() - Date.parse(last.date)) / 86_400_000)),
   };
 }
 
+/**
+ * The Bank of Russia, sourced from the CBR rather than FRED.
+ *
+ * FRED's Russian series stopped updating — the central bank rate ends 2023-10
+ * and call money 2025-10 — so this row would otherwise be the only stale one on
+ * the page. The CBR publishes the key rate itself through a documented SOAP
+ * service, and it is the announced policy rate rather than a market proxy.
+ */
+const RUSSIA_SPEC: BankSpec = {
+  bank: 'Bank of Russia', region: 'Russia', seriesId: 'CBR:KeyRate', official: true,
+  note: 'Key rate, from the CBR web service',
+};
+
 /** Fetch and summarise every configured central bank. Failures drop their row. */
 export async function centralBanks(): Promise<CentralBankRate[]> {
-  const rows = await Promise.all(CENTRAL_BANKS.map(async spec => {
+  const fredRows = await Promise.all(CENTRAL_BANKS.map(async spec => {
     try {
       return centralBankStance(await fetchSeries(spec.seriesId), spec);
     } catch (e) {
@@ -394,5 +432,18 @@ export async function centralBanks(): Promise<CentralBankRate[]> {
       return null;
     }
   }));
-  return rows.filter((r): r is CentralBankRate => r !== null);
+
+  let russia: CentralBankRate | null = null;
+  try {
+    const points = await fetchKeyRate();
+    if (points.length) {
+      russia = stanceFromPoints(points.map(p => ({ date: p.date, value: p.rate })), RUSSIA_SPEC);
+    }
+  } catch (e) {
+    console.error('[CBR] Bank of Russia row failed', e);
+  }
+
+  const rows = [...fredRows, russia].filter((r): r is CentralBankRate => r !== null);
+  // Highest rate first — the reader is scanning for who is tight and who is easy.
+  return rows.sort((a, b) => (b.rate ?? -Infinity) - (a.rate ?? -Infinity));
 }

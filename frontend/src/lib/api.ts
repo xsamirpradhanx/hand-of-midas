@@ -142,6 +142,8 @@ export interface CentralBankRate {
   lastChangeDelta: number | null;
   monthsSinceChange: number | null;
   stance: 'HIKING' | 'CUTTING' | 'ON HOLD' | 'UNKNOWN';
+  /** Days since the latest observation — monthly series run 30-60 days behind. */
+  staleDays: number | null;
 }
 
 export type MacroNewsTag = 'Policy' | 'Geopolitics' | 'Currency' | 'Commodities' | 'Data';
@@ -158,6 +160,23 @@ export interface MacroHeadline {
   tags: MacroNewsTag[];
 }
 
+export interface RiskComponent {
+  key: string;
+  label: string;
+  description: string;
+  /** 0-100, where 100 is maximum risk appetite. */
+  score: number | null;
+  detail: string;
+}
+
+export interface RiskGauge {
+  score: number | null;
+  label: 'Extreme Fear' | 'Fear' | 'Neutral' | 'Greed' | 'Extreme Greed';
+  components: RiskComponent[];
+  asOf: string | null;
+  note: string;
+}
+
 export interface MacroResponse {
   rates: MacroSeries[];
   curve: MacroSeries[];
@@ -165,6 +184,7 @@ export interface MacroResponse {
   fx: MacroFx[];
   banks: CentralBankRate[];
   headlines: MacroHeadline[];
+  risk: RiskGauge | null;
   curveStatus: string;
   fetchedAt: string;
   note: string;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, type CentralBankRate, type MacroHeadline, type MacroResponse, type MacroSeries } from '../../lib/api';
+import { api, type CentralBankRate, type MacroHeadline, type MacroResponse, type MacroSeries, type RiskGauge } from '../../lib/api';
 import styles from './MacroDashboard.module.css';
 
 /**
@@ -115,6 +115,64 @@ const Headline: React.FC<{ item: MacroHeadline }> = ({ item }) => (
   </a>
 );
 
+const RISK_CLASS: Record<RiskGauge['label'], string> = {
+  'Extreme Fear': styles.extremeFear,
+  Fear: styles.fear,
+  Neutral: styles.neutral,
+  Greed: styles.greed,
+  'Extreme Greed': styles.extremeGreed,
+};
+
+/** Colour a component bar on the same red-to-green scale as the composite. */
+function barColor(score: number): string {
+  if (score < 25) return '#ff1744';
+  if (score < 45) return '#ff8a3d';
+  if (score <= 55) return 'var(--gold-mid)';
+  if (score <= 75) return '#7ed957';
+  return 'var(--color-up)';
+}
+
+/**
+ * Risk appetite, composed from six price spreads rather than a third-party index.
+ *
+ * Every component is shown because the composite alone is not interpretable — a
+ * 70 driven by calm volatility means something different from a 70 driven by
+ * credit. The marker sits at a POSITION on the scale rather than filling it,
+ * since the reading is a percentile, not a quantity.
+ */
+const Gauge: React.FC<{ risk: RiskGauge }> = ({ risk }) => (
+  <div className={styles.gauge}>
+    <div className={styles.gaugeMain}>
+      <span className={`${styles.gaugeScore} ${RISK_CLASS[risk.label]}`}>
+        {risk.score === null ? '—' : Math.round(risk.score)}
+      </span>
+      <span className={`${styles.gaugeLabel} ${RISK_CLASS[risk.label]}`}>{risk.label}</span>
+      <div className={styles.gaugeTrack}>
+        {risk.score !== null && (
+          <span className={styles.gaugeMarker} style={{ left: `${Math.min(100, Math.max(0, risk.score))}%` }} />
+        )}
+      </div>
+      <div className={styles.gaugeScale}><span>FEAR</span><span>GREED</span></div>
+    </div>
+    <div className={styles.gaugeComponents}>
+      {risk.components.map(c => (
+        <div key={c.key} className={styles.comp} title={c.description}>
+          <span>
+            <span className={styles.compLabel}>{c.label}</span>{' '}
+            <span className={styles.compDetail}>{c.detail}</span>
+          </span>
+          <span className={styles.compTrack}>
+            {c.score !== null && (
+              <span className={styles.compFill} style={{ width: `${c.score}%`, background: barColor(c.score) }} />
+            )}
+          </span>
+          <span className={styles.compScore}>{c.score === null ? '—' : Math.round(c.score)}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 const SeriesCard: React.FC<{ s: MacroSeries; unit: string }> = ({ s, unit }) => (
   <article className={styles.card}>
     <div className={styles.cardHead}>
@@ -163,6 +221,14 @@ export const MacroDashboard: React.FC = () => {
         <span className={styles.curveText}>{data.curveStatus}</span>
       </div>
 
+      {data.risk && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Risk appetite</h2>
+          <Gauge risk={data.risk} />
+          <p className={styles.legend}>{data.risk.note}</p>
+        </section>
+      )}
+
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Policy &amp; market rates</h2>
         <div className={styles.grid}>
@@ -200,6 +266,11 @@ export const MacroDashboard: React.FC = () => {
                     <div className={styles.bankName}>
                       {b.bank}
                       {!b.official && <span className={styles.proxyMark} title="Market proxy — tracks the policy rate but is not the announced rate"> *</span>}
+                      {b.staleDays !== null && b.staleDays > 45 && (
+                        <span className={styles.staleTag} title={`Latest observation is ${b.staleDays} days old`}>
+                          {b.staleDays}d old
+                        </span>
+                      )}
                     </div>
                     <div className={styles.bankRegion}>{b.region}</div>
                   </td>

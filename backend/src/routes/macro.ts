@@ -13,6 +13,7 @@ import { getCachedData, setCachedData } from '../services/cache.js';
 import { FRED_SERIES, centralBanks, fetchSeries, snapshot, type CentralBankRate, type FredSnapshot } from '../services/marketData/fred.js';
 import { yf } from '../services/yahoo.js';
 import { fetchMacroHeadlines, type MacroHeadline } from '../services/marketData/macroNews.js';
+import { fetchRiskGauge, type RiskGauge } from '../services/marketData/riskGauge.js';
 import { withCoalescing } from '../utils/inflight.js';
 import type { APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../index.js';
@@ -35,6 +36,8 @@ const FX = [
   { symbol: 'USDCAD=X', label: 'USD / CAD' },
   { symbol: 'USDCHF=X', label: 'USD / CHF' },
   { symbol: 'USDINR=X', label: 'USD / INR' },
+  { symbol: 'USDRUB=X', label: 'USD / RUB' },
+  { symbol: 'USDNPR=X', label: 'USD / NPR' },
 ];
 
 export interface FxQuote {
@@ -56,6 +59,8 @@ export interface MacroPayload {
   banks: CentralBankRate[];
   /** Filtered macro/geopolitical headlines. Context, never scored. */
   headlines: MacroHeadline[];
+  /** Composite risk-appetite reading, built from observable prices. */
+  risk: RiskGauge | null;
   /** Plain-language read of the curve, the one derived statement here. */
   curveStatus: string;
   fetchedAt: string;
@@ -78,11 +83,12 @@ async function build(): Promise<MacroPayload> {
     }
   };
 
-  const [rates, curve, inflation, banks, fxQuotes] = await Promise.all([
+  const [rates, curve, inflation, banks, risk, fxQuotes] = await Promise.all([
     Promise.all(RATE_IDS.map(load)),
     Promise.all(CURVE_IDS.map(load)),
     Promise.all(INFLATION_IDS.map(load)),
     centralBanks(),
+    fetchRiskGauge().catch(() => null),
     Promise.all(FX.map(async (f): Promise<FxQuote> => {
       try {
         const q: any = await yf.quote(f.symbol);
@@ -108,6 +114,7 @@ async function build(): Promise<MacroPayload> {
 
   return {
     headlines: [],
+    risk,
     rates: present(rates),
     curve: present(curve),
     inflation: present(inflation),
