@@ -144,12 +144,27 @@ export interface CentralBankRate {
   stance: 'HIKING' | 'CUTTING' | 'ON HOLD' | 'UNKNOWN';
 }
 
+export type MacroNewsTag = 'Policy' | 'Geopolitics' | 'Currency' | 'Commodities' | 'Data';
+
+/** A filtered macro headline. Tags are a hint about why it surfaced, not a claim. */
+export interface MacroHeadline {
+  id: string;
+  headline: string;
+  summary: string;
+  source: string;
+  url: string;
+  /** Epoch seconds. */
+  datetime: number;
+  tags: MacroNewsTag[];
+}
+
 export interface MacroResponse {
   rates: MacroSeries[];
   curve: MacroSeries[];
   inflation: MacroSeries[];
   fx: MacroFx[];
   banks: CentralBankRate[];
+  headlines: MacroHeadline[];
   curveStatus: string;
   fetchedAt: string;
   note: string;

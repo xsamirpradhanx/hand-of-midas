@@ -207,6 +207,52 @@
   line-height: 1.5;
 }
 
+/* ─── headlines ─── */
+.newsList { display: flex; flex-direction: column; }
+
+.newsItem {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s ease;
+}
+.newsItem:last-child { border-bottom: none; }
+.newsItem:hover { background: rgba(255, 255, 255, 0.02); }
+
+.newsHead { font-size: 0.9rem; line-height: 1.4; color: var(--text-primary); font-weight: 500; }
+.newsItem:hover .newsHead { color: var(--accent-teal); }
+
+.newsMeta { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
+.newsSource {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.newsTime { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); }
+
+.tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-tertiary);
+}
+.tagGeopolitics { background: rgba(255, 23, 68, 0.12); color: #ff6b8a; }
+.tagPolicy { background: var(--accent-teal-dim); color: var(--accent-teal); }
+.tagCurrency { background: rgba(245, 200, 66, 0.12); color: var(--gold-mid); }
+.tagCommodities { background: rgba(0, 180, 216, 0.12); color: var(--accent-cyan); }
+.tagData { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+
+.newsEmpty { padding: var(--space-xl); color: var(--text-muted); font-size: 0.85rem; }
+
 /* ─── currencies ─── */
 .fxPanel {
   background: var(--glass-bg);

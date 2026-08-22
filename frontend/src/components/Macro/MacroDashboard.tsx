@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, type CentralBankRate, type MacroResponse, type MacroSeries } from '../../lib/api';
+import { api, type CentralBankRate, type MacroHeadline, type MacroResponse, type MacroSeries } from '../../lib/api';
 import styles from './MacroDashboard.module.css';
 
 /**
@@ -77,6 +77,43 @@ const Stance: React.FC<{ stance: CentralBankRate['stance'] }> = ({ stance }) => 
   const cls = stance === 'HIKING' ? styles.hiking : stance === 'CUTTING' ? styles.cutting : styles.onhold;
   return <span className={`${styles.stancePill} ${cls}`}>{stance}</span>;
 };
+
+/** Compact relative age — "3h ago" reads faster than a timestamp in a feed. */
+function timeAgo(epochSeconds: number): string {
+  const mins = Math.max(0, Math.round((Date.now() / 1000 - epochSeconds) / 60));
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+const TAG_CLASS: Record<MacroHeadline['tags'][number], string> = {
+  Policy: styles.tagPolicy,
+  Geopolitics: styles.tagGeopolitics,
+  Currency: styles.tagCurrency,
+  Commodities: styles.tagCommodities,
+  Data: styles.tagData,
+};
+
+/**
+ * One headline.
+ *
+ * Tags say why the item surfaced, not what it means — the filter is keyword
+ * matching, so it cannot tell gold bullion from a gold watch. Opens in a new
+ * tab with `noopener` since these are third-party wire links.
+ */
+const Headline: React.FC<{ item: MacroHeadline }> = ({ item }) => (
+  <a className={styles.newsItem} href={item.url} target="_blank" rel="noopener noreferrer">
+    <span className={styles.newsHead}>{item.headline}</span>
+    <span className={styles.newsMeta}>
+      <span className={styles.newsSource}>{item.source}</span>
+      <span className={styles.newsTime}>{timeAgo(item.datetime)}</span>
+      {item.tags.map(t => (
+        <span key={t} className={`${styles.tag} ${TAG_CLASS[t] ?? ''}`}>{t}</span>
+      ))}
+    </span>
+  </a>
+);
 
 const SeriesCard: React.FC<{ s: MacroSeries; unit: string }> = ({ s, unit }) => (
   <article className={styles.card}>
@@ -217,6 +254,23 @@ export const MacroDashboard: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Macro &amp; geopolitical headlines</h2>
+        <div className={styles.fxPanel}>
+          {data.headlines.length === 0 ? (
+            <p className={styles.newsEmpty}>No macro-relevant headlines in the current feed.</p>
+          ) : (
+            <div className={styles.newsList}>
+              {data.headlines.map(h => <Headline key={h.id} item={h} />)}
+            </div>
+          )}
+        </div>
+        <p className={styles.legend}>
+          Filtered from a general business wire by keyword, newest first. Tags indicate why an item
+          matched, not what it implies — headlines are not scored and feed nothing.
+        </p>
       </section>
 
       <p className={styles.note}>

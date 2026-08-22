@@ -12,6 +12,7 @@
 import { getCachedData, setCachedData } from '../services/cache.js';
 import { FRED_SERIES, centralBanks, fetchSeries, snapshot, type CentralBankRate, type FredSnapshot } from '../services/marketData/fred.js';
 import { yf } from '../services/yahoo.js';
+import { fetchMacroHeadlines, type MacroHeadline } from '../services/marketData/macroNews.js';
 import { withCoalescing } from '../utils/inflight.js';
 import type { APIGatewayProxyResultV2 } from '../types.js';
 import { jsonResponse } from '../index.js';
@@ -53,6 +54,8 @@ export interface MacroPayload {
    * path, never from guidance — see `centralBankStance`.
    */
   banks: CentralBankRate[];
+  /** Filtered macro/geopolitical headlines. Context, never scored. */
+  headlines: MacroHeadline[];
   /** Plain-language read of the curve, the one derived statement here. */
   curveStatus: string;
   fetchedAt: string;
@@ -104,6 +107,7 @@ async function build(): Promise<MacroPayload> {
       : `Upward sloping: the 10-year yields ${t10y2y.value.toFixed(2)}pp more than the 2-year.`;
 
   return {
+    headlines: [],
     rates: present(rates),
     curve: present(curve),
     inflation: present(inflation),
@@ -115,16 +119,42 @@ async function build(): Promise<MacroPayload> {
   };
 }
 
+const NEWS_CACHE_KEY = 'CACHE#MACRO_HEADLINES_V1';
+/**
+ * Twenty minutes. Rates publish once a day and sit behind a six-hour TTL, but
+ * headlines going stale for six hours would make the panel look broken, so the
+ * feed is cached separately and merged onto the payload at response time.
+ */
+const NEWS_TTL_SECONDS = 20 * 60;
+
+async function headlines(force: boolean): Promise<MacroHeadline[]> {
+  if (!force) {
+    const cached = await getCachedData<MacroHeadline[]>(NEWS_CACHE_KEY);
+    if (cached) return cached;
+  }
+  const fresh = await fetchMacroHeadlines();
+  // Only cache a non-empty result: caching [] after a provider blip would hold
+  // an empty panel for the full TTL.
+  if (fresh.length) await setCachedData(NEWS_CACHE_KEY, fresh, NEWS_TTL_SECONDS);
+  return fresh;
+}
+
 export async function getMacro(event?: { queryStringParameters?: Record<string, string | undefined> | null }): Promise<APIGatewayProxyResultV2> {
   // ?refresh=true forces a rebuild. The TTL is six hours, which is right for
   // once-daily series but leaves no way to see a change take effect.
   const forceRefresh = event?.queryStringParameters?.['refresh'] === 'true';
   const cached = forceRefresh ? null : await getCachedData<MacroPayload>(CACHE_KEY);
-  if (cached) return jsonResponse(200, cached);
+  if (cached) {
+    // Rates come off the long cache; headlines are refreshed on their own clock.
+    return jsonResponse(200, { ...cached, headlines: await headlines(forceRefresh) });
+  }
   try {
-    const payload = await withCoalescing(CACHE_KEY, build);
+    const [payload, news] = await Promise.all([
+      withCoalescing(CACHE_KEY, build),
+      headlines(forceRefresh),
+    ]);
     await setCachedData(CACHE_KEY, payload, TTL_SECONDS);
-    return jsonResponse(200, payload);
+    return jsonResponse(200, { ...payload, headlines: news });
   } catch (e: any) {
     console.error('[Macro] build failed', e);
     return jsonResponse(502, { error: 'Macro data unavailable', detail: e?.message });
