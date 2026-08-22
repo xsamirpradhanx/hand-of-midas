@@ -82,6 +82,9 @@ export class CompositeStrategy implements BacktestStrategy {
       symbol: ctx.symbol,
       currentPrice: spot,
       bars,
+      // Supplied by the engine when a benchmark symbol was configured; powers
+      // relative-strength factors, which abstain without it.
+      benchmarkBars: ctx.benchmarkBars ? toOhlcv(ctx.benchmarkBars) : undefined,
       // Deliberately absent — not reconstructible for a historical date.
       intradayBars: undefined,
       optionsChain: undefined,
@@ -122,6 +125,10 @@ export class CompositeStrategy implements BacktestStrategy {
       results.map(r => ({ factorName: r.factorName, bias: r.bias })),
       synth.bias,
       learned,
+      // Walk-forward by construction: the engine only exposes directions whose
+      // trades had resolved by this bar.
+      process.env['NO_LEARNING'] === '1' ? undefined : ctx.directionStats,
+      tp.bias as 'LONG' | 'SHORT' | 'NO TRADE',
     );
     const meta = {
       conviction: synth.modelConviction,

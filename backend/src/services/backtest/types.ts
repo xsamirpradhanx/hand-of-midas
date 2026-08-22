@@ -96,6 +96,15 @@ export interface BacktestPlan {
 export interface LearnedFactorStats {
   readonly [factorName: string]: {
     wins: number; losses: number; score: number; tries: number; ambiguous?: number;
+    /**
+     * Resolved votes and hits split by the direction VOTED.
+     *
+     * Carried so downstream scoring can measure informedness rather than raw
+     * accuracy. A pooled hit rate cannot distinguish skill from a factor's own
+     * long/short mix once the underlying series drifts, and equities drift.
+     */
+    bullishVotes?: number; bullishWins?: number;
+    bearishVotes?: number; bearishWins?: number;
   };
 }
 
@@ -104,6 +113,15 @@ export interface DecisionContext {
   /** Datetime of the most recent visible bar — the moment the decision is made. */
   readonly asOf: string;
   readonly bars: readonly BacktestBar[];
+  /**
+   * Benchmark history through `asOf` and no further, when the replay was given
+   * a benchmark symbol.
+   *
+   * Aligned by DATE rather than by bar index: the benchmark and the symbol do
+   * not share a trading calendar once listings, halts and holidays differ, so
+   * an index-aligned slice would quietly compare different days.
+   */
+  readonly benchmarkBars?: readonly BacktestBar[];
   /**
    * Factor accuracy learned from trades that had already RESOLVED by `asOf`.
    *
@@ -116,6 +134,15 @@ export interface DecisionContext {
    * actually resolved.
    */
   readonly factorStats?: LearnedFactorStats;
+  /**
+   * Realised expectancy per trade direction, from trades that had already
+   * RESOLVED by `asOf` — gated exactly like `factorStats`, and for the same
+   * reason. Feeds the explicit direction tilt in position sizing.
+   */
+  readonly directionStats?: {
+    readonly LONG?: { n: number; sumR: number };
+    readonly SHORT?: { n: number; sumR: number };
+  };
 }
 
 export interface BacktestStrategy {

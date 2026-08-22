@@ -36,6 +36,26 @@ export interface ReplayOptions {
   horizonBars?: number;
   /** Decay half-life for learned stats, in calendar days. */
   halfLifeDays?: number;
+  /**
+   * Ask the strategy on every Nth eligible bar instead of every one.
+   *
+   * Plans on adjacent bars overlap almost completely, so a thinned grid covers
+   * the same period at a fraction of the cost. Applied inside the engine rather
+   * than by a wrapper around the strategy so a skipped bar costs nothing at
+   * all — a wrapper still pays for the visible slice before it can decline.
+   * Counted across the merged timeline, so the thinning is by date rather than
+   * by symbol and no name is systematically favoured.
+   */
+  decideEvery?: number;
+  /**
+   * Symbol to expose as the benchmark in `DecisionContext.benchmarkBars`.
+   *
+   * Needed by relative-strength factors, which are the only kind that measured
+   * out of sample — a relative quantity cannot be computed from one symbol's
+   * bars. Omit and those factors abstain, exactly as they do live when the
+   * benchmark fetch fails.
+   */
+  benchmarkSymbol?: string;
   /** Inclusive ISO date bounds on the decision bar. */
   from?: string;
   to?: string;
@@ -129,13 +149,29 @@ export interface ReplayResult {
 /**
  * The anti-look-ahead boundary.
  *
- * Returns a frozen copy of history through `index` inclusive. Copied rather
- * than a live view because `Array.prototype.slice` on the full series would
- * still let a strategy hold a reference to the parent array; frozen so a
- * strategy cannot mutate replay state between symbols.
+ * Returns a frozen view of history through `index` inclusive: the strategy can
+ * neither see past the decision bar nor mutate replay state between symbols.
+ *
+ * `bars` must already be an array of individually frozen bar objects — see
+ * `freezeSeries`. That precondition is what makes this affordable. The original
+ * version froze a fresh copy of every bar on every call:
+ *
+ *     bars.slice(0, index + 1).map(b => Object.freeze({ ...b }))
+ *
+ * which allocates and freezes `index + 1` NEW objects per decision bar, so a
+ * single 10,000-bar symbol builds ~50 million throwaway objects across its
+ * replay. That is quadratic in series length and it is the whole reason a
+ * full-universe run was an overnight job — which in turn is the reason model
+ * changes went unmeasured. Freezing each bar once per symbol and slicing
+ * pointers preserves both guarantees at a fraction of the cost.
  */
 function visibleSlice(bars: readonly BacktestBar[], index: number): readonly BacktestBar[] {
-  return Object.freeze(bars.slice(0, index + 1).map(b => Object.freeze({ ...b })));
+  return Object.freeze(bars.slice(0, index + 1));
+}
+
+/** Freeze each bar once, so `visibleSlice` only ever copies pointers. */
+function freezeSeries(bars: readonly BacktestBar[]): readonly BacktestBar[] {
+  return Object.freeze(bars.map(b => Object.freeze({ ...b })));
 }
 
 /** Median of the non-null values, or null when there are none. */
@@ -167,6 +203,8 @@ export async function replay(
   const horizon = options.horizonBars ?? 20;
   const halfLife = options.halfLifeDays ?? DEFAULT_HALF_LIFE_DAYS;
   const maxConcurrent = options.maxConcurrentPerSymbol ?? 1;
+  const decideEvery = Math.max(1, Math.floor(options.decideEvery ?? 1));
+  let eligible = 0;
   const fromMs = options.from ? Date.parse(options.from) : -Infinity;
   const toMs = options.to ? Date.parse(options.to) : Infinity;
 
@@ -180,10 +218,26 @@ export async function replay(
    * Declared here for the type, but RESET PER SYMBOL below — see the note at the
    * top of the symbol loop.
    */
-  type LearnedTally = Record<string, { wins: number; losses: number; score: number; tries: number }>;
+  type LearnedTally = Record<string, {
+    wins: number; losses: number; score: number; tries: number;
+    bullishVotes: number; bullishWins: number; bearishVotes: number; bearishWins: number;
+  }>;
   const setupStats: Record<string, DecayedStats> = {};
 
   const symbols = await dataSource.symbols();
+
+  /**
+   * Benchmark series, loaded once and searched by date.
+   *
+   * The cursor below relies on the merged timeline being walked in ascending
+   * date order, which it is, so finding the visible benchmark prefix is an
+   * amortised O(1) advance rather than a binary search per decision.
+   */
+  const benchmark = options.benchmarkSymbol
+    ? freezeSeries(await dataSource.bars(options.benchmarkSymbol))
+    : null;
+  const benchmarkTimes = benchmark ? benchmark.map(b => Date.parse(b.datetime)) : [];
+  let benchmarkCursor = 0;
 
   /**
    * Every symbol's series is loaded up front and walked in GLOBAL CHRONOLOGICAL
@@ -203,7 +257,7 @@ export async function replay(
   const loaded: { symbol: string; bars: readonly BacktestBar[] }[] = [];
   for (const symbol of symbols) {
     const bars = await dataSource.bars(symbol);
-    if (bars.length >= warmup + horizon + 1) loaded.push({ symbol, bars });
+    if (bars.length >= warmup + horizon + 1) loaded.push({ symbol, bars: freezeSeries(bars) });
   }
 
   interface Decision { s: number; i: number; t: number }
@@ -221,7 +275,23 @@ export async function replay(
   /** Per-symbol concurrency bookkeeping, preserved across the merged walk. */
   const openUntil: number[][] = loaded.map(() => []);
   /** Graded trades awaiting the date they actually resolved on. */
-  let pendingFeedback: { readyAt: number; votes: readonly BacktestFactorVote[]; forwardReturn: number }[] = [];
+  let pendingFeedback: {
+    readyAt: number;
+    votes: readonly BacktestFactorVote[];
+    forwardReturn: number;
+    bias: 'LONG' | 'SHORT';
+    realizedR: number | null;
+  }[] = [];
+  /**
+   * Realised R per direction, released on the same schedule as factor feedback.
+   *
+   * Gated rather than accumulated eagerly for the same reason: a trade decided
+   * at bar i is graded from bars i+1..i+20, so its outcome is available to the
+   * loop long before it would have been available in life.
+   */
+  const directionTally: { LONG: { n: number; sumR: number }; SHORT: { n: number; sumR: number } } = {
+    LONG: { n: 0, sumR: 0 }, SHORT: { n: 0, sumR: 0 },
+  };
 
   for (const d of timeline) {
     const { symbol, bars } = loaded[d.s];
@@ -236,9 +306,22 @@ export async function replay(
         for (const v of p.votes) {
           const sc = directionalScore(v.bias, p.forwardReturn);
           if (sc === null) continue;
-          const cur = learnedStats[v.factorName] ??= { wins: 0, losses: 0, score: 0, tries: 0 };
+          const cur = learnedStats[v.factorName] ??= {
+            wins: 0, losses: 0, score: 0, tries: 0,
+            bullishVotes: 0, bullishWins: 0, bearishVotes: 0, bearishWins: 0,
+          };
           cur.tries += 1;
-          if (sc > 0) { cur.wins += 1; cur.score += 1; } else { cur.losses += 1; }
+          const won = sc > 0;
+          if (won) { cur.wins += 1; cur.score += 1; } else { cur.losses += 1; }
+          // Split by direction voted, so the strategy can measure informedness
+          // instead of a hit rate that mostly reports the factor's vote mix.
+          if (v.bias === 'bullish') { cur.bullishVotes += 1; if (won) cur.bullishWins += 1; }
+          else { cur.bearishVotes += 1; if (won) cur.bearishWins += 1; }
+        }
+        if (p.realizedR !== null) {
+          const bucket = directionTally[p.bias];
+          bucket.n += 1;
+          bucket.sumR += p.realizedR;
         }
       } else {
         stillPending.push(p);
@@ -250,11 +333,25 @@ export async function replay(
     openUntil[d.s] = open;
     if (open.length >= maxConcurrent) continue;
 
+    // Thinning is applied here, after the concurrency gate, so the sampled grid
+    // is the same one an unthinned run would have decided on.
+    if (decideEvery > 1 && eligible++ % decideEvery !== 0) continue;
+
+    let benchmarkBars: readonly BacktestBar[] | undefined;
+    if (benchmark) {
+      while (benchmarkCursor < benchmarkTimes.length && benchmarkTimes[benchmarkCursor] <= d.t) benchmarkCursor++;
+      // The cursor now sits one past the last benchmark bar at or before the
+      // decision date, which is exactly the visible prefix.
+      benchmarkBars = benchmarkCursor > 0 ? visibleSlice(benchmark, benchmarkCursor - 1) : undefined;
+    }
+
     const ctx: DecisionContext = {
       symbol,
       asOf: decisionBar.datetime,
       bars: visibleSlice(bars, i),
+      benchmarkBars,
       factorStats: learnedStats,
+      directionStats: directionTally,
     };
 
     const plan = await strategy.plan(ctx);
@@ -296,12 +393,16 @@ export async function replay(
     });
 
     // Becomes visible once the calendar reaches the bar this trade resolved on.
-    if (plan.factors?.length && grade.forwardReturn !== null && !grade.ambiguous) {
+    // Queued for every graded trade rather than only those carrying factor
+    // votes, because the direction tally does not depend on who voted.
+    if (grade.forwardReturn !== null && !grade.ambiguous) {
       const resolveIdx = Math.min(bars.length - 1, i + Math.max(1, grade.barsElapsed));
       pendingFeedback.push({
         readyAt: Date.parse(bars[resolveIdx].datetime),
-        votes: plan.factors,
+        votes: plan.factors ?? [],
         forwardReturn: grade.forwardReturn,
+        bias: plan.bias,
+        realizedR: grade.realizedR,
       });
     }
 

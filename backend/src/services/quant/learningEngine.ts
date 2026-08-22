@@ -1,4 +1,4 @@
-import type { LearningStats } from '../../types.js';
+import type { LearningStats, PredictionSource } from '../../types.js';
 
 export interface LearningAssessment {
   /** Posterior probability, not a guarantee or recommendation. */
@@ -44,6 +44,24 @@ export function calibratePrediction(
   };
 }
 
-export function learningKey(bias: 'LONG' | 'SHORT' | 'NO TRADE'): string {
-  return `GLOBAL|${bias}`;
+export function learningKey(
+  bias: 'LONG' | 'SHORT' | 'NO TRADE',
+  source?: PredictionSource,
+): string {
+  /**
+   * The `source` prefix is what keeps the Trade Plan's outcomes from being
+   * buried by the screener's.
+   *
+   * The screener writes predictions on every scan pass across several cadences,
+   * while the Trade Plan writes once per day per symbol — orders of magnitude
+   * apart. `evaluateQuant` therefore WRITES `${source}|GLOBAL|${bias}`, but this
+   * helper returned the bare `GLOBAL|${bias}` and read sites that used it
+   * verbatim looked up a key nothing writes. `calibratePrediction` in
+   * predictiveEngine was one of them, so live calibration silently matched
+   * nothing and fell back to its uncalibrated default.
+   *
+   * Source is optional so the existing write site, which composes the prefix
+   * itself, keeps producing byte-identical keys.
+   */
+  return source ? `${source}|GLOBAL|${bias}` : `GLOBAL|${bias}`;
 }

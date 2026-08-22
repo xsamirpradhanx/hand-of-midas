@@ -43,3 +43,7 @@ stats-backup-*.json
 
 # Backtest regression baselines are machine-local
 backtest-baselines.json
+
+# Local research mirror of the bar store (derived, rebuildable)
+.barcache/
+bar-integrity.json

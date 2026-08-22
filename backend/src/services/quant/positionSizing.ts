@@ -38,7 +38,7 @@
  * For contrast, the learning-loop claim tested the same way came back at 50.1%
  * of bootstrap resamples and 22/42 years — a coin flip — and was retracted.
  */
-import { accuracyEdge, type FactorVote, type MeasuredAccuracy } from './conviction.js';
+import { accuracyEdge, informedness, type FactorVote, type MeasuredAccuracy } from './conviction.js';
 
 /**
  * Bounds on the multiplier.
@@ -58,9 +58,86 @@ export const MAX_SIZE = 2.0;
  */
 const GAIN = 6;
 
+/**
+ * Realised performance of one trade direction.
+ *
+ * `sumR` is signed modelled R across `n` resolved trades — the same convention
+ * SETUP_STATS uses, so the live path can hand its GLOBAL|LONG / GLOBAL|SHORT
+ * records straight in.
+ */
+export interface DirectionRecord {
+  readonly n: number;
+  readonly sumR: number;
+}
+
+export interface DirectionStats {
+  readonly LONG?: DirectionRecord;
+  readonly SHORT?: DirectionRecord;
+}
+
+/**
+ * Trades required in EACH direction before the tilt is applied.
+ *
+ * A direction prior is a claim about a whole side of the book, so it should not
+ * be drawn from a handful of trades in a single regime.
+ */
+export const MIN_DIRECTION_TRADES = 100;
+
+/**
+ * Ceiling on the direction tilt, in size units.
+ *
+ * Deliberately far below what the measured gap would justify. Over the replayed
+ * universe LONG earns +0.193R against SHORT's +0.072R — a ratio of 2.7 — and
+ * sizing in proportion to that would be a very large bet on one side of the
+ * book continuing to pay. +/-0.25 caps the ratio at 1.67. The direction edge is
+ * the best-established finding in this engine, and it is still an estimate.
+ */
+export const MAX_DIRECTION_TILT = 0.25;
+
+/**
+ * Size tilt from the measured expectancy gap between LONG and SHORT.
+ *
+ * WHY THIS IS SEPARATE, AND EXPLICIT. The previous sizing signal appeared to
+ * work: over 11,703 replayed trades it lifted return-per-drawdown by 11.0%. It
+ * was not measuring what it claimed. Its factor term scored each factor by raw
+ * accuracy against a fixed coin flip, which in a market that rises 56% of the
+ * time is dominated by how often a factor votes long. Bullish-leaning factors
+ * therefore carried a permanent positive edge, so plans they agreed with — LONG
+ * plans — were systematically sized up. Measured on the trades themselves:
+ * mean size 1.095 on LONG against 0.928 on SHORT, a +0.167 tilt nobody
+ * designed. The lift was real and the mechanism was an accident.
+ *
+ * An accidental tilt is worse than an explicit one even when it pays. It cannot
+ * be turned off, it cannot be re-estimated when the regime changes, and it is
+ * invisible in the code that produces it. So the tilt is stated here, computed
+ * from the quantity it was implicitly using all along, and left inspectable.
+ *
+ * The scale is one-for-one: half the measured R gap becomes the tilt in size
+ * units, then clamped. No coefficient was fitted to reproduce the old lift.
+ */
+export function directionTilt(
+  planBias: 'LONG' | 'SHORT' | 'NO TRADE' | 'bullish' | 'bearish' | 'neutral',
+  stats: DirectionStats | undefined,
+): number {
+  if (!stats?.LONG || !stats?.SHORT) return 0;
+  const { LONG, SHORT } = stats;
+  if (LONG.n < MIN_DIRECTION_TRADES || SHORT.n < MIN_DIRECTION_TRADES) return 0;
+
+  const long = planBias === 'LONG' || planBias === 'bullish';
+  const short = planBias === 'SHORT' || planBias === 'bearish';
+  if (!long && !short) return 0;
+
+  const expLong = LONG.sumR / LONG.n;
+  const expShort = SHORT.sumR / SHORT.n;
+  const halfGap = (long ? expLong - expShort : expShort - expLong) / 2;
+  return Math.max(-MAX_DIRECTION_TILT, Math.min(MAX_DIRECTION_TILT, halfGap));
+}
+
 export interface SizingSignal {
-  /** Raw signed edge from measured accuracy, ~[-0.1, +0.1]. 0 when untrained. */
+  /** Raw signed edge from measured factor skill, ~[-0.1, +0.1]. 0 when untrained. */
   readonly edge: number;
+  /** Signed size tilt from the measured LONG/SHORT expectancy gap. */
+  readonly directionTilt: number;
   /** Position size as a multiple of the baseline unit. */
   readonly sizeMultiplier: number;
   /** How many factors carried enough history to contribute. */
@@ -73,33 +150,63 @@ export function computeSizing(
   votes: readonly FactorVote[],
   planBias: 'bullish' | 'bearish' | 'neutral',
   measured: MeasuredAccuracy | undefined,
+  directions?: DirectionStats,
+  /**
+   * Direction that would actually be traded. Defaults to `planBias` when the
+   * caller has no separate trade plan — the two normally agree, but the tilt is
+   * a claim about an executed direction, so the executed one wins when they
+   * differ.
+   */
+  tradeDirection?: 'LONG' | 'SHORT' | 'NO TRADE',
 ): SizingSignal {
   const edge = accuracyEdge(votes, planBias, measured);
   const contributing = countContributing(votes, measured);
+  /**
+   * `LEGACY_ACCURACY=1` restores the PREVIOUS sizing rule in full — raw
+   * accuracy and no explicit tilt — so a replay can score old against new over
+   * identical trades. Both halves have to be switched together or the
+   * comparison measures a rule that never shipped. Measurement only; never set
+   * in production.
+   */
+  const legacy = process.env['LEGACY_ACCURACY'] === '1';
+  const tilt = legacy ? 0 : directionTilt(tradeDirection ?? planBias, directions);
 
-  // No track record means no opinion: size at baseline rather than guessing.
-  if (contributing === 0 || edge === 0) {
+  // No track record on either term means no opinion: size at baseline rather
+  // than guessing.
+  if ((contributing === 0 || edge === 0) && tilt === 0) {
     return {
       edge: 0,
+      directionTilt: 0,
       sizeMultiplier: 1,
       contributingFactors: contributing,
       rationale: contributing === 0
-        ? 'No factor has enough graded history yet — baseline size.'
-        : 'Measured accuracy is balanced on this setup — baseline size.',
+        ? 'No factor has enough graded history yet, and no measured direction edge — baseline size.'
+        : 'Measured factor skill is balanced and directions perform alike — baseline size.',
     };
   }
 
-  const raw = 1 + GAIN * edge;
+  const raw = 1 + GAIN * edge + tilt;
   const sizeMultiplier = Number(Math.max(MIN_SIZE, Math.min(MAX_SIZE, raw)).toFixed(2));
 
-  const direction = edge > 0 ? 'support' : 'contradict';
+  const parts: string[] = [];
+  if (contributing > 0 && edge !== 0) {
+    parts.push(
+      `${contributing} factor${contributing === 1 ? '' : 's'} with graded history ` +
+      `${edge > 0 ? 'support' : 'contradict'} this plan (skill ${edge >= 0 ? '+' : ''}${(edge * 100).toFixed(1)}pp)`,
+    );
+  }
+  if (tilt !== 0) {
+    parts.push(
+      `this direction has historically earned ${tilt > 0 ? 'more' : 'less'} per trade ` +
+      `than the other side (${tilt >= 0 ? '+' : ''}${tilt.toFixed(2)}x)`,
+    );
+  }
   return {
     edge: Number(edge.toFixed(4)),
+    directionTilt: Number(tilt.toFixed(4)),
     sizeMultiplier,
     contributingFactors: contributing,
-    rationale:
-      `${contributing} factor${contributing === 1 ? '' : 's'} with graded history ${direction} this plan ` +
-      `(edge ${edge >= 0 ? '+' : ''}${(edge * 100).toFixed(1)}pp vs a coin flip) — size ${sizeMultiplier}x.`,
+    rationale: `${parts.join('; ')} — size ${sizeMultiplier}x.`,
   };
 }
 
@@ -112,7 +219,11 @@ function countContributing(
   for (const v of votes) {
     if (v.bias === 'neutral') continue;
     const m = measured[v.factorName];
-    if (m && m.wins + m.losses >= 30) n++;
+    // Must match accuracyEdge's admission rule exactly, or the rationale would
+    // report a factor count that did not actually feed the number.
+    if (!m || m.wins + m.losses < 30) continue;
+    if (process.env['LEGACY_ACCURACY'] !== '1' && informedness(m) === null) continue;
+    n++;
   }
   return n;
 }

@@ -44,32 +44,88 @@ export interface FactorVote {
   readonly bias: 'bullish' | 'bearish' | 'neutral';
 }
 
+export interface FactorAccuracyRecord {
+  readonly wins: number;
+  readonly losses: number;
+  /**
+   * Resolved votes and hits SPLIT BY THE DIRECTION VOTED.
+   *
+   * Optional because stats accumulated before this existed do not carry it.
+   * A factor without the split cannot be assessed — see `accuracyEdge`.
+   */
+  readonly bullishVotes?: number;
+  readonly bullishWins?: number;
+  readonly bearishVotes?: number;
+  readonly bearishWins?: number;
+}
+
 export interface MeasuredAccuracy {
-  readonly [factorName: string]: { wins: number; losses: number };
+  readonly [factorName: string]: FactorAccuracyRecord;
 }
 
 /** A factor needs this many resolved votes before its accuracy is trusted. */
 export const MIN_RESOLVED_FOR_ACCURACY = 30;
 
 /**
- * Signed edge of the evidence, weighted by each factor's MEASURED accuracy.
+ * And this many in EACH direction, before its informedness is trusted.
  *
- * The engine already had an accuracy multiplier, but it only scales a factor's
- * weight — `max(0.2, accuracy / 0.5)`, which across observed accuracies of
- * 0.43-0.54 is a +/-8% nudge — and it is blind to which way the factor voted.
- * That throws away the more useful half of the information.
+ * Half the overall minimum. A factor that voted bullish 400 times and bearish
+ * three times has no usable estimate of what it means when it turns bearish,
+ * and averaging the two anyway is how the old metric ended up reporting the
+ * vote mix.
+ */
+export const MIN_PER_DIRECTION = 15;
+
+/**
+ * Informedness of one factor: P(up | it voted bullish) - P(up | it voted
+ * bearish), on a +/-0.5 scale. `null` when either direction is too thin.
  *
- * Measured over 3,154 replayed trades with a 17-year temporal hold-out, four
- * factors are RELIABLY WRONG about 20-bar direction: Volume Profile 42.7%,
- * Estimated CVD 41.6%, Asymmetric Kinematic 43.4%, Anchored VWAP 46.7% — all
- * significant out-of-sample. A factor that is dependably wrong is informative:
- * when it opposes the plan that is evidence FOR the plan, and scaling its weight
- * down merely discards the signal.
+ * Youden's J. Zero means the factor's vote tells you nothing about what happens
+ * next, whatever the market did and whatever the factor's own long/short mix
+ * is, because any drift common to both conditional rates cancels in the
+ * difference.
+ */
+export function informedness(m: FactorAccuracyRecord): number | null {
+  const bullVotes = m.bullishVotes ?? 0;
+  const bearVotes = m.bearishVotes ?? 0;
+  if (bullVotes < MIN_PER_DIRECTION || bearVotes < MIN_PER_DIRECTION) return null;
+  const bullAcc = (m.bullishWins ?? 0) / bullVotes;
+  const bearAcc = (m.bearishWins ?? 0) / bearVotes;
+  return (bullAcc + bearAcc - 1) / 2;
+}
+
+/**
+ * Signed edge of the evidence, weighted by each factor's MEASURED skill.
  *
- * Each directional factor contributes `(accuracy - 0.5)`, signed by whether it
- * agrees with `planBias`. Factors without a track record contribute nothing
- * rather than a guess. Returns 0 when nothing qualifies, so a cold system
- * behaves exactly as before.
+ * WHAT THIS USED TO DO, AND WHY IT WAS WRONG. Each factor contributed
+ * `accuracy - 0.5`: its raw hit rate against a fixed coin-flip baseline. That
+ * baseline is not a coin flip. Equities drift up — 56.2% of sampled bars in
+ * this store are higher twenty bars later — so a factor that votes bullish most
+ * of the time scores above 50% and one that leans bearish scores below it, both
+ * while knowing nothing at all.
+ *
+ * It is not a small effect. Measured over 390,733 decision bars across 255
+ * symbols, raw accuracy correlates 0.816 with a factor's long-share across the
+ * production stack, and 0.94 across a wider pool of 76 research candidates.
+ * The old term was, to first order, a readout of each factor's vote mix.
+ *
+ * Splitting the same votes by direction shows what was hiding underneath: for
+ * nearly every factor P(up | bullish) and P(up | bearish) both land on the
+ * unconditional base rate — Volume Profile 55.6% and 57.1%, Anchored VWAP 55.8%
+ * and 56.8%, against a base rate of 56.2%. The apparent spread in raw accuracy,
+ * from 48.7% to 53.3%, is entirely the mix.
+ *
+ * This also RETRACTS the claim that four factors are reliably wrong at
+ * 42.7%-46.7%. Re-measured on clean bars with the drift removed they sit at
+ * -0.4pp to -0.8pp informedness: fractionally negative, nowhere near enough to
+ * trade, and the reason inverting them never helped. The one factor with real
+ * discrimination is KAMA & Z-Score Distance at +2.0pp over 42,294 votes.
+ *
+ * A factor now contributes its informedness, signed by whether it agrees with
+ * `planBias`. Factors without enough votes IN EACH DIRECTION contribute
+ * nothing, because a one-sided factor's accuracy cannot be separated from the
+ * drift no matter how many votes it has. Returns 0 when nothing qualifies, so a
+ * cold system behaves exactly as before.
  */
 export function accuracyEdge(
   votes: readonly FactorVote[],
@@ -77,6 +133,16 @@ export function accuracyEdge(
   measured: MeasuredAccuracy | undefined,
 ): number {
   if (!measured || planBias === 'neutral') return 0;
+  /**
+   * A/B escape hatch, for measurement only.
+   *
+   * `LEGACY_ACCURACY=1` restores the raw `accuracy - 0.5` term this replaced,
+   * so a replay can score the two rules over identical trades rather than
+   * against a remembered number from a different run. It exists because the
+   * claim "informedness beats raw accuracy" has to be demonstrated on this
+   * engine, not asserted. Never set in production.
+   */
+  const legacy = process.env['LEGACY_ACCURACY'] === '1';
   let sum = 0;
   let n = 0;
   for (const v of votes) {
@@ -85,8 +151,10 @@ export function accuracyEdge(
     if (!m) continue;
     const resolved = m.wins + m.losses;
     if (resolved < MIN_RESOLVED_FOR_ACCURACY) continue;
+    const skill = legacy ? m.wins / resolved - 0.5 : informedness(m);
+    if (skill === null) continue;
     const agrees = v.bias === planBias;
-    sum += (m.wins / resolved - 0.5) * (agrees ? 1 : -1);
+    sum += skill * (agrees ? 1 : -1);
     n++;
   }
   return n > 0 ? sum / n : 0;

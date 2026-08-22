@@ -21,6 +21,8 @@ import 'dotenv/config';
  */
 import { replay } from '../services/backtest/replayEngine.js';
 import { DynamoBarDataSource } from '../services/backtest/dynamoDataSource.js';
+import { FileBarDataSource, cachedSymbols, readPanel, DEFAULT_CACHE_DIR } from '../services/backtest/barCache.js';
+import { loadIntegrityReport, trustedFromMs } from '../services/backtest/barIntegrity.js';
 import { CompositeStrategy, COMPOSITE_WARMUP_BARS } from '../services/backtest/compositeStrategy.js';
 import { winRate, expectancy } from '../services/quant/learningCore.js';
 import fs from 'node:fs';
@@ -65,15 +67,57 @@ async function main() {
 
   const symbols = process.env['SYMS']?.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
   const includeNoTrade = process.env['ZONES'] === '1';
+  /**
+   * LOCAL=1 replays off the on-disk mirror instead of DynamoDB, with the
+   * integrity quarantine applied.
+   *
+   * Both matter. The mirror turns a multi-minute Dynamo read into a
+   * sub-second one, which is what makes an A/B over the same trades practical.
+   * The quarantine matters more: a quarter of the Schwab history in the store
+   * is dividend-adjusted by subtraction, which drives old prices of long-time
+   * payers toward and past zero, and a return divided by a near-zero price is
+   * unbounded. Replays over the raw store are dominated by those symbols.
+   * Run `npm run export-bars` then `npm run audit-bars` to populate both.
+   */
+  const useLocal = process.env['LOCAL'] === '1';
+  const minBars = COMPOSITE_WARMUP_BARS + 20 + 1;
 
-  const source = new DynamoBarDataSource({
-    symbols,
-    interval: '1day',
-    from: process.env['FROM'],
-    to: process.env['TO'],
-    // Warmup plus a full grading horizon, or the symbol can never produce a trade.
-    minBars: COMPOSITE_WARMUP_BARS + 20 + 1,
-  });
+  let source: DynamoBarDataSource | FileBarDataSource;
+  if (useLocal) {
+    const integrity = loadIntegrityReport();
+    if (!integrity) throw new Error('LOCAL=1 needs bar-integrity.json — run: npm run audit-bars --workspace=backend');
+    const universe = (symbols ?? cachedSymbols(DEFAULT_CACHE_DIR, '1day')).filter(sym => {
+      const panel = readPanel(DEFAULT_CACHE_DIR, sym, '1day');
+      if (!panel) return false;
+      const from = trustedFromMs(integrity, sym);
+      let usable = 0;
+      for (let i = 0; i < panel.n; i++) if (panel.t[i] >= from) usable++;
+      return usable >= minBars;
+    });
+    const quarantined = Object.values(integrity.symbols).filter(v => v.verdict !== 'clean' && v.verdict !== 'unchecked');
+    console.log(`LOCAL=1 — replaying the on-disk mirror; ${quarantined.length} symbols have quarantined history`);
+    source = new FileBarDataSource({
+      symbols: universe, interval: '1day',
+      // The quarantine floor is per symbol, so it is applied by trimming each
+      // series rather than through the shared `from` bound.
+      from: process.env['FROM'], to: process.env['TO'], minBars,
+    });
+    const inner = source.bars.bind(source);
+    source.bars = async (sym: string) => {
+      const floor = trustedFromMs(integrity, sym);
+      const bars = await inner(sym);
+      return Number.isFinite(floor) ? bars.filter(b => Date.parse(b.datetime) >= floor) : bars;
+    };
+  } else {
+    source = new DynamoBarDataSource({
+      symbols,
+      interval: '1day',
+      from: process.env['FROM'],
+      to: process.env['TO'],
+      // Warmup plus a full grading horizon, or the symbol can never produce a trade.
+      minBars,
+    });
+  }
 
   process.stderr.write('\nResolving universe from the bar store… ');
   const universe = await source.symbols();
@@ -91,13 +135,9 @@ async function main() {
   let planned = 0;
   const strategy = new CompositeStrategy({ includeNoTrade });
   const step = Number(process.env['STEP'] ?? 1);
-  let barIndex = 0;
   const instrumented = {
     name: strategy.name,
     plan: async (ctx: Parameters<typeof strategy.plan>[0]) => {
-      // STEP thins the decision grid. Plans overlap heavily on adjacent bars, so
-      // sampling every Nth bar covers the same period at a fraction of the cost.
-      if (step > 1 && barIndex++ % step !== 0) return null;
       const p = await strategy.plan(ctx);
       if (p && ++planned % 250 === 0) process.stderr.write(`\r  ${planned} plans…`);
       return p;
@@ -110,6 +150,12 @@ async function main() {
     horizonBars: 20,
     from: process.env['FROM'],
     to: process.env['TO'],
+    // STEP thins the decision grid. Handled by the engine rather than by a
+    // wrapper here, so a skipped bar does not pay for its visible slice first.
+    decideEvery: step,
+    // Mirrors the live engine's benchmark, so relative-strength factors are
+    // exercised in replay rather than silently abstaining.
+    benchmarkSymbol: process.env['BENCHMARK'] ?? 'SPY',
   });
   process.stderr.write('\r');
   const elapsed = ((Date.now() - started) / 1000).toFixed(1);

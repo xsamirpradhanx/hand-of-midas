@@ -141,6 +141,18 @@ export interface FactorStatsItem extends DynamoDBBaseItem {
     tries: number;
     /** Same-bar target+stop hits; unknowable outcome, excluded from wins/losses. */
     ambiguous?: number;
+    /**
+     * Resolved votes and hits split by the direction VOTED.
+     *
+     * Optional because records written before this existed do not carry it.
+     * Without the split a factor's hit rate cannot be separated from its own
+     * long/short mix — see `informedness` in services/quant/conviction.ts — so
+     * scoring treats a record lacking it as having no usable track record.
+     */
+    bullishVotes?: number;
+    bullishWins?: number;
+    bearishVotes?: number;
+    bearishWins?: number;
   }>;
   readonly updatedAt: string;
 }

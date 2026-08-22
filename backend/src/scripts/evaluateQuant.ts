@@ -214,6 +214,20 @@ export async function evaluateQuant() {
           } else {
             fs.losses += 1;
           }
+
+          // Split by the direction VOTED, so downstream scoring can measure
+          // informedness. A pooled hit rate mostly reports a factor's long/short
+          // mix once the underlying series drifts, and equities drift: 56% of
+          // 20-bar windows in the bar store close higher than they opened.
+          if (correct !== null) {
+            if (f.bias === 'bullish') {
+              fs.bullishVotes = (fs.bullishVotes ?? 0) + 1;
+              if (correct) fs.bullishWins = (fs.bullishWins ?? 0) + 1;
+            } else if (f.bias === 'bearish') {
+              fs.bearishVotes = (fs.bearishVotes ?? 0) + 1;
+              if (correct) fs.bearishWins = (fs.bearishWins ?? 0) + 1;
+            }
+          }
         }
       }
 

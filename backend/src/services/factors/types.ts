@@ -104,6 +104,17 @@ export interface FactorInput {
    */
   intradayBars?: OHLCVDataPoint[];
   /**
+   * Daily bars for the market benchmark (SPY), aligned to the same dates.
+   *
+   * Optional and best-effort, like `intradayBars`. It exists because the only
+   * candidate indicator that survived an out-of-sample symbol AND era split is
+   * a RELATIVE one — momentum measured against the market — and relative
+   * quantities are exactly what a single-symbol factor cannot otherwise compute.
+   * Factors that need it return null when it is absent rather than falling back
+   * to an absolute read, which measured as noise.
+   */
+  benchmarkBars?: OHLCVDataPoint[];
+  /**
    * Aggregated insider / analyst / social sentiment, when available.
    *
    * Optional and best-effort, like intradayBars: factors that need it return null

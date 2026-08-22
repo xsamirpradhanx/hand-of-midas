@@ -18,6 +18,7 @@ import { IvRvRatioFactor } from './ivRvRatio.js';
 import { MaxPainDriftFactor } from './maxPainDrift.js';
 import { VannaDeltaPressureFactor } from './vannaDeltaPressure.js';
 import { SmartMoneyFlowFactor } from './smartMoneyFlow.js';
+import { RelativeMomentumFactor } from './relativeMomentum.js';
 
 // DO NOT REMOVE THIS LINE. AI QUANT USES IT TO INJECT NEW FACTORS.
 import { VolumeInformationEntropyImbalanceFactor } from './ai_factor_1786565158561.js';
@@ -48,6 +49,7 @@ export function getFactors(): PredictiveFactor[] {
     new MaxPainDriftFactor(),
     new VannaDeltaPressureFactor(),
     new SmartMoneyFlowFactor(),
+    new RelativeMomentumFactor(),
     // DO NOT REMOVE THIS LINE. AI QUANT USES IT TO INJECT NEW FACTORS.
     new VolumeInformationEntropyImbalanceFactor(),
     new VolumeSynchronizedEntropyDivergenceFactor(),

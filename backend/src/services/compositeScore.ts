@@ -3,7 +3,7 @@ import type { OHLCVDataPoint } from '../types.js';
 import { calculateIndependentEvidence, type IndependentEvidence } from './quant/independentEvidenceEngine.js';
 import { getFactors } from './factors/factorRegistry.js';
 import { computeConviction } from './quant/conviction.js';
-import { computeSizing, type SizingSignal } from './quant/positionSizing.js';
+import { computeSizing, type SizingSignal, type DirectionStats } from './quant/positionSizing.js';
 import type { PolygonNewsArticle } from './polygon.js';
 import { generateCommitteeSynthesis } from './aiInsights.js';
 
@@ -325,7 +325,12 @@ export class CompositeScoreAgent {
     factors: FactorResult[],
     bars?: OHLCVDataPoint[],
     factorStats?: Record<string, { wins: number; losses: number; score: number; tries: number }>,
-    news?: PolygonNewsArticle[]
+    news?: PolygonNewsArticle[],
+    /**
+     * Realised expectancy per trade direction, for the sizing tilt. Optional —
+     * omit and sizing falls back to the factor-skill term alone.
+     */
+    directionStats?: DirectionStats,
   ): Promise<AISynthesisResult> {
     if (!factors || factors.length === 0) {
       return {
@@ -909,6 +914,18 @@ export class CompositeScoreAgent {
         factors.map(f => ({ factorName: f.factorName, bias: f.bias })),
         evidence.pluralityBias,
         factorStats,
+        directionStats,
+        /**
+         * The direction tilt keys off the direction that will actually be
+         * TRADED, not the plurality of factor votes.
+         *
+         * The two normally agree, since the plan is derived from the evidence,
+         * but they are different questions: `pluralityBias` is what the factors
+         * think, `tradePlan.bias` is what would be executed and therefore what
+         * the measured per-direction expectancy applies to. On a NO TRADE there
+         * is no direction and the tilt correctly falls to zero.
+         */
+        tradePlan.bias,
       ),
       bias,
       overallConviction,

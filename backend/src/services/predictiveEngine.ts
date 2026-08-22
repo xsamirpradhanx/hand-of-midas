@@ -2,6 +2,19 @@ import { getTickerNews, PolygonNewsArticle } from './polygon.js';
 import { fetchBarsWithFallback } from './marketData/fetchBars.js';
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
 import type { FactorResult, FactorInput, PredictiveFactor } from './factors/types.js';
+
+/**
+ * Daily bars fetched per symbol, and the benchmark they are compared against.
+ *
+ * 300 covers the longest factor lookback in the stack (Relative Momentum's
+ * 252-bar window plus a 21-bar skip) with headroom for holidays and listing
+ * gaps.
+ */
+const DAILY_BAR_COUNT = 300;
+const BENCHMARK_SYMBOL = 'SPY';
+
+/** Learning namespace for this engine — never share a keyspace with the screener. */
+const TRADE_PLAN_SOURCE = 'TRADE_PLAN' as const;
 import { getFactors } from './factors/factorRegistry.js';
 import { CompositeScoreAgent } from './compositeScore.js';
 import { putItem, getItem } from './dynamodb.js';
@@ -168,11 +181,17 @@ export async function getPredictiveZones(
   // sequential round trips, which stacked their full latencies on the critical path of
   // every single trade-plan generation. Each optional fetch keeps its own try/catch so one
   // slow/failing source doesn't take down the others; only the daily-bar fetch is required.
-  const [dailyResult, intradayResult, optionsChain, sentiment, news] = await Promise.all([
-    // 1. OHLCV (6 months / 126 trading days) — Yahoo primary here since the screener
-    // fans this out across ~20 candidates per run and Schwab-first was the main
-    // latency source; Schwab remains the default for other callers.
-    fetchBarsWithFallback(sym, '1day', 126, { preferredProvider: 'yahoo' }),
+  const [dailyResult, intradayResult, optionsChain, sentiment, news, benchmarkResult] = await Promise.all([
+    // 1. OHLCV — Yahoo primary here since the screener fans this out across ~20
+    // candidates per run and Schwab-first was the main latency source; Schwab
+    // remains the default for other callers.
+    //
+    // Raised from 126 bars to 300. Relative Momentum needs a twelve-month
+    // lookback plus a skip month, 273 bars, and at 126 it could never have
+    // fired — a factor that silently never speaks is the worst failure mode
+    // available, because nothing in the output distinguishes it from one that
+    // looked and had no opinion. Still a single request per symbol.
+    fetchBarsWithFallback(sym, '1day', DAILY_BAR_COUNT, { preferredProvider: 'yahoo' }),
 
     // 1b. 1-min extended-hours bars for the current session, best-effort. Powers
     // session-anchored VWAP factors (Day/London/US); anything relying on daily bars
@@ -212,6 +231,16 @@ export async function getPredictiveZones(
       console.warn(`[PredictiveEngine] News unavailable for ${sym}, proceeding without news sentiment: ${err instanceof Error ? err.message : String(err)}`);
       return undefined;
     }),
+
+    // 5. Benchmark daily bars, best-effort. Powers relative-strength factors,
+    // which are the only kind that measured out of sample. Cached, so a screener
+    // pass over twenty candidates costs one benchmark fetch rather than twenty.
+    fetchBarsWithFallback(BENCHMARK_SYMBOL, '1day', DAILY_BAR_COUNT, {
+      preferredProvider: 'yahoo', useCache: true,
+    }).catch(err => {
+      console.warn(`[PredictiveEngine] Benchmark bars unavailable, relative-strength factors will be skipped:`, err);
+      return undefined;
+    }),
   ]);
 
   const { bars } = dailyResult;
@@ -236,6 +265,7 @@ export async function getPredictiveZones(
     activeExpiry,
     news,
     intradayBars,
+    benchmarkBars: benchmarkResult?.bars,
     sentiment,
   };
 
@@ -273,7 +303,27 @@ export async function getPredictiveZones(
 
   // 6. Run AI Synthesis Agent over all factor outputs
   // Pass `bars` so the agent can compute ATR-adaptive zone spread
-  const synthesis = await aiAgent.synthesize(sym, currentPrice, activeFactors, bars, factorStats, news);
+  /**
+   * Realised expectancy per direction, from the same SETUP_STATS the calibrator
+   * reads. Feeds the explicit direction tilt in position sizing — a tilt the
+   * old accuracy term was applying by accident, at +0.167x on LONG over SHORT,
+   * because raw accuracy tracked each factor's long-share. Stated here instead,
+   * where it can be inspected and switched off.
+   */
+  const directionRecord = (bias: 'LONG' | 'SHORT') => {
+    const row = setupStats?.[learningKey(bias, TRADE_PLAN_SOURCE)];
+    // `tries` counts ambiguous grades too; expectancy must divide by the
+    // resolved ones that actually contributed to sumActualR.
+    const resolved = row ? row.wins + row.losses : 0;
+    return row && resolved > 0 ? { n: resolved, sumR: row.sumActualR } : undefined;
+  };
+  const directionStats = setupStats
+    ? { LONG: directionRecord('LONG'), SHORT: directionRecord('SHORT') }
+    : undefined;
+
+  const synthesis = await aiAgent.synthesize(
+    sym, currentPrice, activeFactors, bars, factorStats, news, directionStats,
+  );
 
   const zones: PredictiveZone[] = [
     {
@@ -296,7 +346,9 @@ export async function getPredictiveZones(
   const plan = synthesis.tradePlan;
   const learning = calibratePrediction(
     synthesis.modelConviction,
-    plan ? setupStats?.[learningKey(plan.bias)] : undefined,
+    // Namespaced by engine. The un-prefixed key this used to read is never
+    // written by evaluateQuant, so calibration always missed.
+    plan ? setupStats?.[learningKey(plan.bias, TRADE_PLAN_SOURCE)] : undefined,
   );
   // Always use majorResistance (T1) as the primary target for the AI narrative.
   // For SHORT, majorResistance = demandZone.top = nearest structural support below entry.

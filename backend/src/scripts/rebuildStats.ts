@@ -52,7 +52,10 @@ async function main() {
   }
 
   const setupStats: Record<string, Stat> = {};
-  const factorStats: Record<string, { wins: number; losses: number; tries: number; score: number; ambiguous: number }> = {};
+  const factorStats: Record<string, {
+    wins: number; losses: number; tries: number; score: number; ambiguous: number;
+    bullishVotes: number; bullishWins: number; bearishVotes: number; bearishWins: number;
+  }> = {};
 
   for (const { ev, pred } of seen.values()) {
     const thesis = pred.aiThesis;
@@ -79,12 +82,21 @@ async function main() {
     const realized = realizedDirection(bias, ev.outcome);
     for (const f of thesis.factors ?? []) {
       const fk = `${source}|${f.factorName}`;
-      const fs = (factorStats[fk] ??= { wins: 0, losses: 0, tries: 0, score: 0, ambiguous: 0 });
+      const fs = (factorStats[fk] ??= {
+        wins: 0, losses: 0, tries: 0, score: 0, ambiguous: 0,
+        bullishVotes: 0, bullishWins: 0, bearishVotes: 0, bearishWins: 0,
+      });
       fs.tries++;
       const correct = realized ? factorWasCorrect(f.bias, realized) : null;
       if (correct === null) fs.ambiguous++;
       else if (correct) { fs.wins++; fs.score++; }
       else fs.losses++;
+      // Direction split, so a rebuild produces records the informedness metric
+      // can actually score rather than ones it has to skip.
+      if (correct !== null) {
+        if (f.bias === 'bullish') { fs.bullishVotes++; if (correct) fs.bullishWins++; }
+        else if (f.bias === 'bearish') { fs.bearishVotes++; if (correct) fs.bearishWins++; }
+      }
     }
   }
 
