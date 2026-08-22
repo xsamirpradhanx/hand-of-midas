@@ -230,6 +230,23 @@ export interface AISynthesisResult {
      */
     archetype: string;
     /**
+     * False when the plan's levels were derived from a FABRICATED zone.
+     *
+     * When no structural demand (or supply) exists within reach, the engine
+     * falls back to a placeholder band around spot so the rest of the pipeline
+     * has something to read. Every level computed from that band — trigger,
+     * entry, stop, chase, both targets — is invented. The plan already said so
+     * in prose ("an entry and a stop would have to be invented, so none are
+     * offered") and then published the invented numbers anyway, formatted
+     * identically to real ones.
+     *
+     * That is not a cosmetic problem: two external reviewers read a BMNR plan
+     * and reasoned about "$23.23 trigger" and "$22.41 stop" as though they were
+     * measured levels. When this is false the geometry fields are null, so a
+     * consumer cannot mistake a placeholder for structure.
+     */
+    geometryAnchored: boolean;
+    /**
      * Display-only warnings. Deliberately NOT part of `archetype`.
      *
      * `LOW QUALITY` in particular does not mean what it says. It fires when
@@ -248,9 +265,9 @@ export interface AISynthesisResult {
      * not be presented as though it does.
      */
     advisories: string[];
-    trigger: number;
+    trigger: number | null;
     entryZone: string;
-    chasePrice: number;
+    chasePrice: number | null;
     /** ONE-DAY expected move in dollars, ~0.35x ATR. Signed by bias. */
     expectedMove: number;
     /**
@@ -262,9 +279,9 @@ export interface AISynthesisResult {
      * actually comparable to `majorResistance`.
      */
     expectedMoveHorizon: number;
-    majorResistance: number;
-    stretchTarget: number;
-    stop: number;
+    majorResistance: number | null;
+    stretchTarget: number | null;
+    stop: number | null;
     /** Actionable reward:risk — forced to 0 on NO TRADE so gating logic can't act on it. */
     rewardRisk: number;
     /**
@@ -989,25 +1006,40 @@ export class CompositeScoreAgent {
         : `Would be $${stop} once triggered, but there is no active position to invalidate.`;
     }
 
+    /**
+     * Suppress geometry that was never anchored in observed price behaviour.
+     *
+     * The reasoning text already refused the trade; this makes the payload
+     * agree with it. Nulls rather than a flag alone, so an MCP client or a bot
+     * reading the API cannot act on a placeholder either — the UI is not the
+     * only consumer.
+     */
+    const geometryAnchored = fabricatedSide === null;
+    const level = (v: number) => (geometryAnchored ? v : null);
+
     const tradePlan = {
       bias: tradeBias,
       readiness,
       archetype,
+      geometryAnchored,
       advisories: qualityFlag ? qualityFlag.split(' | ') : [],
-      trigger,
-      entryZone: entryZoneStr,
-      chasePrice,
+      trigger: level(trigger),
+      entryZone: geometryAnchored ? entryZoneStr : 'N/A',
+      chasePrice: level(chasePrice),
       expectedMove: Number(expectedMove.toFixed(2)),
       expectedMoveHorizon: Number((Math.sign(expectedMove) * horizonExpectedMove).toFixed(2)),
-      majorResistance,
-      stretchTarget,
-      stop,
+      majorResistance: level(majorResistance),
+      stretchTarget: level(stretchTarget),
+      stop: level(stop),
       // NO TRADE has no valid entry/stop/target (see overextension gate above),
       // so rr — computed from raw structural distances before that gate — must
       // not leak through as a real reward:risk. Downstream scoring in
       // screenerService.ts (tsRR, oppScore) reads this unconditionally.
       rewardRisk: tradeBias === 'NO TRADE' ? 0 : rr,
-      potentialRewardRisk: rr,
+      // Also zeroed when unanchored: `rr` was computed from the placeholder
+      // band, so publishing it as "the geometry if it triggers" would restate
+      // the invented levels as a ratio.
+      potentialRewardRisk: geometryAnchored ? rr : 0,
       roomToResistance: Number(roomToResistance.toFixed(1)),
       roomToSupport: Number(roomToSupport.toFixed(1)),
       confirmation,

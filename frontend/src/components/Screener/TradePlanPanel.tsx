@@ -111,7 +111,28 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
         </div>
       )}
 
-      {plan && (
+      {/*
+        A plan whose levels came from a placeholder zone shows no levels.
+        `geometryAnchored` is false when no structural demand (or supply) was
+        found within reach, so trigger/entry/stop/targets were all derived from
+        a fabricated band around spot. The prose already refused the trade
+        ("an entry and a stop would have to be invented, so none are offered")
+        while this panel rendered the invented numbers in the same style as
+        real ones — and two external reviewers duly reasoned about them as if
+        they were measured levels.
+      */}
+      {plan && plan.geometryAnchored === false && (
+        <div className={styles.levelsSection}>
+          <h4>Trade Parameters</h4>
+          <p className={styles.levelLabel}>
+            No levels are offered. There is no structural {plan.bias === 'SHORT' ? 'supply' : 'demand'} within
+            reach to anchor an entry or an invalidation to, so any trigger, stop or target here
+            would be invented rather than measured.
+          </p>
+        </div>
+      )}
+
+      {plan && plan.geometryAnchored !== false && (
         <div className={styles.levelsSection}>
           <h4>Trade Parameters</h4>
           {/*

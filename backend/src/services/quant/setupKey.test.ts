@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { CompositeScoreAgent } from '../compositeScore.js';
 import { getFactors } from '../factors/factorRegistry.js';
-import type { FactorInput, OHLCVDataPoint } from '../factors/types.js';
+import type { FactorInput } from '../factors/types.js';
+import type { OHLCVDataPoint } from '../../types.js';
 
 /**
  * The learning key must carry the setup type and nothing else.

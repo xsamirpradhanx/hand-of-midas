@@ -63,17 +63,19 @@ export interface PredictiveEngineResult {
       /** Whether the setup is actionable now, waiting on price, or absent. */
       readiness: 'ACTIONABLE' | 'WAITING' | 'NO SETUP';
       archetype: string;
-      trigger: number;
+      /** False when levels came from a placeholder zone — see compositeScore. */
+      geometryAnchored: boolean;
+      trigger: number | null;
       entryZone: string;
-      chasePrice: number;
+      chasePrice: number | null;
       /** ONE-DAY expected move in dollars, ~0.35x ATR. Signed by bias. */
       expectedMove: number;
       /** The same move scaled to the 20-bar grading horizon — the figure
        *  comparable to `majorResistance`. See compositeScore. */
       expectedMoveHorizon: number;
-      majorResistance: number;
-      stretchTarget: number;
-      stop: number;
+      majorResistance: number | null;
+      stretchTarget: number | null;
+      stop: number | null;
       rewardRisk: number;
       /** True geometric R:R, populated even on NO TRADE. See compositeScore.ts. */
       potentialRewardRisk: number;
@@ -105,7 +107,7 @@ const registeredFactors: PredictiveFactor[] = getFactors();
  * their levels and contributors. This reports them.
  */
 function explainNoTrade(
-  plan: { whyNow: string; trigger: number; potentialRewardRisk: number } | undefined,
+  plan: { whyNow: string; trigger: number | null; potentialRewardRisk: number } | undefined,
   currentPrice: number,
   demandZone: { top: number; bottom: number; confluence: string[] },
   supplyZone: { top: number; bottom: number; confluence: string[] },
@@ -360,7 +362,7 @@ export async function getPredictiveZones(
   // (~22R) instead of T1 (~6R) — a mismatch vs tradePlan.rewardRisk which uses T1.
   const targetPrice = !plan || plan.bias === 'NO TRADE'
     ? currentPrice
-    : plan.majorResistance;
+    : plan.majorResistance ?? currentPrice;
   const targetSources = !plan || plan.bias === 'NO TRADE'
     ? []
     : plan.bias === 'LONG' ? synthesis.supplyZone.confluence : synthesis.demandZone.confluence;
@@ -372,7 +374,7 @@ export async function getPredictiveZones(
     explanation: !plan || plan.bias === 'NO TRADE'
       ? explainNoTrade(plan, currentPrice, synthesis.demandZone, synthesis.supplyZone)
       // TODO(PR2): switch to "15m close" once multi-TF fetch is live. Today the engine only has daily bars.
-      : `T1 ($${plan.majorResistance}) is the primary structural ${plan.bias === 'LONG' ? 'resistance' : 'demand'} zone (${targetSources.join(', ') || 'price structure'}). T2 ($${plan.stretchTarget}) serves as the extended statistical/VWAP target. Invalidation is $${plan.stop}; a daily close ${plan.bias === 'LONG' ? 'below' : 'above'} $${plan.stop} invalidates the setup.`,
+      : `T1 ($${plan.majorResistance ?? currentPrice}) is the primary structural ${plan.bias === 'LONG' ? 'resistance' : 'demand'} zone (${targetSources.join(', ') || 'price structure'}). T2 ($${plan.stretchTarget ?? currentPrice}) serves as the extended statistical/VWAP target. Invalidation is $${plan.stop ?? currentPrice}; a daily close ${plan.bias === 'LONG' ? 'below' : 'above'} $${plan.stop ?? currentPrice} invalidates the setup.`,
   };
   let aiNarrative = summariseEvidence(sym, currentPrice, synthesis.modelConviction, synthesis.agreementLevel, activeFactors);
   if (plan?.bias && plan.bias !== 'NO TRADE') {

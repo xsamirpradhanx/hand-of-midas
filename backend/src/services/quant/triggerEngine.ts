@@ -27,10 +27,10 @@ export interface TriggerContext {
   currentPrice: number;
   tradePlanBias: 'LONG' | 'SHORT' | 'NO TRADE';
   /** Trigger price — top of demand zone for LONG, bottom of supply zone for SHORT */
-  triggerPrice: number;
+  triggerPrice: number | null;
   /** Chase price — beyond this = chasing, too late */
-  chasePrice: number;
-  stop: number;
+  chasePrice: number | null;
+  stop: number | null;
   rewardRisk: number;
   /** Premarket VWAP if available */
   pmVwap?: number | null;
@@ -44,7 +44,13 @@ export function evaluateTrigger(ctx: TriggerContext): TriggerState {
   const { currentPrice, tradePlanBias, triggerPrice, chasePrice, stop, rewardRisk } = ctx;
 
   // ── Gate 1: Trade geometry ─────────────────────────────────────────────────
+  // Also covers unanchored geometry: a plan built on a placeholder zone is
+  // always NO TRADE, and its trigger/chase/stop are null. Returning here means
+  // the comparisons below never see one.
   if (tradePlanBias === 'NO TRADE' || rewardRisk < 1.0) {
+    return 'NO_TRADE';
+  }
+  if (triggerPrice === null || chasePrice === null || stop === null) {
     return 'NO_TRADE';
   }
 

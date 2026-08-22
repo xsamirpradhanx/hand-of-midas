@@ -79,14 +79,15 @@ export interface ScreenerResult {
   tradePlan?: {
     bias: 'LONG' | 'SHORT' | 'NO TRADE';
     archetype: string;
-    trigger: number;
+    geometryAnchored: boolean;
+    trigger: number | null;
     entryZone: string;
-    chasePrice: number;
+    chasePrice: number | null;
     expectedMove: number;
     expectedMoveHorizon: number;
-    majorResistance: number;
-    stretchTarget: number;
-    stop: number;
+    majorResistance: number | null;
+    stretchTarget: number | null;
+    stop: number | null;
     rewardRisk: number;
     roomToResistance: number;
     roomToSupport: number;
@@ -973,13 +974,13 @@ async function evaluateSetup(
         relativeStrength,
         vwapDistancePct: vwapDistPct,
         eventRisk: eventRisk as 'HIGH' | 'MEDIUM' | 'LOW',
-        entry: tp.trigger,
-        stop: tp.stop,
+        entry: tp.trigger ?? undefined,
+        stop: tp.stop ?? undefined,
         // majorResistance is T1 for both LONG and SHORT (compositeScore.ts computes
         // rewardRisk from it either way) — using stretchTarget (T2) for SHORT graded
         // trades against a farther level than the R:R shown to the user promised,
         // undercounting SHORT wins that hit T1 but timed out before reaching T2.
-        target: tp.majorResistance,
+        target: tp.majorResistance ?? undefined,
       };
       // expectedVersion 0 asserts the item does not exist yet (dynamodb.ts:113).
       await putItem(predictionItem, 0);
