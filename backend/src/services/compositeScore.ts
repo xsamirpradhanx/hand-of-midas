@@ -663,6 +663,50 @@ export class CompositeScoreAgent {
     // 0.33 ATR, a distance exceeded intraday on 98% of days.
     const MIN_TARGET_ATR = 1.0;
     const MIN_STOP_ATR = 0.75;
+    /**
+     * THERE IS DELIBERATELY NO UPPER BOUND ON PLANNED REWARD:RISK. Two attempts
+     * to add one both measured worse, and the case for adding one looks
+     * compelling enough that it is recorded here rather than rediscovered.
+     *
+     * Against the driftless-random-walk baseline P(target first) = 1/(1+R:R),
+     * measured over 13,679 replayed trades on quarantined history:
+     *
+     *   R:R          n      win%    random%     edge       t
+     *   0.0-1.5   3,959    48.1%      44.2%   +3.9pp    4.98
+     *   1.5-2.0   3,931    41.5%      36.7%   +4.8pp    6.25
+     *   2.0-2.5   2,509    35.5%      31.1%   +4.5pp    4.82
+     *   2.5-3.0   1,374    30.1%      26.8%   +3.3pp    2.77
+     *   3.0-4.0   1,312    22.2%      22.6%   -0.4pp   -0.35
+     *   4.0-5.0     452    14.4%      18.5%   -4.1pp   -2.24
+     *   5.0+        142     7.7%      15.6%   -7.9pp   -2.58
+     *
+     * The far-target setups really do resolve worse than a coin flip, and the
+     * sign holds in all four symbol x era cells (pooled -5.0pp, t = -3.21).
+     * Both obvious responses still made the engine worse:
+     *
+     * 1. DECLINE them above 4R. Win rate +0.74pp at z = 1.24 — not significant
+     *    — and R/DD 44.62 -> 35.79, block bootstrap 33.9%. The replay holds one
+     *    position per symbol, so refusing a plan frees the slot and the engine
+     *    fills it with the next candidate. Only 1,256 of ~13,000 decision points
+     *    survived unchanged: a filter does not subtract trades here, it SWAPS
+     *    them, and the plans at the decision boundary are worse than average.
+     *
+     * 2. CLAMP the target back to 3R, which frees no capacity. Worse still —
+     *    win rate unchanged at 38.0%, expectancy +0.1368R -> +0.1136R, and max
+     *    drawdown 41.9R -> 103.3R for an R/DD of 14.96. Pulling the target in
+     *    raised the affected trades' hit rate by only ~3pp while cutting the
+     *    largest payoff from 5.9R to 3.0R.
+     *
+     * The far targets are convex lottery tickets: they lose most of the time,
+     * and the rare 4-6R winner is what refills the equity curve during a losing
+     * streak. Per-trade edge negative, portfolio contribution strongly positive.
+     * Win and loss COUNTS barely moved under the clamp; removing the right tail
+     * alone tripled drawdown.
+     *
+     * The lesson generalises past this constant: per-trade statistics do not
+     * predict portfolio outcomes in this engine. Measure any geometry change
+     * with a full replay, never on a trade dump.
+     */
     const minTargetDist = MIN_TARGET_ATR * atrAbs;
     const minStopDist = MIN_STOP_ATR * atrAbs;
     /** Human-readable reason this plan is too tight to grade, or null if viable. */
