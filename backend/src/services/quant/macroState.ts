@@ -30,6 +30,7 @@
  */
 
 import type { BarPanel } from '../backtest/barCache.js';
+import { alignSeries, readCachedSeries } from '../marketData/fred.js';
 import { rollMean, rollStd, zScore, logReturns } from './indicatorPrimitives.js';
 
 /** A named market-wide series on the global date axis. NaN where undefined. */
@@ -169,4 +170,54 @@ export function buildMacroStates(inputs: MacroInputs): MacroState[] {
     })());
 
   return states;
+}
+
+
+/**
+ * Macro states from FRED rather than from ETF proxies.
+ *
+ * These exist because the ETF versions ran out of history exactly where the
+ * question needed it. `rate_move` on TLT begins in 2002 — two eras, ~2,900
+ * tercile trades, t = 2.37, indistinguishable from noise at that sample.
+ * `DGS10` begins in 1962 and covers every replayed trade back to 1985.
+ *
+ * Changes are absolute differences in PERCENTAGE POINTS, not log ratios: a
+ * yield can sit at or below zero, where a ratio is meaningless or explosive.
+ * Each is then z-scored against its own trailing year, so a 50bp move in 1982
+ * and a 50bp move in 2020 are compared as regime shifts rather than as levels.
+ *
+ * SIGN CONVENTION: positive means "falling long rates", matching the TLT-based
+ * `rate_move` it replaces (TLT rises when yields fall). Keeping the sign stable
+ * is what lets the two be read as the same hypothesis.
+ */
+export function buildFredStates(dates: Float64Array): MacroState[] {
+  const n = dates.length;
+  const out: MacroState[] = [];
+  const load = (id: string): Float64Array | null => {
+    const s = readCachedSeries(id);
+    return s ? alignSeries(s, dates) : null;
+  };
+  const add = (name: string, description: string, values: Float64Array | null) => {
+    if (values && values.length === n) out.push({ name, description, values });
+  };
+  /** 21-bar absolute change, z-scored against a trailing year. */
+  const changeZ = (xs: Float64Array | null, sign = 1): Float64Array | null => {
+    if (!xs) return null;
+    const d = new Float64Array(n).fill(NaN);
+    for (let i = 21; i < n; i++) {
+      if (Number.isFinite(xs[i]) && Number.isFinite(xs[i - 21])) d[i] = sign * (xs[i] - xs[i - 21]);
+    }
+    return zScore(d, Z_WINDOW);
+  };
+
+  const dgs10 = load('DGS10');
+  // Negated: positive = yields FELL = the same direction TLT rising encodes.
+  add('fred_rate10_fall', '1-month FALL in the 10-year Treasury yield (FRED DGS10, 1962-)', changeZ(dgs10, -1));
+  add('fred_rate10_level', '10-year Treasury yield level, vs its own trailing year', dgs10 ? zScore(dgs10, Z_WINDOW) : null);
+  const t10y2y = load('T10Y2Y');
+  add('fred_curve_slope', '10y-2y term spread — negative is an inverted curve (1976-)', t10y2y ? zScore(t10y2y, Z_WINDOW) : null);
+  add('fred_curve_steepen', '1-month steepening of the 10y-2y spread', changeZ(t10y2y));
+  add('fred_policy_ease', '1-month FALL in the effective fed funds rate (1954-)', changeZ(load('DFF'), -1));
+  add('fred_real_yield_fall', '1-month FALL in the 10-year TIPS real yield (2003-)', changeZ(load('DFII10'), -1));
+  return out;
 }

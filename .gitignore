@@ -47,3 +47,6 @@ backtest-baselines.json
 # Local research mirror of the bar store (derived, rebuildable)
 .barcache/
 bar-integrity.json
+
+# FRED series cache (derived, rebuildable)
+.fredcache/

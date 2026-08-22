@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import { cachedSymbols, readPanel, DEFAULT_CACHE_DIR } from '../services/backtest/barCache.js';
 import { loadIntegrityReport, trustedFromMs } from '../services/backtest/barIntegrity.js';
 import { buildPanelSet, trimPanel } from '../services/quant/indicatorLab.js';
-import { alignClose, buildMacroStates } from '../services/quant/macroState.js';
+import { alignClose, buildFredStates, buildMacroStates } from '../services/quant/macroState.js';
 
 interface Trade {
   symbol: string; asOf: string; bias: 'LONG' | 'SHORT';
@@ -64,7 +64,7 @@ async function main() {
 
   const closes = new Map<string, Float64Array>();
   panels.forEach((p, i) => closes.set(p.symbol, alignClose(p, set.dateIndex[i], set.dates.length)));
-  const states = buildMacroStates({ dates: set.dates, closes });
+  const states = [...buildMacroStates({ dates: set.dates, closes }), ...buildFredStates(set.dates)];
 
   // Date -> index, so each trade can look up the state on its entry day.
   const dateIdx = new Map<number, number>();
