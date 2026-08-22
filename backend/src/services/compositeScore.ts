@@ -216,7 +216,38 @@ export interface AISynthesisResult {
      * NO SETUP   — no valid setup exists (no structure, unusable geometry, R:R < 1).
      */
     readiness: 'ACTIONABLE' | 'WAITING' | 'NO SETUP';
+    /**
+     * The structural setup type, and NOTHING else.
+     *
+     * This string is the learning key: routes/predictive.ts persists it as
+     * `setupType` and the replay keys SETUP_STATS on it. Advisory annotations
+     * used to be appended here — `Mean Reversion [LOW QUALITY]` — which forked
+     * every archetype into a separate statistical population. Over 13,720
+     * replayed trades that turned 4 keys into 8, with 18.7% of trades in a
+     * split key and the thinnest down to 238 trades; live it is worse, because
+     * the Trade Plan writes once per day per symbol and HIGH SQUEEZE RISK
+     * splits again. Keep annotations in `advisories`.
+     */
     archetype: string;
+    /**
+     * Display-only warnings. Deliberately NOT part of `archetype`.
+     *
+     * `LOW QUALITY` in particular does not mean what it says. It fires when
+     * fewer than half the active evidence buckets agree with the weighted
+     * plurality — factor disagreement — and measured over 13,679 replayed
+     * trades those setups are not worse on any cut: +0.1852R against +0.1256R
+     * overall, and better in every symbol x era cell. The better-not-worse
+     * direction is consistent; the SIZE of it is not established (two-sample
+     * t = 1.87, paired sign test 19 of 35 years at p = 0.37, block bootstrap
+     * 97.5% — one of three tests, and this project keeps nothing that passes
+     * only one). It is also partly a direction-mix artefact: flagged plans are
+     * 53.4% long against 47.8%, and long carries the edge.
+     *
+     * So it is retained as an advisory and kept out of the learning key. What
+     * is settled is the negative: it does not flag worse trades, and it must
+     * not be presented as though it does.
+     */
+    advisories: string[];
     trigger: number;
     entryZone: string;
     chasePrice: number;
@@ -887,7 +918,8 @@ export class CompositeScoreAgent {
     const tradePlan = {
       bias: tradeBias,
       readiness,
-      archetype: qualityFlag ? `${archetype} [${qualityFlag}]` : archetype,
+      archetype,
+      advisories: qualityFlag ? qualityFlag.split(' | ') : [],
       trigger,
       entryZone: entryZoneStr,
       chasePrice,
