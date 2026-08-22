@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, type MacroResponse, type MacroSeries } from '../../lib/api';
+import { api, type CentralBankRate, type MacroResponse, type MacroSeries } from '../../lib/api';
 import styles from './MacroDashboard.module.css';
 
 /**
@@ -63,6 +63,19 @@ const Spark: React.FC<{ id: string; points: Array<{ date: string; value: number 
         strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+};
+
+/**
+ * A bank's stance, derived from its own rate path.
+ *
+ * Reports what the bank HAS DONE. Forward guidance and market-implied
+ * expectations have no free machine-readable source, so nothing here claims to
+ * know what a bank intends — a distinction worth keeping visible, because a
+ * "stance" label invites being read as a forecast.
+ */
+const Stance: React.FC<{ stance: CentralBankRate['stance'] }> = ({ stance }) => {
+  const cls = stance === 'HIKING' ? styles.hiking : stance === 'CUTTING' ? styles.cutting : styles.onhold;
+  return <span className={`${styles.stancePill} ${cls}`}>{stance}</span>;
 };
 
 const SeriesCard: React.FC<{ s: MacroSeries; unit: string }> = ({ s, unit }) => (
@@ -132,6 +145,52 @@ export const MacroDashboard: React.FC = () => {
         <div className={styles.grid}>
           {data.inflation.map(s => <SeriesCard key={s.id} s={s} unit="%" />)}
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Central banks</h2>
+        <div className={styles.fxPanel}>
+          <table className={styles.fxTable}>
+            <thead>
+              <tr>
+                <th>Bank</th><th>Rate</th><th>3M</th><th>12M</th><th>Stance</th><th>Last move</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.banks.map(b => (
+                <tr key={b.seriesId}>
+                  <td>
+                    <div className={styles.bankName}>
+                      {b.bank}
+                      {!b.official && <span className={styles.proxyMark} title="Market proxy — tracks the policy rate but is not the announced rate"> *</span>}
+                    </div>
+                    <div className={styles.bankRegion}>{b.region}</div>
+                  </td>
+                  <td className={styles.fxNum}>{b.rate === null ? '—' : `${b.rate.toFixed(2)}%`}</td>
+                  <td className={`${styles.fxChange} ${
+                    b.change3m === null ? styles.flat : b.change3m > 0.005 ? styles.up : b.change3m < -0.005 ? styles.down : styles.flat
+                  }`}>{b.change3m === null ? '—' : `${b.change3m >= 0 ? '+' : ''}${b.change3m.toFixed(2)}`}</td>
+                  <td className={`${styles.fxChange} ${
+                    b.change12m === null ? styles.flat : b.change12m > 0.005 ? styles.up : b.change12m < -0.005 ? styles.down : styles.flat
+                  }`}>{b.change12m === null ? '—' : `${b.change12m >= 0 ? '+' : ''}${b.change12m.toFixed(2)}`}</td>
+                  <td style={{ textAlign: 'right' }}><Stance stance={b.stance} /></td>
+                  <td className={styles.lastMove} style={{ textAlign: 'right' }}>
+                    {b.lastChangeDate === null
+                      ? '—'
+                      : `${b.lastChangeDelta! >= 0 ? '+' : ''}${b.lastChangeDelta!.toFixed(2)} · ${b.lastChangeDate}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {data.banks.some(b => !b.official) && (
+          <p className={styles.legend}>
+            <span className={styles.proxyMark}>*</span> market proxy — an overnight rate that tracks the
+            policy rate closely but is not the announced rate. Stance is derived from the observed rate
+            path, so it reports what a bank has done rather than what it intends.
+          </p>
+        )}
       </section>
 
       <section className={styles.section}>

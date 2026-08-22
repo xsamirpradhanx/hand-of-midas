@@ -179,6 +179,34 @@
   letter-spacing: 0.03em;
 }
 
+/* ─── central banks ─── */
+.stancePill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.hiking { background: var(--color-up-dim); color: var(--color-up); }
+.cutting { background: var(--color-down-dim); color: var(--color-down); }
+.onhold { background: rgba(255, 255, 255, 0.05); color: var(--text-tertiary); }
+
+.bankName { color: var(--text-primary); font-weight: 600; }
+.bankRegion { color: var(--text-muted); font-size: 0.72rem; }
+/* Marks a series that tracks a policy rate without being the announced one. */
+.proxyMark { color: var(--text-muted); font-size: 0.7rem; }
+.lastMove { color: var(--text-tertiary); font-size: 0.78rem; }
+
+.legend {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 /* ─── currencies ─── */
 .fxPanel {
   background: var(--glass-bg);

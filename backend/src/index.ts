@@ -417,7 +417,7 @@ const routes: readonly Route[] = [
   {
     method: 'GET',
     pattern: '/api/macro',
-    handler: async () => macro.getMacro(),
+    handler: async (event) => macro.getMacro(event),
   },
   {
     method: 'GET',

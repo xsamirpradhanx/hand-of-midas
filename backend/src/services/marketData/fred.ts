@@ -61,6 +61,13 @@ export const FRED_SERIES = {
   DFF: 'Effective federal funds rate (1954-)',
   DFII10: '10-year TIPS real yield (2003-)',
   T10YIE: '10-year breakeven inflation (2003-)',
+
+  // ── policy rates outside the US ──
+  ECBDFR: 'ECB deposit facility rate (1999-)',
+  IUDSOIA: 'SONIA, sterling overnight rate (1997-)',
+  IRSTCI01JPM156N: 'Japan overnight call money rate (1985-)',
+  IRSTCI01CAM156N: 'Canada overnight rate (1975-)',
+  IRSTCI01AUM156N: 'Australia interbank overnight rate (1990-)',
 } as const;
 
 export type FredSeriesId = keyof typeof FRED_SERIES;
@@ -242,4 +249,150 @@ export async function macroStamp(): Promise<MacroStamp | undefined> {
   } catch {
     return undefined;
   }
+}
+
+
+/**
+ * One central bank's current policy stance.
+ *
+ * `stance` is DERIVED from the observed rate path, not from any statement. It
+ * says what a bank has done, which is a fact; it does not say what one intends,
+ * which is forward guidance and has no free, machine-readable source. Nothing
+ * here should be read as an expectation.
+ */
+export interface CentralBankRate {
+  bank: string;
+  region: string;
+  seriesId: string;
+  /** True when this is the official policy rate; false when it is a market proxy. */
+  official: boolean;
+  rate: number | null;
+  asOf: string | null;
+  /** Percentage-point change over the trailing window. */
+  change3m: number | null;
+  change12m: number | null;
+  /** When the rate last moved by a meaningful step, and by how much. */
+  lastChangeDate: string | null;
+  lastChangeDelta: number | null;
+  monthsSinceChange: number | null;
+  stance: 'HIKING' | 'CUTTING' | 'ON HOLD' | 'UNKNOWN';
+}
+
+interface BankSpec {
+  bank: string; region: string; seriesId: string; official: boolean; note: string;
+}
+
+/**
+ * Which series stands for which bank, and whether it is the real thing.
+ *
+ * Two of these are proxies and are labelled as such. SONIA is an overnight
+ * index that tracks Bank Rate rather than being it, and the OECD call-money
+ * series track their policy rates closely without being the announced rate.
+ * Presenting a proxy as the official rate would be a small lie that compounds:
+ * a reader would take a 4bp drift as a policy move.
+ */
+export const CENTRAL_BANKS: BankSpec[] = [
+  { bank: 'Federal Reserve', region: 'United States', seriesId: 'DFF', official: true,
+    note: 'Effective federal funds rate' },
+  { bank: 'ECB', region: 'Euro area', seriesId: 'ECBDFR', official: true,
+    note: 'Deposit facility rate' },
+  { bank: 'Bank of England', region: 'United Kingdom', seriesId: 'IUDSOIA', official: false,
+    note: 'SONIA — tracks Bank Rate, not the announced rate' },
+  { bank: 'Bank of Japan', region: 'Japan', seriesId: 'IRSTCI01JPM156N', official: false,
+    note: 'Overnight call money — tracks the BoJ target' },
+  { bank: 'Bank of Canada', region: 'Canada', seriesId: 'IRSTCI01CAM156N', official: false,
+    note: 'Overnight rate' },
+  { bank: 'Reserve Bank of Australia', region: 'Australia', seriesId: 'IRSTCI01AUM156N', official: false,
+    note: 'Interbank overnight cash rate' },
+];
+
+/**
+ * A policy move worth reporting, in percentage points.
+ *
+ * Policy rates move in 25bp steps, so 12bp is comfortably below the smallest
+ * real decision while staying above the daily drift an overnight market rate
+ * shows around its target — which is exactly what the proxy series do.
+ */
+const MOVE_THRESHOLD = 0.12;
+
+/** Months a rate must sit still before "on hold" rather than "recently moved". */
+const HOLD_MONTHS = 9;
+
+export function centralBankStance(series: FredSeries, spec: BankSpec): CentralBankRate {
+  const valued = series.points.filter((p): p is { date: string; value: number } =>
+    p.value !== null && Number.isFinite(p.value));
+  const base: CentralBankRate = {
+    bank: spec.bank, region: spec.region, seriesId: spec.seriesId, official: spec.official,
+    rate: null, asOf: null, change3m: null, change12m: null,
+    lastChangeDate: null, lastChangeDelta: null, monthsSinceChange: null, stance: 'UNKNOWN',
+  };
+  if (valued.length < 2) return base;
+
+  const last = valued[valued.length - 1];
+  const monthsAgo = (months: number): number | null => {
+    const cutoff = new Date(last.date);
+    cutoff.setMonth(cutoff.getMonth() - months);
+    const iso = cutoff.toISOString().slice(0, 10);
+    // Nearest observation at or before the cutoff — series here are daily or
+    // monthly, so a fixed index offset would mean different spans per series.
+    for (let i = valued.length - 1; i >= 0; i--) if (valued[i].date <= iso) return last.value - valued[i].value;
+    return null;
+  };
+
+  /**
+   * Walk back to the last move.
+   *
+   * Compared against a rolling reference rather than the previous observation:
+   * a proxy rate drifts a basis point at a time around its target, so
+   * consecutive differences never clear the threshold even across a real hike.
+   * Anchoring on the last CONFIRMED level makes a 25bp step register whether it
+   * arrives in one print or five.
+   */
+  let anchor = last.value;
+  let lastChangeDate: string | null = null;
+  let lastChangeDelta: number | null = null;
+  for (let i = valued.length - 1; i >= 0; i--) {
+    const delta = anchor - valued[i].value;
+    if (Math.abs(delta) >= MOVE_THRESHOLD) {
+      lastChangeDate = valued[i + 1]?.date ?? valued[i].date;
+      lastChangeDelta = Number(delta.toFixed(2));
+      break;
+    }
+  }
+
+  let monthsSince: number | null = null;
+  if (lastChangeDate) {
+    const ms = Date.parse(last.date) - Date.parse(lastChangeDate);
+    monthsSince = Math.max(0, Math.round(ms / (30.44 * 86_400_000)));
+  }
+
+  const stance: CentralBankRate['stance'] =
+    lastChangeDelta === null ? 'UNKNOWN'
+      : monthsSince !== null && monthsSince >= HOLD_MONTHS ? 'ON HOLD'
+        : lastChangeDelta > 0 ? 'HIKING' : 'CUTTING';
+
+  return {
+    ...base,
+    rate: last.value,
+    asOf: last.date,
+    change3m: monthsAgo(3),
+    change12m: monthsAgo(12),
+    lastChangeDate,
+    lastChangeDelta,
+    monthsSinceChange: monthsSince,
+    stance,
+  };
+}
+
+/** Fetch and summarise every configured central bank. Failures drop their row. */
+export async function centralBanks(): Promise<CentralBankRate[]> {
+  const rows = await Promise.all(CENTRAL_BANKS.map(async spec => {
+    try {
+      return centralBankStance(await fetchSeries(spec.seriesId), spec);
+    } catch (e) {
+      console.error(`[FRED] central bank ${spec.seriesId} failed`, e);
+      return null;
+    }
+  }));
+  return rows.filter((r): r is CentralBankRate => r !== null);
 }

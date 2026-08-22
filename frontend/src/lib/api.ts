@@ -127,11 +127,29 @@ export interface MacroFx {
   changePct: number | null;
 }
 
+/** One central bank's rate and DERIVED stance — what it has done, not what it plans. */
+export interface CentralBankRate {
+  bank: string;
+  region: string;
+  seriesId: string;
+  /** False when the series is a market proxy rather than the announced rate. */
+  official: boolean;
+  rate: number | null;
+  asOf: string | null;
+  change3m: number | null;
+  change12m: number | null;
+  lastChangeDate: string | null;
+  lastChangeDelta: number | null;
+  monthsSinceChange: number | null;
+  stance: 'HIKING' | 'CUTTING' | 'ON HOLD' | 'UNKNOWN';
+}
+
 export interface MacroResponse {
   rates: MacroSeries[];
   curve: MacroSeries[];
   inflation: MacroSeries[];
   fx: MacroFx[];
+  banks: CentralBankRate[];
   curveStatus: string;
   fetchedAt: string;
   note: string;

@@ -10,7 +10,7 @@
  * revisited on live outcomes later.
  */
 import { getCachedData, setCachedData } from '../services/cache.js';
-import { FRED_SERIES, fetchSeries, snapshot, type FredSnapshot } from '../services/marketData/fred.js';
+import { FRED_SERIES, centralBanks, fetchSeries, snapshot, type CentralBankRate, type FredSnapshot } from '../services/marketData/fred.js';
 import { yf } from '../services/yahoo.js';
 import { withCoalescing } from '../utils/inflight.js';
 import type { APIGatewayProxyResultV2 } from '../types.js';
@@ -48,6 +48,11 @@ export interface MacroPayload {
   curve: FredSnapshot[];
   inflation: FredSnapshot[];
   fx: FxQuote[];
+  /**
+   * What each central bank has DONE. Stance is derived from the observed rate
+   * path, never from guidance — see `centralBankStance`.
+   */
+  banks: CentralBankRate[];
   /** Plain-language read of the curve, the one derived statement here. */
   curveStatus: string;
   fetchedAt: string;
@@ -70,10 +75,11 @@ async function build(): Promise<MacroPayload> {
     }
   };
 
-  const [rates, curve, inflation, fxQuotes] = await Promise.all([
+  const [rates, curve, inflation, banks, fxQuotes] = await Promise.all([
     Promise.all(RATE_IDS.map(load)),
     Promise.all(CURVE_IDS.map(load)),
     Promise.all(INFLATION_IDS.map(load)),
+    centralBanks(),
     Promise.all(FX.map(async (f): Promise<FxQuote> => {
       try {
         const q: any = await yf.quote(f.symbol);
@@ -102,14 +108,18 @@ async function build(): Promise<MacroPayload> {
     curve: present(curve),
     inflation: present(inflation),
     fx: fxQuotes,
+    banks,
     curveStatus,
     fetchedAt: new Date().toISOString(),
-    note: 'Context only. Rate conditioning was measured against 13,679 replayed trades across four decades and showed no stable relationship to outcomes, so none of this feeds a directional signal.',
+    note: 'Context only. Rate conditioning was measured against 13,679 replayed trades across four decades and showed no stable relationship to outcomes, so none of this feeds a directional signal. Central bank stance is derived from the observed rate path — it reports what a bank has done, not what it intends.',
   };
 }
 
-export async function getMacro(): Promise<APIGatewayProxyResultV2> {
-  const cached = await getCachedData<MacroPayload>(CACHE_KEY);
+export async function getMacro(event?: { queryStringParameters?: Record<string, string | undefined> | null }): Promise<APIGatewayProxyResultV2> {
+  // ?refresh=true forces a rebuild. The TTL is six hours, which is right for
+  // once-daily series but leaves no way to see a change take effect.
+  const forceRefresh = event?.queryStringParameters?.['refresh'] === 'true';
+  const cached = forceRefresh ? null : await getCachedData<MacroPayload>(CACHE_KEY);
   if (cached) return jsonResponse(200, cached);
   try {
     const payload = await withCoalescing(CACHE_KEY, build);
