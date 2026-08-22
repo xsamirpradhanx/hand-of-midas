@@ -36,10 +36,19 @@ const NAV_ITEMS = [
     to: '/forex',
     label: 'Rates & FX',
     title: 'Rates, the curve and currencies',
+    /*
+     * The generic currency sign (¤) — an inner circle with four radiating
+     * ticks. It is the international mark for "any currency", so it covers
+     * dollar, euro, rouble and rupee alike rather than privileging one, and it
+     * stays legible at 20px where two glyphs side by side would not.
+     */
     path: (
       <>
-        <path d="M3 17l6-6 4 4 8-8" />
-        <path d="M17 7h4v4" />
+        <circle cx="12" cy="12" r="5" />
+        <path d="m6.8 6.8 2.6 2.6" />
+        <path d="m17.2 6.8-2.6 2.6" />
+        <path d="m17.2 17.2-2.6-2.6" />
+        <path d="m6.8 17.2 2.6-2.6" />
       </>
     ),
   },

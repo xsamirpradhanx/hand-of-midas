@@ -8,51 +8,69 @@ import styles from './MacroDashboard.module.css';
  * Context for a human reading a trade plan, and nothing more. Rate conditioning
  * was measured against 13,679 replayed trades across four decades and showed no
  * stable relationship to outcomes — positive in two decades, negative in two,
- * zero on the full sample — so none of this feeds a signal. The backend says so
- * on the payload and this page renders that statement rather than dropping it,
- * because a rates panel inside a trading app reads as a signal unless it
- * explicitly says it is not one.
+ * zero on the full sample — so none of this feeds a signal. The backend states
+ * that on the payload and this page renders it rather than dropping it, because
+ * a rates panel inside a trading app reads as a signal unless it says otherwise.
  */
 
-/** Percentage-point change, coloured by direction. Yields are quoted in pp. */
+/** Percentage-point change, coloured by direction. Yields and spreads are in pp. */
 const Change: React.FC<{ label: string; value: number | null }> = ({ label, value }) => {
+  // The dead band matters: a yield that moved a tenth of a basis point should
+  // not render green. Below half a bp is reported as unchanged.
   const cls = value === null ? styles.flat : value > 0.005 ? styles.up : value < -0.005 ? styles.down : styles.flat;
   return (
     <div className={styles.changeItem}>
       <span className={styles.changeLabel}>{label}</span>
-      <span className={cls}>{value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}`}</span>
+      <span className={`${styles.changeValue} ${cls}`}>
+        {value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}`}
+      </span>
     </div>
   );
 };
 
 /**
- * Inline sparkline over the trailing history.
+ * Sparkline with a soft area fill.
  *
  * Scaled to its own min/max rather than to zero: these series move in tens of
- * basis points on a level of several percent, and a zero-based axis would
- * render every one of them as a flat line.
+ * basis points on a level of several percent, so a zero-based axis renders
+ * every one of them as a flat line. The gradient id is namespaced per series
+ * because duplicate SVG ids across cards would make them all adopt whichever
+ * gradient the browser resolved first.
  */
-const Spark: React.FC<{ points: Array<{ date: string; value: number }> }> = ({ points }) => {
+const Spark: React.FC<{ id: string; points: Array<{ date: string; value: number }> }> = ({ id, points }) => {
   if (points.length < 2) return null;
   const vals = points.map(p => p.value);
   const min = Math.min(...vals), max = Math.max(...vals);
   const span = max - min || 1;
-  const w = 100, h = 34;
-  const d = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${((i / (points.length - 1)) * w).toFixed(2)},${(h - ((p.value - min) / span) * (h - 4) - 2).toFixed(2)}`)
-    .join(' ');
+  const w = 100, h = 40, pad = 3;
+  const x = (i: number) => (i / (points.length - 1)) * w;
+  const y = (v: number) => h - pad - ((v - min) / span) * (h - pad * 2);
+  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(2)},${y(p.value).toFixed(2)}`).join(' ');
+  const area = `${line} L${w},${h} L0,${h} Z`;
   const rising = vals[vals.length - 1] >= vals[0];
+  const stroke = rising ? 'var(--color-up)' : 'var(--color-down)';
+  const gid = `spark-${id}`;
   return (
     <svg className={styles.spark} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
-      <path d={d} fill="none" strokeWidth="1.5" vectorEffect="non-scaling-stroke"
-        stroke={rising ? 'var(--color-bullish, #2ecc71)' : 'var(--color-bearish, #ff5c5c)'} />
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gid})`} stroke="none" />
+      <path d={line} fill="none" stroke={stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke"
+        strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 };
 
 const SeriesCard: React.FC<{ s: MacroSeries; unit: string }> = ({ s, unit }) => (
-  <div className={styles.card}>
-    <span className={styles.cardId}>{s.id}</span>
+  <article className={styles.card}>
+    <div className={styles.cardHead}>
+      <span className={styles.cardId}>{s.id}</span>
+      <span className={styles.asOf}>{s.asOf ?? '—'}</span>
+    </div>
     <span className={styles.cardValue}>{s.value === null ? '—' : `${s.value.toFixed(2)}${unit}`}</span>
     <span className={styles.cardDesc}>{s.description}</span>
     <div className={styles.changes}>
@@ -60,9 +78,8 @@ const SeriesCard: React.FC<{ s: MacroSeries; unit: string }> = ({ s, unit }) => 
       <Change label="1M" value={s.change1m} />
       <Change label="1Y" value={s.change1y} />
     </div>
-    <Spark points={s.history} />
-    <span className={styles.asOf}>as of {s.asOf ?? '—'}</span>
-  </div>
+    <Spark id={s.id} points={s.history} />
+  </article>
 );
 
 export const MacroDashboard: React.FC = () => {
@@ -87,56 +104,66 @@ export const MacroDashboard: React.FC = () => {
       <header className={styles.header}>
         <h1 className={styles.title}>Rates &amp; Currencies</h1>
         <p className={styles.subtitle}>
-          US policy and market rates from FRED, with the dollar and major crosses.
+          US policy and market rates from FRED, with the dollar and major crosses
         </p>
       </header>
 
-      <div className={`${styles.curveBanner} ${inverted ? styles.inverted : styles.normal}`}>
-        {data.curveStatus}
+      <div className={`${styles.curveBanner} ${inverted ? styles.inverted : ''}`}>
+        <span className={styles.curveLabel}>Yield curve</span>
+        <span className={styles.curveText}>{data.curveStatus}</span>
       </div>
 
-      <section>
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Policy &amp; market rates</h2>
         <div className={styles.grid}>
           {data.rates.map(s => <SeriesCard key={s.id} s={s} unit="%" />)}
         </div>
       </section>
 
-      <section>
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Term spreads</h2>
         <div className={styles.grid}>
           {data.curve.map(s => <SeriesCard key={s.id} s={s} unit="pp" />)}
         </div>
       </section>
 
-      <section>
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Real yields &amp; breakevens</h2>
         <div className={styles.grid}>
           {data.inflation.map(s => <SeriesCard key={s.id} s={s} unit="%" />)}
         </div>
       </section>
 
-      <section>
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Currencies</h2>
-        <table className={styles.fxTable}>
-          <thead>
-            <tr><th>Pair</th><th>Price</th><th>Change</th></tr>
-          </thead>
-          <tbody>
-            {data.fx.map(f => (
-              <tr key={f.symbol}>
-                <td>{f.label}</td>
-                <td>{f.price === null ? '—' : f.price.toFixed(f.price > 20 ? 2 : 4)}</td>
-                <td className={f.changePct === null ? styles.flat : f.changePct > 0 ? styles.up : f.changePct < 0 ? styles.down : styles.flat}>
-                  {f.changePct === null ? '—' : `${f.changePct >= 0 ? '+' : ''}${f.changePct.toFixed(2)}%`}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className={styles.fxPanel}>
+          <table className={styles.fxTable}>
+            <thead>
+              <tr><th>Pair</th><th>Price</th><th>Change</th></tr>
+            </thead>
+            <tbody>
+              {data.fx.map(f => (
+                <tr key={f.symbol}>
+                  <td className={styles.fxPair}>{f.label}</td>
+                  <td className={styles.fxNum}>
+                    {f.price === null ? '—' : f.price.toFixed(f.price > 20 ? 2 : 4)}
+                  </td>
+                  <td className={`${styles.fxChange} ${
+                    f.changePct === null ? styles.flat : f.changePct > 0 ? styles.up : f.changePct < 0 ? styles.down : styles.flat
+                  }`}>
+                    {f.changePct === null ? '—' : `${f.changePct >= 0 ? '+' : ''}${f.changePct.toFixed(2)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <p className={styles.note}>{data.note}</p>
+      <p className={styles.note}>
+        <span className={styles.noteBadge}>Context</span>
+        <span>{data.note}</span>
+      </p>
     </div>
   );
 };
