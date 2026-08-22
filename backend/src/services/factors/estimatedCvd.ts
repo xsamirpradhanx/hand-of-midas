@@ -1,3 +1,26 @@
+/**
+ * UNREGISTERED 2026-08-21. Not deleted, and not broken — measured.
+ *
+ * Over 390,733 decision bars of integrity-quarantined history this factor's
+ * informedness is -0.6pp: P(up | it says bullish) is 55.8% and
+ * P(up | it says bearish) is 56.7%, against an unconditional base rate of
+ * 56.2%. Both conditional rates sit on the base rate, so the vote carries no
+ * information about direction. Its raw accuracy of 50.4% was never evidence
+ * either way — raw accuracy tracks a factor's long/short mix, and this one
+ * votes long 56.7% of the time.
+ *
+ * It was removed rather than demoted to `directional: false` because its bucket
+ * is ORDER_FLOW: compositeScore only reads levels from PRICE_STRUCTURE factors
+ * and five named others, so this factor's levels never reached zone clustering.
+ * With the vote gone there was nothing left for it to contribute.
+ *
+ * The file and its regression test are kept so the implementation and the
+ * "does not overclaim institutional flow" guard survive, and so it can be
+ * re-registered if a better construction or better data changes the reading.
+ * It also stands as the counter-example to its own former reputation: this is
+ * one of the four factors once believed RELIABLY WRONG at 41.6%. It is not
+ * wrong. It is uninformative, and the 41.6% was drift.
+ */
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class EstimatedCvdFactor implements PredictiveFactor {

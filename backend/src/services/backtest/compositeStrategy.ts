@@ -120,9 +120,22 @@ export class CompositeStrategy implements BacktestStrategy {
       atr: atr(ctx.bars),
     };
 
-    const factorVotes = results.map(r => ({ factorName: r.factorName, bias: r.bias }));
+    /**
+     * Only VOTING factors reach sizing and factor learning.
+     *
+     * `directional: false` marks a factor that casts no directional vote — a
+     * pure level provider, a volatility-regime read, or one MEASURED to carry
+     * no directional information. IndependentEvidenceEngine already excluded
+     * them from bucket scores, but sizing and the learning tally read the raw
+     * result list, so a demoted factor went on moving position size and
+     * accruing a track record it was no longer entitled to. After the
+     * 2026-08-21 audit that gap covered three of the largest weights in the
+     * stack, so it is closed here rather than left as a rounding detail.
+     */
+    const voting = results.filter(r => r.directional !== false);
+    const factorVotes = voting.map(r => ({ factorName: r.factorName, bias: r.bias }));
     const sizing = computeSizing(
-      results.map(r => ({ factorName: r.factorName, bias: r.bias })),
+      factorVotes,
       synth.bias,
       learned,
       // Walk-forward by construction: the engine only exposes directions whose

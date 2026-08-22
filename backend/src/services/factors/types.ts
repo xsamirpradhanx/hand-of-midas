@@ -79,6 +79,27 @@ export interface FactorResult {
    * alone said 0.765), because the largest single weight in that bucket —
    * Swing Structure at 0.38 — could never vote.
    *
+   * DO NOT set this because a factor MEASURED poorly. That was tried on
+   * 2026-08-21 and it made the engine worse. Volume Profile, Anchored VWAP and
+   * HVLR Support all show P(up | bullish) and P(up | bearish) sitting on the
+   * base rate — informedness -0.2pp to -0.8pp, no directional information by
+   * any reading. Silencing all three raised per-trade expectancy (+39% on the
+   * LONG book) and still cut return-per-drawdown from 30.98 to 25.41, because
+   * max drawdown more than doubled at matched trade volume AND matched
+   * long/short mix. A block bootstrap put the change ahead in 29% of resamples.
+   *
+   * The explanation is that an uninformative vote is not an inert one. Those
+   * three carry 0.85 of the PRICE_STRUCTURE weight, and their noise DECORRELATES
+   * the book: with them gone the engine reaches the same read across many
+   * symbols at once and piles into one side together. Each trade got better and
+   * the portfolio got riskier. Informedness measures a factor in isolation and
+   * cannot see that.
+   *
+   * So this flag stays what it was — a STRUCTURAL declaration, for a factor that
+   * has no direction to give. A factor that votes badly is a candidate for
+   * removal, judged end to end in the replay, not for silencing on its own
+   * score.
+   *
    * Note the distinction from a factor that CAN vote and chose neutral (KAMA,
    * Hurst when not trending). That is a real "I looked and saw no edge" signal
    * and must keep diluting. Only never-voters are excluded — the same

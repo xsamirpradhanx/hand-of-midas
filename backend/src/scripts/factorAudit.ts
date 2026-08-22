@@ -52,6 +52,18 @@ const CONTEXT_BARS = Number(process.env['CONTEXT_BARS'] ?? 300);
 const BENCHMARK = process.env['BENCHMARK'] ?? 'SPY';
 
 interface Tally {
+  /**
+   * False when the factor declares `directional: false` — it emits levels or a
+   * regime read but casts no vote the engine counts.
+   *
+   * Its bias is still tallied here, because the point of the audit is to keep
+   * measuring a demoted factor: the demotion was a decision made ON this
+   * number, and it has to stay visible so the decision can be revisited. But
+   * the report must never let a non-voter's row read as though it still
+   * influences a plan, and a non-voter must not enter the long-share
+   * correlation, which is a claim about the LIVE scoring path.
+   */
+  votingInEngine: boolean;
   bullish: number; bearish: number; neutral: number;
   /** Hits split by the direction VOTED, which is what informedness needs. */
   bullHits: number; bearHits: number;
@@ -119,7 +131,7 @@ async function main() {
   const tallies = new Map<string, Tally>();
   const tally = (name: string) => {
     let t = tallies.get(name);
-    if (!t) { t = { bullish: 0, bearish: 0, neutral: 0, bullHits: 0, bearHits: 0, hits: 0, hitsAdj: 0, scored: 0, daily: new Map() }; tallies.set(name, t); }
+    if (!t) { t = { votingInEngine: true, bullish: 0, bearish: 0, neutral: 0, bullHits: 0, bearHits: 0, hits: 0, hitsAdj: 0, scored: 0, daily: new Map() }; tallies.set(name, t); }
     return t;
   };
 
@@ -176,6 +188,7 @@ async function main() {
         try { result = await f.evaluate(input); } catch { continue; }
         if (!result) continue;
         const t = tally(result.factorName);
+        if (result.directional === false) t.votingInEngine = false;
         if (result.bias === 'neutral') { t.neutral++; continue; }
         const long = result.bias === 'bullish';
         long ? t.bullish++ : t.bearish++;
@@ -243,7 +256,7 @@ async function main() {
     const mean = series.length ? series.reduce((a, b) => a + b, 0) / series.length : NaN;
     const se = neweyWestSE(series, HORIZON);
     return {
-      name, votes, neutral: t.neutral, longShare, acc, accAdj,
+      name, votes, neutral: t.neutral, longShare, acc, accAdj, voting: t.votingInEngine,
       edge: acc - chance, tStat: se > 0 ? mean / se : NaN, dates: series.length,
       bullAcc, bearAcc, informedness,
       /**
@@ -259,8 +272,11 @@ async function main() {
 
   console.log('factor                                     votes   long%     acc  bullAcc bearAcc     J     t(J)*   edge');
   for (const r of rows) {
+    // A demoted factor is still measured, but marked, so no row reads as an
+    // influence on live plans when it no longer is one.
+    const mark = r.voting ? '  ' : '· ';
     console.log(
-      `  ${r.name.slice(0, 40).padEnd(40)} ${String(r.votes).padStart(7)} ` +
+      `${mark}${r.name.slice(0, 40).padEnd(40)} ${String(r.votes).padStart(7)} ` +
       `${pctf(r.longShare).padStart(7)} ${pctf(r.acc).padStart(7)} ${pctf(r.bullAcc).padStart(7)} ${pctf(r.bearAcc).padStart(7)} ` +
       `${(Number.isFinite(r.informedness) ? (r.informedness * 100).toFixed(1) : 'n/a').padStart(6)}pp ` +
       `${(Number.isFinite(r.jT) ? r.jT.toFixed(1) : 'n/a').padStart(6)} ${(r.edge * 100).toFixed(1).padStart(5)}pp`,
@@ -269,7 +285,14 @@ async function main() {
   console.log('  * t(J) ignores the overlap between consecutive decision bars, so it is an UPPER bound.');
 
   // The headline test, run over the factors themselves rather than asserted.
-  const withVotes = rows.filter(r => r.votes > 500 && Number.isFinite(r.longShare));
+  const nonVoting = rows.filter(r => !r.voting);
+  if (nonVoting.length) {
+    console.log(`  · = declares directional:false — levels or regime only, no vote counted ` +
+      `(${nonVoting.map(r => r.name.split(' ')[0]).join(', ')})`);
+  }
+  // The correlation is a claim about the live scoring path, so it is computed
+  // over VOTING factors only.
+  const withVotes = rows.filter(r => r.voting && r.votes > 500 && Number.isFinite(r.longShare));
   const corr = (xs: number[], ys: number[]) => {
     const n = xs.length; if (n < 3) return NaN;
     const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
