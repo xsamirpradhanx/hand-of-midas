@@ -20,6 +20,7 @@
     "audit-bars": "tsx src/scripts/auditBars.ts",
     "indicator-lab": "tsx src/scripts/indicatorLab.ts",
     "factor-audit": "tsx src/scripts/factorAudit.ts",
+    "invent-indicators": "tsx src/scripts/inventIndicators.ts",
     "zone-audit": "tsx src/scripts/zoneAudit.ts",
     "quant-report": "tsx src/scripts/quantReport.ts",
     "rebuild-stats": "tsx src/scripts/rebuildStats.ts",

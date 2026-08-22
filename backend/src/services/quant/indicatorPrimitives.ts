@@ -41,11 +41,31 @@ export function rollStd(xs: ArrayLike<number>, w: number): Float64Array {
       if (Number.isFinite(old)) { sum -= old; sumSq -= old * old; count--; }
     }
     if (i >= w - 1 && count === w) {
-      // Rearranged rather than the textbook two-pass form; the guard covers the
-      // catastrophic-cancellation case where a constant window yields a tiny
-      // negative variance.
-      const varr = sumSq / w - (sum / w) ** 2;
-      out[i] = varr > 0 ? Math.sqrt(varr) : 0;
+      /**
+       * Rearranged rather than the textbook two-pass form, with a RELATIVE
+       * floor rather than a `> 0` guard.
+       *
+       * `sumSq/w - mean^2` is the classic catastrophic-cancellation shape: on a
+       * window that is nearly constant the two terms agree to many digits and
+       * what survives is accumulator drift, not variance. Because the running
+       * sums are updated incrementally, that drift depends on how many bars the
+       * accumulator has processed — so the SAME window over the SAME bars gives
+       * a slightly different answer on a long series than on a trimmed one, and
+       * a near-zero variance turns that into a wildly different z-score.
+       *
+       * It is not hypothetical. The benchmark close is forward-filled across
+       * holidays, so `benchRet` contains runs of exact zeros; scoring an
+       * expression over it shifted the cross-sectional IC by 1.7e-3 between a
+       * trimmed and untrimmed panel — enough to make a search unreproducible,
+       * and to let it mine numerical artefacts that look like signal.
+       *
+       * Below the floor the window is treated as genuinely flat and the caller
+       * abstains (zScore yields NaN), which is the honest reading.
+       */
+      const mean = sum / w;
+      const meanSq = sumSq / w;
+      const varr = meanSq - mean * mean;
+      out[i] = varr > 1e-12 * Math.max(Math.abs(meanSq), 1e-300) ? Math.sqrt(varr) : 0;
     }
   }
   return out;

@@ -338,6 +338,24 @@ export interface IndicatorScore {
    * pay whether the market rose or fell that month.
    */
   readonly betaLoading: number;
+  /**
+   * Share of the signal's variance that is CROSS-SECTIONAL rather than
+   * market-wide: mean(per-date variance across symbols) / pooled variance.
+   *
+   * Near 1 for a genuine per-symbol indicator; near 0 for a series that is the
+   * same for everyone on a given day. The distinction is invisible to IC, and
+   * that is a hole a search will find — `mean63(benchRet)` is one number per
+   * date, so ranking symbols by it ranks nothing but each symbol's own bar
+   * availability and z-score window, and it scored t = -4.3 doing exactly that.
+   * Signals are z-scored per symbol before this is measured, so both terms sit
+   * on the same scale and the ratio reads directly as a share.
+   *
+   * NaN when nothing was scorable at all, which is what a PERFECTLY market-wide
+   * signal produces: every symbol ranks equal, so no date has a defined
+   * correlation. Callers gating on this must use a comparison NaN fails
+   * (`>= min`), not one it passes.
+   */
+  readonly crossSectionalShare: number;
   /** Per-date IC series, retained for split-level and stability analysis. */
   readonly icSeries: readonly number[];
   readonly spreadSeries: readonly number[];
@@ -408,6 +426,9 @@ export function scoreCandidate(
   const spreadSeries: number[] = [];
   const dateSeries: number[] = [];
   const benchSeries: number[] = [];
+  /** Per-date cross-sectional variance, and the pooled spread, for the share. */
+  const crossVar: number[] = [];
+  let pooledSum = 0, pooledSumSq = 0, pooledN = 0;
   let hits = 0, hitsAdj = 0, scored = 0, longs = 0;
 
   for (let d = 0; d < nDates; d++) {
@@ -420,6 +441,12 @@ export function scoreCandidate(
     if (!Number.isFinite(ic)) continue;
 
     const meanRet = nanMean(ret);
+    // Dispersion of the SIGNAL across symbols on this date, and its
+    // contribution to the pooled spread.
+    let cs = 0, css = 0;
+    for (const v of sig) { cs += v; css += v * v; pooledSum += v; pooledSumSq += v * v; }
+    pooledN += sig.length;
+    crossVar.push(css / sig.length - (cs / sig.length) ** 2);
     // Conviction gate: keep only the strongest |signal| names on this date.
     let threshold = -Infinity;
     if (activeFraction < 1) {
@@ -464,6 +491,12 @@ export function scoreCandidate(
     spreadT: spreadSE > 0 ? spread / spreadSE : NaN,
     icBootstrap: blockBootstrapPositive(icSeries, horizon * 2, options.bootstrapIterations ?? 1000),
     betaLoading: pearson(spreadSeries, benchSeries),
+    crossSectionalShare: (() => {
+      if (pooledN < 2) return NaN;
+      const pooled = pooledSumSq / pooledN - (pooledSum / pooledN) ** 2;
+      const across = nanMean(crossVar);
+      return pooled > 0 ? across / pooled : NaN;
+    })(),
     icSeries,
     spreadSeries,
     dateSeries,
