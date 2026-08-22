@@ -142,18 +142,37 @@ export interface RawBar {
 }
 
 /**
- * Merge new bars into existing ones, newest write winning on a timestamp
- * collision.
+ * Fold incoming bars into stored ones, keyed by SESSION rather than by epoch.
  *
- * Later data wins deliberately: a bar re-fetched after the close is the
- * corrected version of the one captured intraday, and an appending capture job
- * that re-reads its own trailing window must converge rather than duplicate.
+ * Keying on the raw timestamp was wrong for year-chunked intervals and silently
+ * duplicated sessions. Schwab does not return a stable epoch for a daily bar:
+ * an incremental refetch of 2026-08-19 came back at 04:00Z where the original
+ * backfill had stored 05:00Z — one hour apart, same date, same close. The two
+ * did not collide, so the session was stored twice, and a duplicated daily bar
+ * corrupts every rolling window that spans it. Worse, it compounds: each
+ * incremental run re-fetches its boundary date and adds another copy.
+ *
+ * Daily/weekly/monthly bars are therefore deduplicated by ET calendar date —
+ * the same key `chunkIdFor` already uses. Intraday keeps the exact timestamp,
+ * where two bars in one session are the point rather than a defect.
+ *
+ * On collision the INCOMING values win (a late-corrected close should land) but
+ * the EXISTING timestamp is kept, so a series does not shift under repeated
+ * refreshes. That also makes this the repair path: any later merge into an
+ * already-duplicated chunk collapses it.
  */
-function mergeBars(existing: RawBar[], incoming: RawBar[]): RawBar[] {
-  const byTs = new Map<number, RawBar>();
-  for (const b of existing) byTs.set(b.timestamp, b);
-  for (const b of incoming) byTs.set(b.timestamp, b);
-  return Array.from(byTs.values()).sort((a, b) => a.timestamp - b.timestamp);
+function mergeBars(existing: RawBar[], incoming: RawBar[], interval: BarInterval): RawBar[] {
+  const bySession = new Map<string, RawBar>();
+  const keyOf = (ts: number): string =>
+    YEAR_CHUNKED.has(interval) ? etDateString(ts) : String(ts);
+
+  for (const b of existing) bySession.set(keyOf(b.timestamp), b);
+  for (const b of incoming) {
+    const key = keyOf(b.timestamp);
+    const prior = bySession.get(key);
+    bySession.set(key, prior ? { ...b, timestamp: prior.timestamp } : b);
+  }
+  return Array.from(bySession.values()).sort((a, b) => a.timestamp - b.timestamp);
 }
 
 export interface PutBarsOptions {
@@ -218,12 +237,12 @@ export async function putBars(
           close: prior.c[i]!,
           volume: prior.v[i]!,
         }));
-        final = mergeBars(priorRaw, incoming);
+        final = mergeBars(priorRaw, incoming, interval);
       } else {
-        final = mergeBars([], incoming);
+        final = mergeBars([], incoming, interval);
       }
     } else {
-      final = mergeBars([], incoming);
+      final = mergeBars([], incoming, interval);
     }
 
     if (final.length > MAX_BARS_PER_CHUNK) {

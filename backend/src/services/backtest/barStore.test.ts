@@ -140,3 +140,55 @@ describe('getBars range filtering', () => {
     expect(await getBars('ZZZZ', '1day')).toEqual([]);
   });
 });
+
+describe('daily bars deduplicate by session, not by epoch', () => {
+  /**
+   * The defect this guards. Schwab does not return a stable epoch for a daily
+   * bar: an incremental refetch of 2026-08-19 came back at 04:00Z where the
+   * original backfill had stored 05:00Z. Keyed on the raw timestamp the two did
+   * not collide, so the session was stored twice — and every incremental run
+   * would add another copy. A duplicated daily bar corrupts every rolling
+   * window that spans it.
+   */
+  const bar = (iso: string, close: number) => ({
+    timestamp: Date.parse(iso), open: close, high: close, low: close, close, volume: 1000,
+  });
+
+  it('collapses the same ET session arriving at a different epoch', async () => {
+    await putBars('DEDUPE', '1day', [bar('2026-08-19T05:00:00Z', 20.24)], 'schwab');
+    await putBars('DEDUPE', '1day', [bar('2026-08-19T04:00:00Z', 20.24)], 'schwab');
+    const bars = await getBars('DEDUPE', '1day');
+    expect(bars.length).toBe(1);
+  });
+
+  it('keeps the original timestamp so repeated refreshes do not shift the series', async () => {
+    const original = Date.parse('2026-08-19T05:00:00Z');
+    await putBars('STABLE', '1day', [bar('2026-08-19T05:00:00Z', 20.24)], 'schwab');
+    await putBars('STABLE', '1day', [bar('2026-08-19T04:00:00Z', 21.00)], 'schwab');
+    const bars = await getBars('STABLE', '1day');
+    expect(bars.length).toBe(1);
+    expect(Date.parse(bars[0].datetime)).toBe(original);
+    // ...while the newer VALUES win, so a corrected close still lands.
+    expect(bars[0].close).toBe(21.00);
+  });
+
+  it('repairs a chunk that already holds a duplicate', async () => {
+    await putBars('REPAIR', '1day', [
+      bar('2026-08-19T04:00:00Z', 20.24),
+      bar('2026-08-19T05:00:00Z', 20.24),
+    ], 'schwab');
+    // Any later merge into the chunk collapses it — this is the repair path.
+    await putBars('REPAIR', '1day', [bar('2026-08-20T05:00:00Z', 21.57)], 'schwab');
+    const bars = await getBars('REPAIR', '1day');
+    const dates = bars.map(b => b.datetime.slice(0, 10));
+    expect(new Set(dates).size).toBe(dates.length);
+  });
+
+  it('still keeps every intraday bar within one session', async () => {
+    await putBars('INTRA', '1min', [
+      bar('2026-08-19T14:30:00Z', 100),
+      bar('2026-08-19T14:31:00Z', 101),
+    ], 'schwab');
+    expect((await getBars('INTRA', '1min')).length).toBe(2);
+  });
+});

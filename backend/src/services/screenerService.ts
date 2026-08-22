@@ -83,6 +83,7 @@ export interface ScreenerResult {
     entryZone: string;
     chasePrice: number;
     expectedMove: number;
+    expectedMoveHorizon: number;
     majorResistance: number;
     stretchTarget: number;
     stop: number;

@@ -114,10 +114,25 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
       {plan && (
         <div className={styles.levelsSection}>
           <h4>Trade Parameters</h4>
+          {/*
+            Both horizons are shown because only one of them is comparable to
+            the target below it. `expectedMove` is a ONE-DAY figure; the target
+            is a 20-bar structural level. Displaying the daily number alone
+            directly above T1 reads as a contradiction — an $8 expected move
+            beside a target $35 away — and it was read that way in review. The
+            plan is consistent once the horizon is stated: over 20 bars a
+            diffusive path covers ~sqrt(20)x the daily move.
+          */}
           <div className={styles.levelRow}>
-            <span className={styles.levelLabel}>Expected Move</span>
+            <span className={styles.levelLabel}>Expected Move (1 day)</span>
             <span className={styles.levelValueTarget}>{(plan.bias === 'SHORT' || thesis.bias === 'bearish') ? '-' : '+'}${Math.abs(plan.expectedMove)}</span>
           </div>
+          {plan.expectedMoveHorizon !== undefined && (
+            <div className={styles.levelRow}>
+              <span className={styles.levelLabel}>Expected Move (20-bar horizon)</span>
+              <span className={styles.levelValueTarget}>{(plan.bias === 'SHORT' || thesis.bias === 'bearish') ? '-' : '+'}${Math.abs(plan.expectedMoveHorizon)}</span>
+            </div>
+          )}
           <div className={styles.levelRow}>
             <span className={styles.levelLabel}>T1 (Major {(plan.bias === 'SHORT' || thesis.bias === 'bearish') ? 'Support' : 'Resistance'})</span>
             <span className={styles.levelValueTarget}>${plan.majorResistance}</span>

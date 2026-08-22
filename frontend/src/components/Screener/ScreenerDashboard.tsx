@@ -67,6 +67,7 @@ export interface ScreenerResult {
     entryZone: string;
     chasePrice: number;
     expectedMove: number;
+    expectedMoveHorizon?: number;
     majorResistance: number;
     stretchTarget: number;
     stop: number;
@@ -563,8 +564,11 @@ const ScreenerDashboard: React.FC = () => {
                             <span style={{ color: 'var(--color-text-dim)' }}>Target</span>
                             <span style={{ color: 'var(--color-bullish)' }}>{result.tradePlan.bias === 'LONG' ? `$${result.tradePlan.majorResistance}` : `$${result.tradePlan.stretchTarget}`}</span>
                             
-                            <span style={{ color: 'var(--color-text-dim)' }}>Expected Move</span>
-                            <span style={{ color: 'var(--color-text)' }}>{result.tradePlan.expectedMove.toFixed(1)}%</span>
+                            {/* Dollars, not percent — this rendered "$8.16" as "8.2%" for
+                                as long as it has existed. And it is the ONE-DAY move, so the
+                                horizon is stated to keep it from being read against Target. */}
+                            <span style={{ color: 'var(--color-text-dim)' }}>Exp. Move (1d)</span>
+                            <span style={{ color: 'var(--color-text)' }}>${result.tradePlan.expectedMove.toFixed(2)}</span>
                           </div>
                         </div>
                       </div>

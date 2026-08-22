@@ -251,7 +251,17 @@ export interface AISynthesisResult {
     trigger: number;
     entryZone: string;
     chasePrice: number;
+    /** ONE-DAY expected move in dollars, ~0.35x ATR. Signed by bias. */
     expectedMove: number;
+    /**
+     * The same move scaled to the grading horizon, sqrt(HORIZON_BARS) x daily.
+     *
+     * Published because `expectedMove` alone is routinely compared against the
+     * target, which is a 20-bar structural level — a comparison that makes any
+     * correctly-sized plan look self-contradictory. This is the figure that is
+     * actually comparable to `majorResistance`.
+     */
+    expectedMoveHorizon: number;
     majorResistance: number;
     stretchTarget: number;
     stop: number;
@@ -679,8 +689,23 @@ export class CompositeScoreAgent {
     const squeezeFactor = factors.find(f => f.factorName.includes('Options Squeeze Score'));
     const isHighSqueezeRisk = squeezeFactor?.reasoning.includes('HIGH GAMMA SQUEEZE RISK');
 
-    // Expected move: Calculate 1-day expected move (approx 0.35x ATR or options straddle)
+    /**
+     * ONE-DAY expected move, ~0.35x ATR (or the options straddle).
+     *
+     * The horizon matters and was not being stated anywhere. Displayed beside a
+     * 20-bar structural target it reads as an internal contradiction — an $8.16
+     * expected move next to a target $35 away — and a reviewer flagged exactly
+     * that as a modelling flaw. It is not one: over HORIZON_BARS a diffusive
+     * path covers roughly sqrt(20) x the daily move, so $8.16 scales to ~$36.5
+     * against an actual target distance of $35.46. The plan is coherent to
+     * within 3%; only the label was missing.
+     *
+     * `expectedMove` keeps its one-day meaning because zoneAudit reverses this
+     * exact formula to recover atrPct. The comparable figure is published
+     * alongside it as `expectedMoveHorizon` rather than by changing this one.
+     */
     const dailyExpectedMove = Number((currentPrice * atrPct * 0.35).toFixed(2));
+    const horizonExpectedMove = Number((dailyExpectedMove * Math.sqrt(HORIZON_BARS)).toFixed(2));
 
     // Trade-plan geometry must be sized to the horizon it is graded on.
     // evaluateQuant grades against EVALUATION_HORIZON_BARS = 20 daily bars (~4 weeks),
@@ -756,6 +781,39 @@ export class CompositeScoreAgent {
       return null;
     };
 
+    /**
+     * EXPERIMENT (`REQUIRE_CONFIRMATION`): only fire when the decision bar has
+     * actually rejected the trigger, instead of firing because price reached it.
+     *
+     * Raised in review of an NBIS short: "do not let the screener fire simply
+     * because price crosses $220.51 — require a rejection candle / volume
+     * confirmation." It is a reasonable-sounding rule and the harness can
+     * settle it, so it ships OFF and is measured rather than assumed.
+     *
+     * Causal by construction: the decision is taken at the close of the last
+     * visible bar, so that bar's own high, low, close and volume are known.
+     *
+     *   reject         SHORT needs high >= trigger and close < trigger (price
+     *                  probed the level and was pushed back); LONG mirrored.
+     *   reject+volume  additionally requires above-average participation, on the
+     *                  argument that a rejection nobody traded is not evidence.
+     */
+    const confirmationMode = process.env['REQUIRE_CONFIRMATION'] ?? '';
+    const lastBar = bars?.[bars.length - 1];
+    const volumeConfirmed = (() => {
+      if (!confirmationMode.includes('volume')) return true;
+      const window = bars?.slice(-21, -1) ?? [];
+      if (window.length < 10 || !lastBar) return false;
+      const avg = window.reduce((a, b) => a + (b.volume ?? 0), 0) / window.length;
+      return avg > 0 && (lastBar.volume ?? 0) >= avg;
+    })();
+    const confirmsLong = (t: number) =>
+      !confirmationMode || !lastBar ? true
+        : lastBar.low <= t && lastBar.close > t && volumeConfirmed;
+    const confirmsShort = (t: number) =>
+      !confirmationMode || !lastBar ? true
+        : lastBar.high >= t && lastBar.close < t && volumeConfirmed;
+
     // A plan built on a fabricated zone is not a plan. When either side fell back to
     // the placeholder band, the trigger/stop/target are all derived from a level that
     // was never found in the data, so no trade can be justified from them.
@@ -799,6 +857,7 @@ export class CompositeScoreAgent {
       if (stop >= trigger || majorResistance <= trigger) rr = 0;
 
       const tooTightLong = geometryTooTight(majorResistance - trigger, trigger - stop);
+      const unconfirmedLong = !confirmsLong(trigger);
 
       if (fabricatedSide) {
         tradeBias = 'NO TRADE';
@@ -810,6 +869,13 @@ export class CompositeScoreAgent {
         whyNow = rr >= 1.0
           ? `Valid LONG setup at $${trigger} ({rr}R), but price is ${Math.abs(roomToSupport).toFixed(1)}% away — wait for the pullback.`.replace('{rr}', String(rr))
           : `Price is overextended (${roomToSupport.toFixed(1)}% above support) and the setup is only ${rr}R.`;
+      } else if (unconfirmedLong) {
+        // Setup is sound and price is at the level; the bar just has not
+        // rejected it yet. WAITING, not NO SETUP — same treatment as a pullback
+        // that has not arrived.
+        tradeBias = 'NO TRADE';
+        readiness = rr >= 1.0 ? 'WAITING' : 'NO SETUP';
+        whyNow = `Valid LONG setup at $${trigger} ({rr}R), but the session has not rejected the level — waiting for confirmation.`.replace('{rr}', String(rr));
       } else if (tooTightLong) {
         tradeBias = 'NO TRADE';
         whyNow = tooTightLong;
@@ -854,6 +920,7 @@ export class CompositeScoreAgent {
       if (stop <= trigger || majorResistance >= trigger) rr = 0;
 
       const tooTightShort = geometryTooTight(trigger - majorResistance, stop - trigger);
+      const unconfirmedShort = !confirmsShort(trigger);
 
       if (fabricatedSide) {
         tradeBias = 'NO TRADE';
@@ -865,6 +932,13 @@ export class CompositeScoreAgent {
         whyNow = rr >= 1.0
           ? `Valid SHORT setup at $${trigger} ({rr}R), but price is ${Math.abs(roomToSupport).toFixed(1)}% away — wait for the pullback.`.replace('{rr}', String(rr))
           : `Price is overextended (${roomToSupport.toFixed(1)}% below resistance) and the setup is only ${rr}R.`;
+      } else if (unconfirmedShort) {
+        // Setup is sound and price is at the level; the bar just has not
+        // rejected it yet. WAITING, not NO SETUP — same treatment as a pullback
+        // that has not arrived.
+        tradeBias = 'NO TRADE';
+        readiness = rr >= 1.0 ? 'WAITING' : 'NO SETUP';
+        whyNow = `Valid SHORT setup at $${trigger} ({rr}R), but the session has not rejected the level — waiting for confirmation.`.replace('{rr}', String(rr));
       } else if (tooTightShort) {
         tradeBias = 'NO TRADE';
         whyNow = tooTightShort;
@@ -924,6 +998,7 @@ export class CompositeScoreAgent {
       entryZone: entryZoneStr,
       chasePrice,
       expectedMove: Number(expectedMove.toFixed(2)),
+      expectedMoveHorizon: Number((Math.sign(expectedMove) * horizonExpectedMove).toFixed(2)),
       majorResistance,
       stretchTarget,
       stop,

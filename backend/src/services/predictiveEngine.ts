@@ -66,7 +66,11 @@ export interface PredictiveEngineResult {
       trigger: number;
       entryZone: string;
       chasePrice: number;
+      /** ONE-DAY expected move in dollars, ~0.35x ATR. Signed by bias. */
       expectedMove: number;
+      /** The same move scaled to the 20-bar grading horizon — the figure
+       *  comparable to `majorResistance`. See compositeScore. */
+      expectedMoveHorizon: number;
       majorResistance: number;
       stretchTarget: number;
       stop: number;
