@@ -1,3 +1,4 @@
+import type { MacroStamp } from './services/marketData/fred.js';
 // ─── API Gateway Lambda Event Types ────────────────────────────────────────────
 
 /** Incoming API Gateway v2 (HTTP API) event. */
@@ -93,6 +94,14 @@ export type PredictionSource = 'TRADE_PLAN' | 'SCREENER';
 
 export interface PredictionItem extends DynamoDBBaseItem {
   readonly symbol: string;
+  /**
+   * Macro conditions the day this plan was formed.
+   *
+   * A FIELD, deliberately not part of any learning key — see `macroStamp` for
+   * why. Optional: rows written before this existed do not carry it, and a FRED
+   * outage degrades to undefined rather than failing the write.
+   */
+  readonly macro?: MacroStamp;
   readonly source?: PredictionSource;
   readonly currentPrice: number;
   readonly zones: any[];

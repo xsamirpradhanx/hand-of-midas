@@ -108,7 +108,38 @@ export interface BrokerStatusResponse {
   anyNeedsReauth: boolean;
 }
 
+/** One FRED series, summarised for display. Changes are in the series' own units. */
+export interface MacroSeries {
+  id: string;
+  description: string;
+  value: number | null;
+  asOf: string | null;
+  change1d: number | null;
+  change1m: number | null;
+  change1y: number | null;
+  history: Array<{ date: string; value: number }>;
+}
+
+export interface MacroFx {
+  symbol: string;
+  label: string;
+  price: number | null;
+  changePct: number | null;
+}
+
+export interface MacroResponse {
+  rates: MacroSeries[];
+  curve: MacroSeries[];
+  inflation: MacroSeries[];
+  fx: MacroFx[];
+  curveStatus: string;
+  fetchedAt: string;
+  note: string;
+}
+
 export const api = {
+  getMacro: (): Promise<MacroResponse> => fetchWithAuth('/macro'),
+
   getWatchlist: async (): Promise<WatchlistEntry[]> => {
     const res = await fetchWithAuth('/watchlist');
     return res?.items || [];

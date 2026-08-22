@@ -28,6 +28,7 @@ import * as sectorHeatmap from './routes/sectorHeatmap.js';
 import * as news from './routes/news.js';
 import * as search from './routes/search.js';
 import * as sentiment from './routes/sentiment.js';
+import * as macro from './routes/macro.js';
 
 // ---------------------------------------------------------------------------
 // Path-matching helpers
@@ -413,6 +414,11 @@ const routes: readonly Route[] = [
     },
   },
 
+  {
+    method: 'GET',
+    pattern: '/api/macro',
+    handler: async () => macro.getMacro(),
+  },
   {
     method: 'GET',
     pattern: '/api/market-internals',

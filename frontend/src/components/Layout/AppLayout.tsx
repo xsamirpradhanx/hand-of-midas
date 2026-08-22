@@ -33,6 +33,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: '/forex',
+    label: 'Rates & FX',
+    title: 'Rates, the curve and currencies',
+    path: (
+      <>
+        <path d="M3 17l6-6 4 4 8-8" />
+        <path d="M17 7h4v4" />
+      </>
+    ),
+  },
+  {
     to: '/sentiment',
     label: 'Sentiment',
     title: 'Sentiment Dashboard',
@@ -69,7 +80,8 @@ export const AppLayout: React.FC = () => {
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const hideProviderSelector =
-    location.pathname.startsWith('/screener') || location.pathname.startsWith('/sentiment');
+    location.pathname.startsWith('/screener') || location.pathname.startsWith('/sentiment') ||
+    location.pathname.startsWith('/forex');
 
   // Route changes should dismiss the drawer, otherwise tapping a nav item leaves
   // the menu covering the page it just navigated to.

@@ -101,8 +101,13 @@ export async function fetchSeries(id: string, options: { start?: string; force?:
     value: o.value === '.' ? null : Number(o.value),
   }));
   const series: FredSeries = { id, points, fetchedAt: new Date().toISOString() };
-  fs.mkdirSync(FRED_CACHE_DIR, { recursive: true });
-  fs.writeFileSync(cacheFile(id), JSON.stringify(series));
+  // Best-effort local cache. Lambda's filesystem is read-only outside /tmp, and
+  // the route path caches through DynamoDB anyway — losing the file cache costs
+  // a refetch, not correctness, so a failure here must not fail the request.
+  try {
+    fs.mkdirSync(FRED_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(cacheFile(id), JSON.stringify(series));
+  } catch { /* research convenience only */ }
   return series;
 }
 
@@ -132,4 +137,109 @@ export function alignSeries(series: FredSeries, dates: Float64Array): Float64Arr
     out[d] = last;
   }
   return out;
+}
+
+
+/** Latest observed value and the change over a lookback, in the series' own units. */
+export interface FredSnapshot {
+  readonly id: string;
+  readonly description: string;
+  readonly value: number | null;
+  readonly asOf: string | null;
+  readonly change1d: number | null;
+  readonly change1m: number | null;
+  readonly change1y: number | null;
+  /** Trailing points for charting, oldest first. */
+  readonly history: ReadonlyArray<{ date: string; value: number }>;
+}
+
+/**
+ * Summarise one series for display.
+ *
+ * Changes are absolute differences in the series' own units — percentage points
+ * for a yield or a spread. A percentage change would be meaningless on a spread
+ * that crosses zero, which the 10y-2y does.
+ */
+export function snapshot(series: FredSeries, description: string, historyDays = 504): FredSnapshot {
+  const valued = series.points.filter((p): p is { date: string; value: number } =>
+    p.value !== null && Number.isFinite(p.value));
+  if (valued.length === 0) {
+    return { id: series.id, description, value: null, asOf: null, change1d: null, change1m: null, change1y: null, history: [] };
+  }
+  const last = valued[valued.length - 1];
+  const back = (n: number) => {
+    const i = valued.length - 1 - n;
+    return i >= 0 ? last.value - valued[i].value : null;
+  };
+  return {
+    id: series.id,
+    description,
+    value: last.value,
+    asOf: last.date,
+    change1d: back(1),
+    change1m: back(21),
+    change1y: back(252),
+    history: valued.slice(-historyDays),
+  };
+}
+
+
+/**
+ * Compact macro snapshot stamped onto each prediction row.
+ *
+ * A FIELD on the row, never part of the learning KEY. Adding regime to the key
+ * would fork every archetype into N macro states — exactly the fragmentation
+ * `[LOW QUALITY]` caused, turning 4 setup keys into 8 with the thinnest holding
+ * 238 trades. Live it is worse, since the Trade Plan writes once per day per
+ * symbol, so each extra key takes proportionally longer to reach a usable
+ * sample. As a field it dilutes nothing and can be sliced offline later.
+ *
+ * Stamped even though rates measured NULL against 13,679 replayed trades. The
+ * backtest answered "did this matter historically". The stamp answers "does it
+ * matter for the trades this engine actually takes from here" — a different
+ * population, and one that cannot be studied retroactively if the data was
+ * never recorded. Recording is cheap.
+ */
+export interface MacroStamp {
+  /** 10-year Treasury constant maturity yield, percent. */
+  dgs10: number | null;
+  /** One-month change in the 10-year, percentage points. */
+  dgs10Change1m: number | null;
+  /** 10y-2y term spread, percentage points. Negative is inverted. */
+  t10y2y: number | null;
+  /** 10-year TIPS real yield, percent. */
+  realYield10: number | null;
+  /** Effective fed funds rate, percent. */
+  fedFunds: number | null;
+  asOf: string | null;
+}
+
+/**
+ * Build the stamp from cached series.
+ *
+ * Never throws: a macro outage must not cost a graded outcome, so every failure
+ * degrades to undefined and the prediction is written without it.
+ */
+export async function macroStamp(): Promise<MacroStamp | undefined> {
+  try {
+    const [ten, curve, real, funds] = await Promise.all([
+      fetchSeries('DGS10').catch(() => null),
+      fetchSeries('T10Y2Y').catch(() => null),
+      fetchSeries('DFII10').catch(() => null),
+      fetchSeries('DFF').catch(() => null),
+    ]);
+    if (!ten) return undefined;
+    const latest = (s: FredSeries | null) => (s ? snapshot(s, '', 2).value : null);
+    const tenSnap = snapshot(ten, '', 260);
+    return {
+      dgs10: tenSnap.value,
+      dgs10Change1m: tenSnap.change1m,
+      t10y2y: latest(curve),
+      realYield10: latest(real),
+      fedFunds: latest(funds),
+      asOf: tenSnap.asOf,
+    };
+  } catch {
+    return undefined;
+  }
 }

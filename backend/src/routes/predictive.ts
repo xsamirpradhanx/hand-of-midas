@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2, PredictionItem } 
 import { jsonResponse } from '../utils/response.js';
 import { getPredictiveZones } from '../services/predictiveEngine.js';
 import { getCachedData, setCachedData } from '../services/cache.js';
+import { macroStamp } from '../services/marketData/fred.js';
 import { putItem } from '../services/dynamodb.js';
 
 /**
@@ -31,6 +32,9 @@ async function persistPrediction(symbol: string, data: any): Promise<void> {
   if (typeof target !== 'number') return;
 
   const now = new Date();
+  // Recorded alongside the plan so the macro question can be revisited on live
+  // outcomes. Awaited but non-fatal — macroStamp swallows its own failures.
+  const macro = await macroStamp();
   const item: PredictionItem = {
     pk: `PREDICTION#${symbol}`,
     sk: `TIMESTAMP#${now.toISOString().slice(0, 10)}`,
@@ -44,6 +48,7 @@ async function persistPrediction(symbol: string, data: any): Promise<void> {
     entry: plan.trigger,
     stop: plan.stop,
     target,
+    macro,
   };
   await putItem(item);
 }

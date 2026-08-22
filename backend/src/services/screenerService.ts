@@ -102,6 +102,7 @@ export type ScreenerMode = 'premarket' | 'open' | 'momentum' | 'highdemand';
 
 import { calculateMidasScore } from './midasModel.js';
 import { buildActiveMarketUniverse } from './universeService.js';
+import { macroStamp } from './marketData/fred.js';
 
 interface Candidate {
   ticker: string;
@@ -957,6 +958,8 @@ async function evaluateSetup(
     // where the user re-opening a panel should refresh that day's row.
     try {
       const timestamp = new Date().toISOString();
+      // Same stamp the Trade Plan writes. Non-fatal by construction.
+      const macro = await macroStamp();
       const vwapDistPct = pmVwap ? Number((((candidate.price - pmVwap) / pmVwap) * 100).toFixed(2)) : undefined;
 
       const predictionItem: PredictionItem = {
@@ -981,6 +984,7 @@ async function evaluateSetup(
         // trades against a farther level than the R:R shown to the user promised,
         // undercounting SHORT wins that hit T1 but timed out before reaching T2.
         target: tp.majorResistance ?? undefined,
+        macro,
       };
       // expectedVersion 0 asserts the item does not exist yet (dynamodb.ts:113).
       await putItem(predictionItem, 0);

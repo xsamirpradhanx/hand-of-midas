@@ -1,0 +1,101 @@
+.container {
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  color: var(--text-primary);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header { display: flex; flex-direction: column; gap: var(--space-sm); }
+
+.title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle { color: var(--text-secondary); font-size: 0.95rem; margin: 0; }
+
+/* The payload carries an explicit statement that none of this is a signal.
+   It is rendered rather than dropped, because a rates panel sitting inside a
+   trading app reads as a signal unless it says otherwise. */
+.note {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--glass-border);
+  padding: var(--space-sm) var(--space-md);
+  line-height: 1.5;
+  background: var(--glass-bg);
+  border-radius: 4px;
+}
+
+.curveBanner {
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: var(--space-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+.inverted { color: var(--color-bearish, #ff5c5c); }
+.normal { color: var(--text-primary); }
+
+.sectionTitle {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-sm) 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--space-md);
+}
+
+.card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.cardId { font-size: 0.72rem; letter-spacing: 0.08em; color: var(--text-secondary); }
+.cardValue {
+  font-size: 1.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.cardDesc { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; }
+
+.changes { display: flex; gap: var(--space-md); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.changeItem { display: flex; flex-direction: column; }
+.changeLabel { color: var(--text-secondary); font-size: 0.68rem; }
+.up { color: var(--color-bullish, #2ecc71); }
+.down { color: var(--color-bearish, #ff5c5c); }
+.flat { color: var(--text-secondary); }
+
+.spark { width: 100%; height: 34px; display: block; margin-top: var(--space-xs); }
+
+.asOf { font-size: 0.68rem; color: var(--text-secondary); }
+
+.fxTable { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.fxTable th {
+  text-align: left; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-secondary); padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--glass-border);
+}
+.fxTable td { padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--glass-border); font-variant-numeric: tabular-nums; }
+.fxTable td:not(:first-child), .fxTable th:not(:first-child) { text-align: right; }
+
+.state { padding: var(--space-xl); color: var(--text-secondary); }

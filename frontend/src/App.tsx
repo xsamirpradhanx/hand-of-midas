@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { MacroDashboard } from './components/Macro/MacroDashboard';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/Auth/LoginPage';
 import { Dashboard } from './pages/Dashboard';
@@ -69,6 +70,7 @@ export function App() {
           <Route path="screener/growth" element={<GrowthScreener />} />
           <Route path="screener/etf" element={<EtfScreener />} />
           <Route path="sentiment" element={<SentimentDashboard />} />
+          <Route path="forex" element={<MacroDashboard />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
