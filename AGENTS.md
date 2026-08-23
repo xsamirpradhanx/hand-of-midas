@@ -32,11 +32,23 @@ put through it and **only one survived**:
 | conviction is anti-predictive | t≈−0.066 correlation, clean gradient | gradient *reversed* on a wider universe |
 | factor disagreement beats consensus | +0.519R vs +0.102R, and it **replicated** on a disjoint symbol split (t≈2.04) | vanished at n=3,154 (t≈−0.29) |
 | the learning loop improves results | R/DD 12.51 → 24.08, +92% | 50.1% of bootstrap resamples — a coin flip |
-| **accuracy-based position sizing** | t≈3.25 separation | **survived**: t≈5.35 on 171 unseen symbols |
+| accuracy-based position sizing | t≈5.35 on 171 unseen symbols | **it was a long/short classifier** — see below |
 
 Note the second row. It survived an out-of-sample check *and was still noise*.
 n=122 at t≈2.04 could never carry that conclusion however good the story sounded
 — and it had a very good story ("consensus is already priced in").
+
+Note the fourth row harder. Sizing passed three of four tests on 11,676 trades
+across symbols chosen specifically because they had no part in its design, and
+it was **still wrong**. `factor-audit` later showed why: raw directional accuracy
+correlates **0.991** with how often a factor votes long, and equities rose in
+**55.7%** of 20-bar windows. So a score built from those accuracies is a long
+bias wearing a lab coat. The proof is that it stops separating the moment you
+hold direction fixed — LONG-only t≈−0.62, SHORT-only t≈1.52 — while sorting
+almost perfectly on direction itself (bottom bucket 2.7% long, top 97.5%).
+
+**Four claims went through the gauntlet. Four were retracted.** Assume your
+finding is the fifth until it survives a control it cannot game.
 
 ### The three tests
 
@@ -138,19 +150,28 @@ which is worse than reporting nothing.
 - **LONG carries the edge** (+0.206R, t≈5.57). SHORT is +0.068R at t≈1.90 — not
   distinguishable from zero, but *not negative*. Deliberately **not gated**:
   cutting half the trades for an unproven gain is not justified by that number.
-- **Accuracy-based sizing works.** `services/quant/positionSizing.ts`. Verified on
-  171 symbols with no part in its design: t≈5.35, sized beat flat in 30/40 years
-  (p≈0.0016), monotone in strength. **~+6% return-per-drawdown.** Left *advisory*,
-  not auto-applied — that is a risk decision, not an evidence gap.
-- **Four factors are reliably WRONG** about 20-bar direction, persisting across a
-  17-year hold-out: Volume Profile ~42.7%, Estimated CVD ~41.6%, Asymmetric
-  Kinematic ~43.4%, Anchored VWAP ~46.7%. **Inverting them does not help**
-  (t≈0.39) — it just emits 3× more trades at the same edge.
+- **The up-drift base rate is 55.7%** over 20 bars. Any long-leaning rule clears
+  that without knowing anything. This is the control every directional claim must
+  beat, and most do not.
+- **No registered factor has demonstrated directional skill.** `factor-audit`
+  measures `edge` — accuracy minus what a coin with that factor's own long/short
+  mix would score on the same bars. Across the registered set, every edge sits
+  between −0.6pp and +0.4pp, i.e. nothing. Raw accuracy correlates 0.991 with
+  long-share and −0.940 with edge.
 
-**Retracted** — see the table above. Conviction does **not** predict (top-vs-bottom
-t≈1.42 on 5,989 trades) and could not be rescued by tilting; a regression test
-now asserts `computeConviction` ignores an `accuracyEdge` input. Never present
-conviction as a win probability — it is an evidence-strength score.
+**Retracted** — see the table above, all four rows. Conviction does **not**
+predict (top-vs-bottom t≈1.42 on 5,989 trades) and could not be rescued by
+tilting; a regression test asserts `computeConviction` ignores an `accuracyEdge`
+input. Never present conviction as a win probability.
+
+`positionSizing.ts` remains in the tree and is still ADVISORY — but it is a
+direction proxy, not a quality score, and must not be described as measuring
+plan quality until it beats a same-direction control.
+
+**The open question this leaves.** If no factor has edge and the base rate is
+55.7% up, then the engine's ~+0.10R may be drift capture rather than skill. That
+is the single most important thing to settle, and `edge` is the metric to settle
+it with. See "Where to take it".
 
 ---
 
@@ -159,27 +180,35 @@ conviction as a win probability — it is an evidence-strength score.
 Ordered by expected value. Each is measurable with the tooling above, so **record
 a baseline first, then change one thing.**
 
-1. **Re-test the older conclusions on the 171 unseen symbols.** Zone geometry,
-   factor accuracy and the LONG/SHORT split were all established on the original
-   87, which are now in-sample. Some will not survive. Finding out which is
-   cheaper than building on sand.
+1. **Settle whether the engine has skill or only drift.** Re-measure the base
+   +0.10R against a same-direction, same-exposure control: a rule that takes the
+   same number of longs and shorts on random entries. If the engine does not beat
+   it, everything downstream is decoration and the honest move is to say so. This
+   is the highest-value question in the repo.
 
-2. **Screeners are unmeasured.** The backtest replays `CompositeScoreAgent`, not
+2. **Find one factor with non-zero `edge`.** `indicator-lab` and
+   `invent-indicators` exist for exactly this and already run the right protocol
+   — a discovery/holdout symbol split crossed with an era split, and a null run
+   on shuffled forward returns so you know what the search extracts from noise.
+   One indicator with a real edge is worth more than every scoring refinement
+   attempted so far.
+
+3. **Screeners are unmeasured.** The backtest replays `CompositeScoreAgent`, not
    `runScreener`. Nothing has ever graded whether `premarket` / `open` /
    `momentum` / `highdemand` surface better candidates than a random liquid name.
    Build a screener strategy adapter for the replay engine and find out. Expect
    this to be the largest single source of unmeasured risk in the product.
 
-3. **Position state and sizing for the bot.** Nothing tracks what is open or
+4. **Position state and concentration limits for the bot.** Nothing tracks what is open or
    decides quantity, so a bot could stack correlated entries into one thesis
    without noticing. The sizing signal now has a defensible basis; concentration
    limits do not exist yet.
 
-4. **A fill model honest enough to size against.** `PaperExecutor` has no
+5. **A fill model honest enough to size against.** `PaperExecutor` has no
    slippage, partial fills or queue position. Until that exists, no backtest
    number should be used to size real money.
 
-5. **Conviction, or its replacement.** It drives ranking and display while
+6. **Conviction, or its replacement.** It drives ranking and display while
    carrying no relationship to outcome. Either find a formulation that separates,
    or stop presenting it as a quality score.
 
