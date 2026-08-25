@@ -126,7 +126,7 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchPolygon<T>(url: string): Promise<T> {
+export async function fetchPolygon<T>(url: string): Promise<T> {
   const apiKey = await getApiKey();
   const targetUrl = new URL(url);
   targetUrl.searchParams.set('apiKey', apiKey);

@@ -1,11 +1,12 @@
 import type { PolygonNewsArticle } from './polygon.js';
+import type { FactorResult } from './factors/types.js';
 import { AI_AVAILABLE, generateText } from './aiProvider.js';
 
 // Gemini free tier caps at 20 requests/day; the screener re-evaluates the same
 // symbols on every refresh, so identical inputs must be served from cache.
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
 const insightCache = new Map<string, { expiresAt: number; value: string }>();
-const synthesisCache = new Map<string, { expiresAt: number; value: string }>();
+const synthesisCache = new Map<string, { expiresAt: number; value: CommitteeSynthesisResult }>();
 
 export interface MarketMetrics {
   symbol: string;
@@ -75,17 +76,44 @@ function generateHeuristicInsight(metrics: MarketMetrics): string {
   return insight;
 }
 
+export interface TradePlanNarrativeInput {
+  bias: 'LONG' | 'SHORT';
+  target: number;
+  stop: number;
+  trigger: number;
+}
+
+export interface CommitteeSynthesisResult {
+  /** 3-4 sentence qualitative synthesis of the quant report against the news. */
+  synthesis: string;
+  /** 2 sentences explaining the trade plan's trigger/target/stop. */
+  narrative: string;
+}
+
+/**
+ * One AI call producing both the qualitative committee synthesis and the
+ * trade-plan narrative. These used to be two fully independent calls
+ * (generateCommitteeSynthesis + tradeNarrative.ts's
+ * generateGroundedTradeNarrative) through the same globally-throttled AI
+ * queue for what is really the same "explain the deterministic numbers in
+ * words" job over overlapping evidence — merged to cut a call off every
+ * Trade Plan generation.
+ */
 export async function generateCommitteeSynthesis(
   symbol: string,
   deterministicSummary: string,
-  news: PolygonNewsArticle[] | undefined
-): Promise<string> {
-  const fallback = deterministicSummary;
+  news: PolygonNewsArticle[] | undefined,
+  factors: FactorResult[],
+  tradePlan: TradePlanNarrativeInput,
+): Promise<CommitteeSynthesisResult> {
+  const narrativeFallback = `The ${tradePlan.bias} plan is anchored to the $${tradePlan.trigger} trigger, $${tradePlan.target} target, and $${tradePlan.stop} invalidation. The target is the nearest independently supported structural level; it is a scenario, not a forecast.`;
+  const fallback: CommitteeSynthesisResult = { synthesis: deterministicSummary, narrative: narrativeFallback };
   if (!AI_AVAILABLE) return fallback;
 
   const headlines = (news || []).slice(0, 10).map(n => `- ${n.title}`).join('\n');
+  const evidence = factors.slice(0, 8).map(f => ({ name: f.factorName, bias: f.bias, reasoning: f.reasoning }));
 
-  const cacheKey = `${symbol}::${deterministicSummary}::${headlines}`;
+  const cacheKey = JSON.stringify({ symbol, deterministicSummary, headlines, tradePlan, evidence });
   const cached = synthesisCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
@@ -97,11 +125,27 @@ ${deterministicSummary}
 Recent news headlines for context:
 ${headlines || 'No recent news.'}
 
-Write a 3-4 sentence qualitative synthesis report. Do NOT just list the factors again. Synthesize them. Identify if the fundamental news aligns with or diverges from the quantitative indicators (volume, options, price structure). Provide a definitive, professional macro view.
-STRICT RULES: Do NOT invent, round, or modify any price level, strike price, percentage, or numerical value. If you reference a number, it MUST appear verbatim in the quantitative report above. Do not compute R:R, probability, or targets — those are in the deterministic report and must not be re-derived here.`;
+The deterministic trade plan is: ${tradePlan.bias}, trigger $${tradePlan.trigger}, target $${tradePlan.target}, stop $${tradePlan.stop}.
 
-  const text = await generateText(prompt);
-  const result = text?.trim() || fallback;
+Respond with a JSON object with exactly two string keys:
+"synthesis" — a 3-4 sentence qualitative synthesis report. Do NOT just list the factors again. Synthesize them. Identify if the fundamental news aligns with or diverges from the quantitative indicators (volume, options, price structure). Provide a definitive, professional macro view.
+"narrative" — 2 concise sentences for a trader explaining the ${tradePlan.bias} plan's trigger/target/stop above. Explicitly say the target is a scenario, not a prediction.
+
+STRICT RULES for both fields: do NOT invent, round, or modify any price level, strike price, percentage, or numerical value — every number referenced MUST appear verbatim above. Do not compute R:R or probability. Do not give financial advice or claim certainty.`;
+
+  const text = await generateText(prompt, { json: true });
+  let result = fallback;
+  if (text) {
+    try {
+      const parsed = JSON.parse(text);
+      result = {
+        synthesis: typeof parsed.synthesis === 'string' && parsed.synthesis.trim() ? parsed.synthesis.trim() : fallback.synthesis,
+        narrative: typeof parsed.narrative === 'string' && parsed.narrative.trim() ? parsed.narrative.trim() : fallback.narrative,
+      };
+    } catch (err) {
+      console.warn(`[AIInsights] Committee synthesis returned non-JSON for ${symbol}, using deterministic fallback:`, err);
+    }
+  }
   synthesisCache.set(cacheKey, { value: result, expiresAt: Date.now() + CACHE_TTL_MS });
   return result;
 }

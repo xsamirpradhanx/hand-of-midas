@@ -91,6 +91,44 @@ function spread(a: number[], b: number[]): number[] {
   return out;
 }
 
+/**
+ * Restrict every series to the dates they ALL share, in order.
+ *
+ * Without this, `spread` aligns two series from the right and is correct only
+ * while both happen to end on the same session. That held when checked — every
+ * ETF returned 480 bars ending 2026-08-21 — but ^VIX returned 481 over the same
+ * span, which is proof the feeds do not agree bar-for-bar. A single stale or
+ * missing print from one symbol would silently compare Monday's SPY against
+ * Friday's TLT and there would be nothing in the output to show it.
+ *
+ * Intersecting on the date is the difference between "correct" and "correct so
+ * far". Everything downstream then shares one axis, so positional alignment is
+ * true by construction rather than by luck.
+ */
+function alignOnCommonDates(data: Partial<Record<Symbol, Series>>): Partial<Record<Symbol, Series>> {
+  const present = (Object.entries(data) as Array<[Symbol, Series]>).filter(([, v]) => v && v.dates.length);
+  if (present.length === 0) return data;
+
+  let common: string[] | null = null;
+  for (const [, series] of present) {
+    const set = new Set(series.dates);
+    common = common === null ? [...set] : common.filter(d => set.has(d));
+  }
+  common!.sort();
+  const keep = new Set(common!);
+
+  const out: Partial<Record<Symbol, Series>> = {};
+  for (const [sym, series] of present) {
+    const dates: string[] = [];
+    const closes: number[] = [];
+    for (let i = 0; i < series.dates.length; i++) {
+      if (keep.has(series.dates[i])) { dates.push(series.dates[i]); closes.push(series.closes[i]); }
+    }
+    out[sym] = { dates, closes };
+  }
+  return out;
+}
+
 export function labelFor(score: number): RiskLabel {
   if (score < 25) return 'Extreme Fear';
   if (score < 45) return 'Fear';
@@ -100,7 +138,8 @@ export function labelFor(score: number): RiskLabel {
 }
 
 /** Build the gauge from already-fetched series. Separated so it can be tested. */
-export function computeRiskGauge(data: Partial<Record<Symbol, Series>>): RiskGauge {
+export function computeRiskGauge(raw: Partial<Record<Symbol, Series>>): RiskGauge {
+  const data = alignOnCommonDates(raw);
   const closes = (s: Symbol) => data[s]?.closes;
   const components: RiskComponent[] = [];
 

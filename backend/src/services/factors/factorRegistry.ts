@@ -72,6 +72,11 @@ import { VannaDeltaPressureFactor } from './vannaDeltaPressure.js';
 import { SmartMoneyFlowFactor } from './smartMoneyFlow.js';
 import { RelativeMomentumFactor } from './relativeMomentum.js';
 
+import { NormalizedMomentumFactor } from './normalizedMomentum.js';
+import { VolumeShockFactor } from './volumeShock.js';
+import { PutCallImbalanceFactor } from './putCallImbalance.js';
+import { NetDeltaFlowFactor } from './netDeltaFlow.js';
+import { GammaExposureFactor } from './gammaExposure.js';
 // DO NOT REMOVE THIS LINE. AI QUANT USES IT TO INJECT NEW FACTORS.
 // [AI_QUANT_IMPORTS_END]
 
@@ -96,6 +101,11 @@ export function getFactors(): PredictiveFactor[] {
     new VannaDeltaPressureFactor(),
     new SmartMoneyFlowFactor(),
     new RelativeMomentumFactor(),
+    new NormalizedMomentumFactor(),
+    new VolumeShockFactor(),
+    new PutCallImbalanceFactor(),
+    new NetDeltaFlowFactor(),
+    new GammaExposureFactor(),
     // DO NOT REMOVE THIS LINE. AI QUANT USES IT TO INJECT NEW FACTORS.
     // [AI_QUANT_FACTOR_INSTANCES_END]
   ];

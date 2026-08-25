@@ -24,6 +24,7 @@ import { DynamoBarDataSource } from '../services/backtest/dynamoDataSource.js';
 import { FileBarDataSource, cachedSymbols, readPanel, DEFAULT_CACHE_DIR } from '../services/backtest/barCache.js';
 import { loadIntegrityReport, trustedFromMs } from '../services/backtest/barIntegrity.js';
 import { CompositeStrategy, COMPOSITE_WARMUP_BARS } from '../services/backtest/compositeStrategy.js';
+import { RandomControlStrategy } from '../services/backtest/randomControlStrategy.js';
 import { winRate, expectancy } from '../services/quant/learningCore.js';
 import fs from 'node:fs';
 
@@ -133,7 +134,8 @@ async function main() {
   // Progress reporting: the strategy is expensive enough that a silent multi-
   // minute run is indistinguishable from a hang.
   let planned = 0;
-  const strategy = new CompositeStrategy({ includeNoTrade });
+  const isControl = process.env['CONTROL'] === '1';
+  const strategy = isControl ? new RandomControlStrategy() : new CompositeStrategy({ includeNoTrade });
   const step = Number(process.env['STEP'] ?? 1);
   const instrumented = {
     name: strategy.name,

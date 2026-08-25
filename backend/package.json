@@ -16,6 +16,8 @@
     "broker-status": "tsx src/scripts/brokerStatus.ts",
     "mcp": "tsx src/mcp/server.ts",
     "backtest": "tsx src/scripts/runBacktest.ts",
+    "options-backtest": "tsx src/services/backtest/options/optionsReplayEngine.ts",
+    "backfill-options": "python3 src/scripts/backfillHistoricalOptions.py",
     "export-bars": "tsx src/scripts/exportBars.ts",
     "audit-bars": "tsx src/scripts/auditBars.ts",
     "indicator-lab": "tsx src/scripts/indicatorLab.ts",
@@ -45,6 +47,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1115.0",
+    "@aws-sdk/client-s3": "^3.1116.0",
     "@google/genai": "^2.12.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",

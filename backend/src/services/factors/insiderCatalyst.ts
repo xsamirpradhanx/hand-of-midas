@@ -7,10 +7,14 @@ export class InsiderCatalystFactor implements PredictiveFactor {
   correlationGroup = 'CATALYST';
 
   async evaluate(input: FactorInput): Promise<FactorResult | null> {
-    const { news, currentPrice, symbol } = input;
+    const { news, currentPrice, symbol, sentiment } = input;
     if (!news || news.length === 0) return null;
 
-    const { score: sentimentRatio, bias, bullCount, bearCount } = await scoreNewsSentiment(symbol, news);
+    // getAggregatedSentiment (fetched once per symbol upstream) already scored
+    // this exact headline set via the same AI call this factor used to make a
+    // second time. Reuse it, and only re-score if that fetch failed.
+    const { score: sentimentRatio, bias, bullCount, bearCount } =
+      sentiment?.news ?? (await scoreNewsSentiment(symbol, news));
     if (bullCount === 0 && bearCount === 0) return null;
 
     const buyTarget = bias === 'bullish' ? currentPrice * 0.99 : currentPrice * 0.98;

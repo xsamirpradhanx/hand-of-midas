@@ -1,6 +1,7 @@
 import { getTickerNews, PolygonNewsArticle } from './polygon.js';
 import { fetchBarsWithFallback } from './marketData/fetchBars.js';
 import { fetchOptionsChainWithFallback } from './optionsFallback.js';
+import { selectOptimalContract } from './quant/optionsSelector.js';
 import type { FactorResult, FactorInput, PredictiveFactor } from './factors/types.js';
 
 /**
@@ -12,6 +13,8 @@ import type { FactorResult, FactorInput, PredictiveFactor } from './factors/type
  */
 const DAILY_BAR_COUNT = 300;
 const BENCHMARK_SYMBOL = 'SPY';
+/** Trade Plan holding horizon in calendar days (~20 trading days), for options expiry selection. */
+const TRADE_HORIZON_DAYS = 28;
 
 /** Learning namespace for this engine — never share a keyspace with the screener. */
 const TRADE_PLAN_SOURCE = 'TRADE_PLAN' as const;
@@ -20,7 +23,6 @@ import { CompositeScoreAgent } from './compositeScore.js';
 import { putItem, getItem } from './dynamodb.js';
 import type { FactorStatsItem, SetupStatsItem, OHLCVDataPoint } from '../types.js';
 import { calibratePrediction, learningKey, type LearningAssessment } from './quant/learningEngine.js';
-import { generateGroundedTradeNarrative } from './tradeNarrative.js';
 import { buildSymbolProfile, applySymbolProfile } from './quant/symbolProfile.js';
 import { getAggregatedSentiment, type AggregatedSentiment } from './sentimentAggregator.js';
 
@@ -58,6 +60,7 @@ export interface PredictiveEngineResult {
     signalAgreement: number;
     agreementLevel: 'HIGH' | 'MODERATE' | 'LOW';
     factors: FactorResult[];
+    optimalContract?: import('./polygon.js').PolygonOptionsContract | null;
     tradePlan?: {
       bias: 'LONG' | 'SHORT' | 'NO TRADE';
       /** Whether the setup is actionable now, waiting on price, or absent. */
@@ -187,7 +190,7 @@ export async function getPredictiveZones(
   // sequential round trips, which stacked their full latencies on the critical path of
   // every single trade-plan generation. Each optional fetch keeps its own try/catch so one
   // slow/failing source doesn't take down the others; only the daily-bar fetch is required.
-  const [dailyResult, intradayResult, optionsChain, sentiment, news, benchmarkResult] = await Promise.all([
+  const [dailyResult, intradayResult, optionsChain, sentiment, news, benchmarkResult, vixResult] = await Promise.all([
     // 1. OHLCV — Yahoo primary here since the screener fans this out across ~20
     // candidates per run and Schwab-first was the main latency source; Schwab
     // remains the default for other callers.
@@ -247,6 +250,14 @@ export async function getPredictiveZones(
       console.warn(`[PredictiveEngine] Benchmark bars unavailable, relative-strength factors will be skipped:`, err);
       return undefined;
     }),
+
+    // 6. VIX daily bars, best-effort. Powers regime-conditional factors.
+    fetchBarsWithFallback('^VIX', '1day', DAILY_BAR_COUNT, {
+      preferredProvider: 'yahoo', useCache: true,
+    }).catch(err => {
+      console.warn(`[PredictiveEngine] VIX bars unavailable, conditional factors will be skipped:`, err);
+      return undefined;
+    }),
   ]);
 
   const { bars } = dailyResult;
@@ -273,6 +284,7 @@ export async function getPredictiveZones(
     intradayBars,
     benchmarkBars: benchmarkResult?.bars,
     sentiment,
+    vixBars: vixResult?.bars,
   };
 
   // 4. Run all factor modules in parallel
@@ -285,27 +297,28 @@ export async function getPredictiveZones(
 
   let activeFactors = factorEvaluations.filter((res): res is FactorResult => res !== null);
 
-  try {
-    const profile = await buildSymbolProfile(sym, bars, news);
-    activeFactors = applySymbolProfile(activeFactors, profile);
-  } catch (err) {
-    console.warn(`[PredictiveEngine] SymbolProfile failed for ${sym}:`, err);
-  }
-
-  // 5. Fetch Factor Stats
-  let factorStats: Record<string, { wins: number; losses: number; score: number; tries: number }> | undefined;
-  let setupStats: SetupStatsItem['stats'] | undefined;
-  try {
-    const factorStatsItem = await getItem<FactorStatsItem>('SYSTEM', 'FACTOR_STATS');
-    if (factorStatsItem) factorStats = factorStatsItem.stats;
-  } catch (err) {
-    console.warn(`[PredictiveEngine] Could not fetch FACTOR_STATS:`, err);
-  }
-  try {
-    setupStats = (await getItem<SetupStatsItem>('SYSTEM', 'SETUP_STATS'))?.stats;
-  } catch (err) {
-    console.warn(`[PredictiveEngine] Could not fetch learning stats: ${String(err)}`);
-  }
+  // 5. Symbol profile (AI-backed) and the two learning-stats reads are mutually
+  // independent — none consumes another's output — so run them concurrently
+  // instead of stacking three sequential round trips (one of them an AI call
+  // queued behind everything else in flight) on the critical path.
+  const [profileResult, factorStatsItem, setupStatsItem] = await Promise.all([
+    buildSymbolProfile(sym, bars, news).catch(err => {
+      console.warn(`[PredictiveEngine] SymbolProfile failed for ${sym}:`, err);
+      return undefined;
+    }),
+    getItem<FactorStatsItem>('SYSTEM', 'FACTOR_STATS').catch(err => {
+      console.warn(`[PredictiveEngine] Could not fetch FACTOR_STATS:`, err);
+      return undefined;
+    }),
+    getItem<SetupStatsItem>('SYSTEM', 'SETUP_STATS').catch(err => {
+      console.warn(`[PredictiveEngine] Could not fetch learning stats: ${String(err)}`);
+      return undefined;
+    }),
+  ]);
+  if (profileResult) activeFactors = applySymbolProfile(activeFactors, profileResult);
+  const factorStats: Record<string, { wins: number; losses: number; score: number; tries: number }> | undefined =
+    factorStatsItem?.stats;
+  const setupStats: SetupStatsItem['stats'] | undefined = setupStatsItem?.stats;
 
   // 6. Run AI Synthesis Agent over all factor outputs
   // Pass `bars` so the agent can compute ATR-adaptive zone spread
@@ -376,13 +389,11 @@ export async function getPredictiveZones(
       // TODO(PR2): switch to "15m close" once multi-TF fetch is live. Today the engine only has daily bars.
       : `T1 ($${plan.majorResistance ?? currentPrice}) is the primary structural ${plan.bias === 'LONG' ? 'resistance' : 'demand'} zone (${targetSources.join(', ') || 'price structure'}). T2 ($${plan.stretchTarget ?? currentPrice}) serves as the extended statistical/VWAP target. Invalidation is $${plan.stop ?? currentPrice}; a daily close ${plan.bias === 'LONG' ? 'below' : 'above'} $${plan.stop ?? currentPrice} invalidates the setup.`,
   };
-  let aiNarrative = summariseEvidence(sym, currentPrice, synthesis.modelConviction, synthesis.agreementLevel, activeFactors);
-  if (plan?.bias && plan.bias !== 'NO TRADE') {
-    aiNarrative = await generateGroundedTradeNarrative({
-      symbol: sym, currentPrice, bias: plan.bias, target: targetPrice,
-      stop: plan.stop ?? currentPrice, trigger: plan.trigger ?? currentPrice, factors: activeFactors,
-    });
-  }
+  // The trade narrative is now generated alongside aiSynthesis in one AI call
+  // (compositeScore.ts's synthesize -> generateCommitteeSynthesis) rather than
+  // a second, independent round trip here.
+  let aiNarrative = synthesis.aiNarrative
+    ?? summariseEvidence(sym, currentPrice, synthesis.modelConviction, synthesis.agreementLevel, activeFactors);
 
   const result: PredictiveEngineResult = {
     symbol: sym,
@@ -401,6 +412,8 @@ export async function getPredictiveZones(
       signalAgreement: synthesis.signalAgreement,
       agreementLevel: synthesis.agreementLevel,
       factors: activeFactors,
+      optimalContract: (plan?.bias === 'LONG' || plan?.bias === 'SHORT') && optionsChain?.contracts ? 
+        selectOptimalContract(optionsChain.contracts, plan.bias, currentPrice, TRADE_HORIZON_DAYS) : null,
       tradePlan: synthesis.tradePlan,
     },
   };

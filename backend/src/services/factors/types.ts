@@ -143,6 +143,11 @@ export interface FactorInput {
    * whole engine.
    */
   sentiment?: AggregatedSentiment;
+  /**
+   * Daily bars for the VIX index, aligned to the same dates.
+   * Used for conditional factors that depend on the market volatility state.
+   */
+  vixBars?: OHLCVDataPoint[];
 }
 
 export interface PredictiveFactor {

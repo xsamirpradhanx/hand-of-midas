@@ -146,6 +146,8 @@ function applyRegimeMultiplier(
 export interface AISynthesisResult {
   summary: string;
   aiSynthesis?: string;
+  /** 2-sentence explanation of the trade plan's trigger/target/stop, from the same AI call as aiSynthesis. Absent on NO TRADE or when narration is disabled/unavailable. */
+  aiNarrative?: string;
   bias: 'bullish' | 'bearish' | 'neutral';
   /**
    * @deprecated Use modelConviction instead.
@@ -1074,9 +1076,18 @@ export class CompositeScoreAgent {
     // deterministic summary is what the graded plan is built from either way, so
     // suppressing the narrative changes no measured outcome.
     const narrativeDisabled = process.env['DISABLE_LLM_NARRATIVE'] === '1';
-    const aiSynthesis = tradeBias !== 'NO TRADE' && !narrativeDisabled
-      ? await generateCommitteeSynthesis(symbol, summary, news)
-      : summary;
+    let aiSynthesis = summary;
+    let aiNarrative: string | undefined;
+    if (tradeBias !== 'NO TRADE' && !narrativeDisabled) {
+      const committee = await generateCommitteeSynthesis(symbol, summary, news, factors, {
+        bias: tradeBias,
+        target: tradePlan.majorResistance ?? currentPrice,
+        stop: tradePlan.stop ?? currentPrice,
+        trigger: tradePlan.trigger ?? currentPrice,
+      });
+      aiSynthesis = committee.synthesis;
+      aiNarrative = committee.narrative;
+    }
 
     const zoneDebug = {
       supportLevels: supportLevels.length,
@@ -1092,6 +1103,7 @@ export class CompositeScoreAgent {
     return {
       summary,
       aiSynthesis,
+      aiNarrative,
       zoneDebug,
       sizing: computeSizing(
         factors.map(f => ({ factorName: f.factorName, bias: f.bias })),

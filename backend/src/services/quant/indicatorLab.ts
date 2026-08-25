@@ -247,7 +247,7 @@ export function blockBootstrapPositive(
 }
 
 /** In-place fractional ranking of the finite entries, scaled to [-0.5, 0.5]. */
-function rankCentered(values: number[]): number[] {
+export function rankCentered(values: number[]): number[] {
   const idx = values.map((v, i) => i).filter(i => Number.isFinite(values[i]));
   idx.sort((a, b) => values[a] - values[b]);
   const out = new Array<number>(values.length).fill(NaN);
@@ -264,7 +264,7 @@ function rankCentered(values: number[]): number[] {
   return out;
 }
 
-function pearson(xs: readonly number[], ys: readonly number[]): number {
+export function pearson(xs: readonly number[], ys: readonly number[]): number {
   let n = 0, mx = 0, my = 0;
   for (let i = 0; i < xs.length; i++) {
     if (Number.isFinite(xs[i]) && Number.isFinite(ys[i])) { n++; mx += xs[i]; my += ys[i]; }

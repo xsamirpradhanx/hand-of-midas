@@ -183,6 +183,32 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
         </div>
       )}
 
+      {thesis.optimalContract && (
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <span className={styles.icon}>🎯</span> Options Execution
+          </div>
+          <div className={styles.levelRow}>
+            <span className={styles.levelLabel}>Contract</span>
+            <span className={styles.levelValueTarget}>
+              {thesis.optimalContract.details.expiration_date} ${thesis.optimalContract.details.strike_price} {thesis.optimalContract.details.contract_type.toUpperCase()}
+            </span>
+          </div>
+          <div className={styles.levelRow}>
+            <span className={styles.levelLabel}>Delta</span>
+            <span className={styles.levelValueEntry}>
+              {thesis.optimalContract.greeks?.delta ? thesis.optimalContract.greeks.delta.toFixed(2) : 'N/A'}
+            </span>
+          </div>
+          <div className={styles.levelRow}>
+            <span className={styles.levelLabel}>Ask Price</span>
+            <span className={styles.levelValueEntry}>
+              ${thesis.optimalContract.last_quote?.ask ?? 'N/A'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {data.zones && (
         <div className={styles.zonesSection}>
           <h4>Structural Zones</h4>

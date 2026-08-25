@@ -32,6 +32,7 @@ import { cachedSymbols, readPanel, DEFAULT_CACHE_DIR } from '../services/backtes
 import { loadIntegrityReport, trustedFromMs } from '../services/backtest/barIntegrity.js';
 import { buildPanelSet, forwardReturns, trimPanel, neweyWestSE } from '../services/quant/indicatorLab.js';
 import { getFactors } from '../services/factors/factorRegistry.js';
+import { downloadOptionsChainFromS3 } from '../services/marketData/s3OptionsStore.js';
 import type { FactorInput } from '../services/factors/types.js';
 import type { OHLCVDataPoint } from '../types.js';
 
@@ -99,15 +100,22 @@ async function main() {
   const benchByDate = new Map<number, number>();
   if (benchPanel) for (let i = 0; i < benchPanel.n; i++) benchByDate.set(benchPanel.t[i], i);
 
+  const vixPanel = readPanel(DEFAULT_CACHE_DIR, '^VIX', '1day');
+  const vixByDate = new Map<string, number>();
+  if (vixPanel) for (let i = 0; i < vixPanel.n; i++) vixByDate.set(new Date(vixPanel.t[i]).toISOString().slice(0, 10), i);
+
   const set = buildPanelSet(panels);
   const fwd = panels.map(p => forwardReturns(p, HORIZON));
   const step = Number(process.env['STEP'] ?? 5);
   const fromMs = process.env['FROM'] ? Date.parse(process.env['FROM']) : -Infinity;
   const toMs = process.env['TO'] ? Date.parse(process.env['TO']) : Infinity;
+  const fetchOptions = process.env['FETCH_OPTIONS'] === '1';
 
   const factors = getFactors();
   console.log(`\n${factors.length} registered factors over ${panels.length} symbols, every ${step}th bar, horizon ${HORIZON}`);
-  console.log(`period ${process.env['FROM'] ?? 'all'} .. ${process.env['TO'] ?? 'now'}\n`);
+  console.log(`period ${process.env['FROM'] ?? 'all'} .. ${process.env['TO'] ?? 'now'}`);
+  if (fetchOptions) console.log(`FETCH_OPTIONS=1: S3 options data will be loaded for each decision bar.\n`);
+  else console.log(`\n`);
 
   /**
    * The market's forward return on each date, for the drift adjustment.
@@ -176,9 +184,37 @@ async function main() {
         }
       }
 
+      let vixBars: OHLCVDataPoint[] | undefined;
+      if (vixPanel) {
+        const vi = vixByDate.get(new Date(p.t[i]).toISOString().slice(0, 10));
+        if (vi !== undefined && vi >= CONTEXT_BARS) {
+          vixBars = [];
+          for (let k = vi - CONTEXT_BARS + 1; k <= vi; k++) {
+            vixBars.push({
+              datetime: new Date(vixPanel.t[k]).toISOString(),
+              open: vixPanel.o[k], high: vixPanel.h[k], low: vixPanel.l[k],
+              close: vixPanel.c[k], volume: vixPanel.v[k],
+            } as OHLCVDataPoint);
+          }
+        }
+      }
+
+      let optionsChain: any = undefined;
+      // Optimize: Only attempt to hit S3 for symbols we are actively backfilling options for.
+      if (fetchOptions && (p.symbol === 'SPY' || p.symbol === 'QQQ')) {
+        const dateStr = new Date(p.t[i]).toISOString().slice(0, 10);
+        try {
+          optionsChain = (await downloadOptionsChainFromS3(p.symbol, dateStr)) ?? undefined;
+        } catch (e) {
+          // downloadOptionsChainFromS3 already resolves to null for a missing key,
+          // so anything thrown here is a real failure (auth, network, wrong bucket).
+          console.warn(`[factorAudit] Failed to fetch options chain for ${p.symbol} on ${dateStr}:`, e);
+        }
+      }
+
       const input = {
-        symbol: p.symbol, currentPrice: p.c[i], bars, benchmarkBars,
-        intradayBars: undefined, optionsChain: undefined, activeExpiry: undefined,
+        symbol: p.symbol, currentPrice: p.c[i], bars, benchmarkBars, vixBars,
+        intradayBars: undefined, optionsChain, activeExpiry: undefined,
         sentiment: undefined, news: undefined,
       } as FactorInput;
 
