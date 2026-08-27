@@ -64,6 +64,17 @@ export async function getPredictionZonesRoute(
 
   const forceRefresh = event.queryStringParameters?.refresh === 'true';
   const expiry = event.queryStringParameters?.expiry;
+  /**
+   * Deterministic-only mode. Returns the identical payload minus the LLM
+   * narration, with no AI round trip anywhere on the path, so the chart can
+   * draw its zones while the narrated plan is still being built.
+   *
+   * Kept as a flag on this route rather than a second route because every line
+   * below — the ET-day cache bucket, the error shape, the response contract —
+   * applies unchanged; a parallel route would have to duplicate all of it and
+   * would drift.
+   */
+  const fast = event.queryStringParameters?.fast === 'true';
 
   // One plan per symbol per trading day. These are swing/options setups held for
   // days-to-weeks off completed daily bars, so the thesis does not change within a
@@ -73,7 +84,11 @@ export async function getPredictionZonesRoute(
   // Bucketing the key by ET date means the first request of each day computes and
   // every later one reuses it; ?refresh=true still forces a rebuild.
   const etDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const cacheKey = `PREDICTIVE_ZONES_V7#${symbol}#${etDate}${expiry ? '#' + expiry : ''}`;
+  // Separate namespace for the fast payload. Sharing one key would let a
+  // narration-free result be served to callers asking for the full plan —
+  // silently and indistinguishably, since the two differ only by two prose
+  // fields.
+  const cacheKey = `PREDICTIVE_ZONES${fast ? '_FAST' : ''}_V7#${symbol}#${etDate}${expiry ? '#' + expiry : ''}`;
   const CACHE_TTL_SECONDS = 36 * 60 * 60; // outlives the day's key so weekends reuse Friday's
 
   if (!forceRefresh) {
@@ -84,20 +99,28 @@ export async function getPredictionZonesRoute(
   }
 
   try {
-    const data = await getPredictiveZones(symbol, expiry);
+    const data = await getPredictiveZones(symbol, expiry, undefined, { skipAi: fast });
 
-    await setCachedData(cacheKey, data, CACHE_TTL_SECONDS);
+    await setCachedData(cacheKey, { ...data, aiPending: fast }, CACHE_TTL_SECONDS);
 
     // Persist on fresh computation only (cache hits return early above), so this
     // writes at most once per hour per symbol regardless of how often the panel
     // is opened. Never fail the request over a bookkeeping write.
-    try {
-      await persistPrediction(symbol, data);
-    } catch (err) {
-      console.error(`[Predictive] Failed to persist prediction for ${symbol}:`, err);
+    //
+    // NOT on the fast path: the chart fires both requests for the same symbol on
+    // the same day, and the graded row must be the narrated plan the user was
+    // actually shown. Writing from both would have the fast one land first and
+    // the full one overwrite it — same-day sort key, so no duplicate row, but
+    // the learning loop would briefly hold a plan nobody saw.
+    if (!fast) {
+      try {
+        await persistPrediction(symbol, data);
+      } catch (err) {
+        console.error(`[Predictive] Failed to persist prediction for ${symbol}:`, err);
+      }
     }
 
-    return jsonResponse(200, data);
+    return jsonResponse(200, { ...data, aiPending: fast });
   } catch (err: any) {
     console.error('Predictive Engine Error:', err);
     return jsonResponse(500, { error: err.message });

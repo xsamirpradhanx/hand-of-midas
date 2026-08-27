@@ -281,8 +281,20 @@ export const api = {
   runScenario: (deltaSpot: number, deltaIV: number): Promise<{ scenarioPL: number }> =>
     fetchWithAuth('/portfolio/scenario', { method: 'POST', body: JSON.stringify({ deltaSpot, deltaIV }) }),
 
-  getPredictiveZones: (symbol: string, expiry?: string): Promise<any> =>
-    fetchWithAuth(`/predictive/zones/${symbol}${expiry ? `?expiry=${expiry}` : ''}`),
+  /**
+   * `fast: true` asks for the deterministic-only plan: identical payload minus
+   * the two LLM-narrated prose fields, and no AI round trip on the server. The
+   * chart draws its zones from this immediately and re-draws when the full
+   * response lands. The response carries `aiPending: true` so a caller can tell
+   * the two apart.
+   */
+  getPredictiveZones: (symbol: string, expiry?: string, options?: { fast?: boolean }): Promise<any> => {
+    const params = new URLSearchParams();
+    if (expiry) params.set('expiry', expiry);
+    if (options?.fast) params.set('fast', 'true');
+    const qs = params.toString();
+    return fetchWithAuth(`/predictive/zones/${symbol}${qs ? `?${qs}` : ''}`);
+  },
 
   getOptionsAnalytics: (symbol: string, options?: { includeVix?: boolean; expiry?: string }): Promise<OptionsAnalyticsResponse> => {
     const params = new URLSearchParams();

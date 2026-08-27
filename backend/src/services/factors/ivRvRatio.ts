@@ -1,4 +1,5 @@
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
+import { resolveContractIv, excludeZeroDte } from '../optionsAnalyticsService.js';
 
 /**
  * IV Rank vs Realized Volatility Ratio Factor
@@ -65,10 +66,23 @@ export class IvRvRatioFactor implements PredictiveFactor {
     let atmIV: number | null = null;
 
     if (optionsChain?.contracts && optionsChain.contracts.length > 0) {
-      const nearExpiry = optionsChain.expirations?.[0];
-      const nearContracts = optionsChain.contracts.filter(
-        c => c.details?.expiration_date === nearExpiry && c.implied_volatility && c.implied_volatility > 0,
-      );
+      // The decision date, not real "now" — resolveContractIv's time-to-expiry
+      // measures against real "now" unless told otherwise, and every historical
+      // expiry predates that during a backtest/audit (see tradingCalendar.ts).
+      const asOf = bars.length ? new Date(bars[bars.length - 1]!.datetime) : undefined;
+      // Same-day expirations excluded before picking "near" — see the note on
+      // excludeZeroDte in optionsAnalyticsService.ts.
+      const tradeableExpirations = optionsChain.expirations ? excludeZeroDte(optionsChain.expirations, asOf) : [];
+      const nearExpiry = tradeableExpirations[0];
+      // Real IV when the feed reports one, else solved from the EOD close via
+      // Black-Scholes inversion (resolveContractIv) — without this, every
+      // contract from a feed that doesn't report IV (e.g. the
+      // ThetaData-backfilled S3 chains) was excluded before reaching the
+      // liquidity filter below, so this factor was unconditionally dead on
+      // that data.
+      const nearContracts = nearExpiry
+        ? optionsChain.contracts.filter(c => c.details?.expiration_date === nearExpiry)
+        : [];
 
       // Pick the strikes actually closest to spot rather than everything inside a
       // fixed ±5% band.
@@ -79,25 +93,27 @@ export class IvRvRatioFactor implements PredictiveFactor {
       // leaving this factor with no ATM IV on every low-priced name. Taking the two
       // distinct strikes nearest spot is scale-free and brackets the money at any
       // price level.
-      const usable = nearContracts.filter(c =>
-        (c.details?.strike_price || 0) > 0 &&
-        (c.day?.open_interest || 0) > 0 &&
-        (c.implied_volatility || 0) > 0,
-      );
-      const distinctStrikes = [...new Set(usable.map(c => c.details!.strike_price as number))]
+      const usable = nearContracts
+        .map(c => ({ c, iv: resolveContractIv(c, currentPrice, asOf) }))
+        .filter(({ c, iv }) => (c.details?.strike_price || 0) > 0 && iv > 0);
+      const distinctStrikes = [...new Set(usable.map(({ c }) => c.details!.strike_price as number))]
         .sort((a, b) => Math.abs(a - currentPrice) - Math.abs(b - currentPrice))
         .slice(0, 2);
       const atmStrikes = new Set(distinctStrikes);
 
+      // Weight by open interest when the feed reports it (real standing size);
+      // otherwise fall back to volume (today's flow) — same fallback as
+      // optionsAnalyticsService's oiWeightedAvgIV, for the same reason.
       let ivSum = 0;
-      let oiSum = 0;
-      for (const c of usable) {
+      let weightSum = 0;
+      for (const { c, iv } of usable) {
         if (!atmStrikes.has(c.details!.strike_price as number)) continue;
-        const oi = c.day!.open_interest as number;
-        ivSum += (c.implied_volatility as number) * oi;
-        oiSum += oi;
+        const weight = c.day?.open_interest ?? c.day?.volume ?? 0;
+        if (weight <= 0) continue;
+        ivSum += iv * weight;
+        weightSum += weight;
       }
-      if (oiSum > 0) atmIV = ivSum / oiSum;
+      if (weightSum > 0) atmIV = ivSum / weightSum;
     }
 
     // No usable ATM implied vol means there is nothing to compare realized vol

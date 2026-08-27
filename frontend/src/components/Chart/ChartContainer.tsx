@@ -445,52 +445,91 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       
       // ── Attach Zone Plugin if active ────────────────────────────────────────
       if (showPredictiveZones) {
-        api.getPredictiveZones(symbol).then((res) => {
+        // Every zone boundary is computed from price structure; the LLM only
+        // narrates the finished plan. So the geometry is fetched twice: once
+        // with ?fast=true, which skips the AI entirely and comes back in the
+        // time one HTTP round trip takes, and once in full. The chart draws the
+        // first and redraws when the second lands.
+        //
+        // The two can differ slightly — symbolProfile's LLM archetype scales
+        // factor weights and weights feed zone clustering — so the second
+        // response REPLACES the first rather than being merged into it. These
+        // handles exist to make that replacement clean: without them the second
+        // pass would stack a second ZonePlugin and a second set of price lines
+        // on the same series, doubling every band.
+        let activePlugin: ZonePlugin | null = null;
+        let activePriceLines: any[] = [];
+
+        const applyZones = (res: any) => {
           if (cancelled) return;
-          if (res && res.zones && res.zones.length > 0) {
-            const plugin = new ZonePlugin(chart);
-            // Start projecting from today to the end of the whitespace
-            const startTime = baseChartData[baseChartData.length - 31]?.time; // start where actual data ends
-            const endTime = baseChartData[baseChartData.length - 1]?.time; // end of whitespace
-            
-            plugin.updateZones(res.zones, startTime, endTime);
-            mainSeries.attachPrimitive(plugin);
+          if (!res || !res.zones || res.zones.length === 0) return;
 
-            // Add native price lines to guarantee visibility on the price axis
-            res.zones.forEach((zone: PredictiveZone) => {
-              const color = zone.type === 'buy' ? '#00e676' : '#ff1744';
-              const label = zone.type === 'buy' ? 'AI Buy Zone' : 'AI Sell Zone';
-              
-              mainSeries.createPriceLine({
-                price: zone.priceTop,
-                color,
-                lineWidth: 1,
-                lineStyle: 2, // Dotted
-                axisLabelVisible: true,
-                title: `${label} Top`,
-              });
-              mainSeries.createPriceLine({
-                price: zone.priceBottom,
-                color,
-                lineWidth: 1,
-                lineStyle: 2, // Dotted
-                axisLabelVisible: true,
-                title: `${label} Bottom`,
-              });
-            });
-
-            // Re-apply autoscale to fit the newly attached zones, then disable again
-            chart.priceScale('right').applyOptions({ autoScale: true });
-            
-            // Explicitly force the visible range to span all data points to eliminate left-side gaps
-            chart.timeScale().setVisibleLogicalRange({ from: 0, to: baseChartData.length - 1 });
-
-            setTimeout(() => {
-              if (cancelled) return;
-              chart.priceScale('right').applyOptions({ autoScale: false });
-            }, 50);
+          if (activePlugin) {
+            try { mainSeries.detachPrimitive(activePlugin); } catch { /* series already gone */ }
           }
-        }).catch(err => console.error("Failed to fetch predictive zones", err));
+          activePriceLines.forEach(line => {
+            try { mainSeries.removePriceLine(line); } catch { /* series already gone */ }
+          });
+          activePriceLines = [];
+
+          const plugin = new ZonePlugin(chart);
+          // Start projecting from today to the end of the whitespace
+          const startTime = baseChartData[baseChartData.length - 31]?.time; // start where actual data ends
+          const endTime = baseChartData[baseChartData.length - 1]?.time; // end of whitespace
+
+          plugin.updateZones(res.zones, startTime, endTime);
+          mainSeries.attachPrimitive(plugin);
+          activePlugin = plugin;
+
+          // Add native price lines to guarantee visibility on the price axis
+          res.zones.forEach((zone: PredictiveZone) => {
+            const color = zone.type === 'buy' ? '#00e676' : '#ff1744';
+            const label = zone.type === 'buy' ? 'AI Buy Zone' : 'AI Sell Zone';
+
+            activePriceLines.push(mainSeries.createPriceLine({
+              price: zone.priceTop,
+              color,
+              lineWidth: 1,
+              lineStyle: 2, // Dotted
+              axisLabelVisible: true,
+              title: `${label} Top`,
+            }));
+            activePriceLines.push(mainSeries.createPriceLine({
+              price: zone.priceBottom,
+              color,
+              lineWidth: 1,
+              lineStyle: 2, // Dotted
+              axisLabelVisible: true,
+              title: `${label} Bottom`,
+            }));
+          });
+
+          // Re-apply autoscale to fit the newly attached zones, then disable again
+          chart.priceScale('right').applyOptions({ autoScale: true });
+
+          // Explicitly force the visible range to span all data points to eliminate left-side gaps
+          chart.timeScale().setVisibleLogicalRange({ from: 0, to: baseChartData.length - 1 });
+
+          setTimeout(() => {
+            if (cancelled) return;
+            chart.priceScale('right').applyOptions({ autoScale: false });
+          }, 50);
+        };
+
+        // Deliberately NOT chained: the full request must start now, not after
+        // the fast one resolves, or the split would add a round trip instead of
+        // hiding one. `fullDone` guards the ordering — if the full response
+        // somehow wins the race (a warm server-side cache does exactly that),
+        // the fast one must not overwrite it with the un-narrated version.
+        let fullDone = false;
+
+        api.getPredictiveZones(symbol, undefined, { fast: true })
+          .then(res => { if (!fullDone) applyZones(res); })
+          .catch(err => console.error('Failed to fetch fast predictive zones', err));
+
+        api.getPredictiveZones(symbol)
+          .then(res => { fullDone = true; applyZones(res); })
+          .catch(err => console.error('Failed to fetch predictive zones', err));
       }
       // Force the logical range instead of fitContent to ensure the chart uses the full width
       chart.timeScale().setVisibleLogicalRange({ from: 0, to: baseChartData.length - 1 });

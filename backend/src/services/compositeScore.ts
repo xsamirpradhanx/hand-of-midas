@@ -391,6 +391,16 @@ export class CompositeScoreAgent {
      * omit and sizing falls back to the factor-skill term alone.
      */
     directionStats?: DirectionStats,
+    /**
+     * `skipNarrative` suppresses the LLM committee pass so the caller gets the
+     * fully deterministic result with no AI round trip on the critical path.
+     * Used by the chart's fast-zone request (routes/predictive.ts `?fast=true`),
+     * which renders geometry immediately while the narrated plan is still
+     * being built. Every field except `aiSynthesis`/`aiNarrative` is identical
+     * either way — the narrative is produced FROM the deterministic report, it
+     * is never an input to it.
+     */
+    options?: { skipNarrative?: boolean },
   ): Promise<AISynthesisResult> {
     if (!factors || factors.length === 0) {
       return {
@@ -1075,7 +1085,7 @@ export class CompositeScoreAgent {
     // will read, and the rate limit then throttles the replay itself. The
     // deterministic summary is what the graded plan is built from either way, so
     // suppressing the narrative changes no measured outcome.
-    const narrativeDisabled = process.env['DISABLE_LLM_NARRATIVE'] === '1';
+    const narrativeDisabled = options?.skipNarrative === true || process.env['DISABLE_LLM_NARRATIVE'] === '1';
     let aiSynthesis = summary;
     let aiNarrative: string | undefined;
     if (tradeBias !== 'NO TRADE' && !narrativeDisabled) {

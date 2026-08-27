@@ -13,10 +13,16 @@ export class TermStructureFactor implements PredictiveFactor {
     }
 
     try {
+      // The decision date, not real "now" — getDTE/getTimeToExpiryYears
+      // measure against real "now" unless told otherwise, and every
+      // historical expiry predates that during a backtest/audit.
+      const asOf = input.bars.length ? new Date(input.bars[input.bars.length - 1]!.datetime) : undefined;
       const result = await evaluateTermStructureFactor(
         input.symbol,
         optionsChain.contracts,
         optionsChain.expirations,
+        currentPrice,
+        asOf,
       );
       if (!result) return null;
 

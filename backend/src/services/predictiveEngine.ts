@@ -178,12 +178,37 @@ function summariseEvidence(
   return `${symbol} at $${currentPrice.toFixed(2)}: ${factors.length} factors ran — ${directional.length} directional, ${neutralCount} neutral. ${sides.join(' ')} ${agreement} Composite conviction ${Math.round(modelConviction * 100)}/100, which is an evidence-strength score and not a win probability.`;
 }
 
+export interface PredictiveZoneOptions {
+  /**
+   * Build the plan with no LLM round trip at all.
+   *
+   * Every zone boundary, trigger, target, stop and conviction number in this
+   * payload is computed from price structure and factor output — the LLM is
+   * handed the finished deterministic report and asked to narrate it, never to
+   * produce it. So the geometry can be served immediately and the prose can
+   * arrive second. See routes/predictive.ts (`?fast=true`) and
+   * ChartContainer.tsx, which renders the zones from the fast response and
+   * upgrades in place when the narrated one lands.
+   *
+   * Two AI calls sit on this path and both are skipped:
+   *   - the committee synthesis (aiSynthesis/aiNarrative) — prose only.
+   *   - symbolProfile's narrative classifier, which refines an archetype that
+   *     ticker/headline keywords already produce. That archetype scales factor
+   *     WEIGHTS, and weights feed zone clustering, so skipping it can move a
+   *     zone slightly — which is why the full response replaces this one rather
+   *     than merely appending to it.
+   */
+  skipAi?: boolean;
+}
+
 export async function getPredictiveZones(
   symbol: string,
   activeExpiry?: string,
   livePriceOverride?: number,
+  options?: PredictiveZoneOptions,
 ): Promise<PredictiveEngineResult> {
   const sym = symbol.toUpperCase();
+  const skipAi = options?.skipAi === true;
 
   // Fetch daily bars, intraday bars, options chain, sentiment, and news concurrently —
   // none of these depend on each other's output, only on `sym`. They used to run as five
@@ -302,7 +327,7 @@ export async function getPredictiveZones(
   // instead of stacking three sequential round trips (one of them an AI call
   // queued behind everything else in flight) on the critical path.
   const [profileResult, factorStatsItem, setupStatsItem] = await Promise.all([
-    buildSymbolProfile(sym, bars, news).catch(err => {
+    buildSymbolProfile(sym, bars, news, { skipLlm: skipAi }).catch(err => {
       console.warn(`[PredictiveEngine] SymbolProfile failed for ${sym}:`, err);
       return undefined;
     }),
@@ -342,6 +367,7 @@ export async function getPredictiveZones(
 
   const synthesis = await aiAgent.synthesize(
     sym, currentPrice, activeFactors, bars, factorStats, news, directionStats,
+    { skipNarrative: skipAi },
   );
 
   const zones: PredictiveZone[] = [

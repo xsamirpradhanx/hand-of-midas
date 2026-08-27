@@ -1,12 +1,14 @@
 import type { PolygonNewsArticle } from './polygon.js';
 import type { FactorResult } from './factors/types.js';
 import { AI_AVAILABLE, generateText } from './aiProvider.js';
+import { aiCacheKey, withAiCache } from './aiCache.js';
 
-// Gemini free tier caps at 20 requests/day; the screener re-evaluates the same
-// symbols on every refresh, so identical inputs must be served from cache.
-const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
-const insightCache = new Map<string, { expiresAt: number; value: string }>();
-const synthesisCache = new Map<string, { expiresAt: number; value: CommitteeSynthesisResult }>();
+// The screener re-evaluates the same symbols on every refresh, so identical
+// inputs must be served from cache rather than re-billed against a free tier
+// that allows five requests per minute. Shared across processes (see
+// aiCache.ts) — the API Lambda and ScreenerRefreshFunction evaluate the same
+// symbols and used to warm separate in-process copies.
+const CACHE_TTL_SECONDS = 4 * 60 * 60;
 
 export interface MarketMetrics {
   symbol: string;
@@ -22,10 +24,6 @@ export async function generateInsight(metrics: MarketMetrics): Promise<string> {
   const { symbol, expiry, spotPrice, maxPainStrike, volumeSkew, oiSkew, gexProfile } = metrics;
 
   if (AI_AVAILABLE) {
-    const cacheKey = JSON.stringify(metrics);
-    const cached = insightCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-
     const prompt = `You are an expert options trader. Analyze the following live options chain data for ${symbol} expiring on ${expiry}:
 - Current Spot Price: $${spotPrice}
 - Max Pain Strike: $${maxPainStrike}
@@ -35,10 +33,10 @@ export async function generateInsight(metrics: MarketMetrics): Promise<string> {
 
 Write a 2-3 sentence actionable trading insight. Keep it extremely concise, professional, and focus on support/resistance implied by GEX and sentiment implied by skew.`;
 
-    const text = await generateText(prompt);
-    const result = text || generateHeuristicInsight(metrics);
-    insightCache.set(cacheKey, { value: result, expiresAt: Date.now() + CACHE_TTL_MS });
-    return result;
+    // Only a real AI answer is cached; a quota-exhaustion fallback must not be
+    // pinned in place for four hours (see withAiCache).
+    const cached = await withAiCache(aiCacheKey('insight', metrics), CACHE_TTL_SECONDS, () => generateText(prompt));
+    return cached || generateHeuristicInsight(metrics);
   }
 
   return generateHeuristicInsight(metrics);
@@ -113,9 +111,7 @@ export async function generateCommitteeSynthesis(
   const headlines = (news || []).slice(0, 10).map(n => `- ${n.title}`).join('\n');
   const evidence = factors.slice(0, 8).map(f => ({ name: f.factorName, bias: f.bias, reasoning: f.reasoning }));
 
-  const cacheKey = JSON.stringify({ symbol, deterministicSummary, headlines, tradePlan, evidence });
-  const cached = synthesisCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const cacheKey = aiCacheKey('committee', { symbol, deterministicSummary, headlines, tradePlan, evidence });
 
   const prompt = `You are the Head of an AI Investment Committee analyzing ${symbol}.
 Here is the quantitative model's deterministic report:
@@ -133,19 +129,20 @@ Respond with a JSON object with exactly two string keys:
 
 STRICT RULES for both fields: do NOT invent, round, or modify any price level, strike price, percentage, or numerical value — every number referenced MUST appear verbatim above. Do not compute R:R or probability. Do not give financial advice or claim certainty.`;
 
-  const text = await generateText(prompt, { json: true });
-  let result = fallback;
-  if (text) {
+  const cached = await withAiCache<CommitteeSynthesisResult>(cacheKey, CACHE_TTL_SECONDS, async () => {
+    const text = await generateText(prompt, { json: true });
+    if (!text) return null;
     try {
       const parsed = JSON.parse(text);
-      result = {
+      return {
         synthesis: typeof parsed.synthesis === 'string' && parsed.synthesis.trim() ? parsed.synthesis.trim() : fallback.synthesis,
         narrative: typeof parsed.narrative === 'string' && parsed.narrative.trim() ? parsed.narrative.trim() : fallback.narrative,
       };
     } catch (err) {
-      console.warn(`[AIInsights] Committee synthesis returned non-JSON for ${symbol}, using deterministic fallback:`, err);
+      console.warn(`[AIInsights] Committee synthesis returned non-JSON for ${symbol}, using deterministic fallback:`, err instanceof Error ? err.message : err);
+      return null;
     }
-  }
-  synthesisCache.set(cacheKey, { value: result, expiresAt: Date.now() + CACHE_TTL_MS });
-  return result;
+  });
+
+  return cached ?? fallback;
 }

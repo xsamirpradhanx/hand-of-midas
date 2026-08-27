@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import type { OptionsChainRecord } from './optionsStore.js';
 
@@ -26,6 +26,30 @@ export async function uploadOptionsChainToS3(chain: OptionsChainRecord): Promise
   });
 
   await s3.send(command);
+}
+
+/**
+ * Lists every date ("YYYY-MM-DD") this symbol has a stored chain for.
+ */
+export async function listOptionsChainDates(symbol: string): Promise<string[]> {
+  const prefix = `options/${symbol.toUpperCase()}/`;
+  const dates: string[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const response = await s3.send(new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+    for (const obj of response.Contents ?? []) {
+      const match = obj.Key?.match(/([0-9]{4}-[0-9]{2}-[0-9]{2})\.json\.gz$/);
+      if (match) dates.push(match[1]!);
+    }
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return dates.sort();
 }
 
 /**

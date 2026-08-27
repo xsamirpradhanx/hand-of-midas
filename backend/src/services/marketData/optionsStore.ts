@@ -14,6 +14,16 @@ export interface OptionsChainRecord {
   contracts: PolygonOptionsContract[];
   quote?: any;
   source: string;
+  /**
+   * Per-contract shape written by backfillHistoricalOptions.py.
+   *   1 (or absent) — close + volume only.
+   *   2 — adds `last_quote` (bid/ask and quoted sizes) and `day.trade_count`.
+   * Recorded so a reader can tell a chain that genuinely had no quote data
+   * from one written before quotes were captured at all. Without it the two
+   * are indistinguishable, which is the same ambiguity that let a chain full
+   * of fabricated `open_interest: 0` pass for real data for months.
+   */
+  schemaVersion?: number;
 }
 
 /**

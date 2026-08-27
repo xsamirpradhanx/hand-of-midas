@@ -13,10 +13,13 @@ export class RiskReversalSkewFactor implements PredictiveFactor {
     }
 
     try {
+      // The decision date, not real "now" — see the note in termStructure.ts.
+      const asOf = input.bars.length ? new Date(input.bars[input.bars.length - 1]!.datetime) : undefined;
       const result = await evaluateRiskReversalFactor(
         optionsChain.contracts,
         optionsChain.expirations,
         currentPrice,
+        asOf,
       );
       if (!result) return null;
 

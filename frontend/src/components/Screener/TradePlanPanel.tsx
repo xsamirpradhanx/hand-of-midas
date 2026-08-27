@@ -23,21 +23,46 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
     // lets A land second and overwrite B. It reads as the engine inventing numbers,
     // but every value is real — just for the previous ticker.
     let cancelled = false;
+    let fullDone = false;
     setLoading(true);
     setError(null);
     // Drop the previous symbol's plan immediately so nothing stale is on screen
     // while the new one loads.
     setData(null);
+
+    // Two requests, fired together rather than chained. Every level, target,
+    // stop and conviction number below is deterministic — the LLM is handed the
+    // finished report and asked to narrate it, so the plan can be shown while
+    // the prose is still being written. `?fast=true` skips the AI server-side.
+    //
+    // This matters most on exactly the days it used to be worst: when the
+    // provider quota is exhausted the narrated call sat in a dispatch queue
+    // before falling back, and the whole panel waited on it.
+    api.getPredictiveZones(symbol, undefined, { fast: true })
+      .then(res => {
+        if (cancelled || fullDone) return;
+        setData(res);
+        setLoading(false);
+      })
+      .catch(() => { /* the full request below is the one that reports failure */ });
+
     api.getPredictiveZones(symbol)
       .then(res => {
         if (cancelled) return;
+        fullDone = true;
         setData(res);
         setLoading(false);
       })
       .catch(err => {
         if (cancelled) return;
+        fullDone = true;
         console.error(err);
-        setError('Failed to load trade plan');
+        // Only surface the error if the fast response did not already put a
+        // usable plan on screen — the levels are the same either way.
+        setData(prev => {
+          if (!prev) setError('Failed to load trade plan');
+          return prev;
+        });
         setLoading(false);
       });
     return () => { cancelled = true; };
@@ -328,12 +353,17 @@ export const TradePlanPanel: React.FC<TradePlanPanelProps> = ({ symbol }) => {
         </div>
       )}
 
-      {thesis.aiNarrative && (
+      {thesis.aiNarrative ? (
         <div className={styles.synthesisSection}>
           <h4>AI Evidence Review</h4>
           <p className={styles.summaryText}>{thesis.aiNarrative}</p>
         </div>
-      )}
+      ) : data.aiPending && plan?.bias && plan.bias !== 'NO TRADE' ? (
+        <div className={styles.synthesisSection}>
+          <h4>AI Evidence Review</h4>
+          <p className={styles.summaryText}>Writing the narrative… every level above is already final.</p>
+        </div>
+      ) : null}
 
       <div className={styles.synthesisSection}>
         <h4>AI Committee Synthesis</h4>

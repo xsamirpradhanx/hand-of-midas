@@ -31,28 +31,33 @@ export class PutCallImbalanceFactor implements PredictiveFactor {
         }
       }
 
-      if (callVolume === 0 || callOI === 0) {
+      if (callVolume === 0) {
         return null;
       }
 
       const volumePCR = putVolume / callVolume;
-      const oiPCR = putOI / callOI;
+      // Open interest is a standing-position signal a purely volume-based feed
+      // (e.g. the ThetaData-backfilled S3 chains) cannot supply — `callOI`/
+      // `putOI` stay 0 there. Gating on `oiPCR` as well as `volumePCR`
+      // (the original design) made this factor permanently dead on that data,
+      // even though volume-only PCR is a legitimate, standard sentiment read
+      // on its own (it's what CBOE's headline put/call ratio actually is).
+      // Fold OI in as corroborating color when it's actually available,
+      // never as a hard requirement.
+      const haveOi = callOI > 0 || putOI > 0;
+      const oiPCR = callOI > 0 ? putOI / callOI : null;
 
-      // Extreme PCR logic: 
-      // High PCR = Fear/Capitulation -> Contrarian Bullish
-      // Low PCR = Greed/Complacency -> Contrarian Bearish
-      
       let bias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
-      let reasoning = `Volume PCR: ${volumePCR.toFixed(2)}, OI PCR: ${oiPCR.toFixed(2)}.`;
+      let reasoning = `Volume PCR: ${volumePCR.toFixed(2)}${oiPCR !== null ? `, OI PCR: ${oiPCR.toFixed(2)}` : ''}.`;
       let weight = 0;
 
-      if (volumePCR > 1.2 && oiPCR > 1.0) {
+      if (volumePCR > 1.2) {
         bias = 'bullish';
-        weight = 0.25;
+        weight = haveOi && oiPCR !== null && oiPCR > 1.0 ? 0.25 : 0.15;
         reasoning = `Extreme fear/capitulation detected (${reasoning}) Expecting a contrarian bounce.`;
-      } else if (volumePCR < 0.6 && oiPCR < 0.8) {
+      } else if (volumePCR < 0.6) {
         bias = 'bearish';
-        weight = 0.25;
+        weight = haveOi && oiPCR !== null && oiPCR < 0.8 ? 0.25 : 0.15;
         reasoning = `Excessive greed/complacency detected (${reasoning}) Expecting a contrarian pullback.`;
       } else {
         // Not extreme enough

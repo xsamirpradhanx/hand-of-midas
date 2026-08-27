@@ -1,4 +1,16 @@
 import { AI_AVAILABLE, generateText } from './aiProvider.js';
+import { aiCacheKey, withAiCache } from './aiCache.js';
+
+/**
+ * Headline classification is cached on the headlines themselves, not the
+ * symbol+time. The aggregate that wraps this (sentimentAggregator's 30-minute
+ * AGGREGATED_SENTIMENT entry) is per-symbol and per-process-cold-start, so on
+ * an app open the screener still issued one LLM call per candidate through a
+ * provider that permits five per minute — this is the exact call in the
+ * RESOURCE_EXHAUSTED stack trace that prompted the fix. Headlines change on a
+ * scale of hours; two symbols in the same sector routinely share them.
+ */
+const CLASSIFY_TTL_SECONDS = 6 * 60 * 60;
 
 export interface NewsHeadline {
   title?: string;
@@ -52,32 +64,37 @@ export async function classifyHeadlinesWithAI(
   const headlines = articles.slice(0, 15).map(a => a.title).filter((t): t is string => Boolean(t));
   if (headlines.length === 0) return null;
 
+  const cacheKey = aiCacheKey('headline-classify', { symbol, headlines });
+
   try {
-    const text = await generateText(
-      `Classify each of these news headlines about ${symbol} stock by their likely short-term impact on the stock price: "bullish", "bearish", or "neutral". Judge price impact only, not general news tone (e.g. a headline about a competitor's problems is bullish for ${symbol}; routine/non-price-moving news is neutral). Return strict JSON: {"classifications": ["bullish"|"bearish"|"neutral", ...]} with exactly ${headlines.length} entries, in the same order as the input, no other text.\n\nHeadlines: ${JSON.stringify(headlines)}`,
-      { json: true },
-    );
-    if (!text) return null;
+    const cached = await withAiCache<NewsSentimentCounts>(cacheKey, CLASSIFY_TTL_SECONDS, async () => {
+      const text = await generateText(
+        `Classify each of these news headlines about ${symbol} stock by their likely short-term impact on the stock price: "bullish", "bearish", or "neutral". Judge price impact only, not general news tone (e.g. a headline about a competitor's problems is bullish for ${symbol}; routine/non-price-moving news is neutral). Return strict JSON: {"classifications": ["bullish"|"bearish"|"neutral", ...]} with exactly ${headlines.length} entries, in the same order as the input, no other text.\n\nHeadlines: ${JSON.stringify(headlines)}`,
+        { json: true },
+      );
+      if (!text) return null;
 
-    // Providers asked for json-only output can still wrap it in markdown
-    // fences or append stray trailing text — extract the outermost {...}
-    // block rather than failing the whole classification on a strict parse.
-    const jsonStart = text.indexOf('{');
-    const jsonEnd = text.lastIndexOf('}');
-    const jsonSlice = jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text;
+      // Providers asked for json-only output can still wrap it in markdown
+      // fences or append stray trailing text — extract the outermost {...}
+      // block rather than failing the whole classification on a strict parse.
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}');
+      const jsonSlice = jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text;
 
-    const parsed = JSON.parse(jsonSlice) as { classifications?: unknown };
-    if (!Array.isArray(parsed.classifications) || parsed.classifications.length !== headlines.length) {
-      return null;
-    }
+      const parsed = JSON.parse(jsonSlice) as { classifications?: unknown };
+      if (!Array.isArray(parsed.classifications) || parsed.classifications.length !== headlines.length) {
+        return null;
+      }
 
-    let bullCount = 0;
-    let bearCount = 0;
-    for (const c of parsed.classifications) {
-      if (c === 'bullish') bullCount++;
-      else if (c === 'bearish') bearCount++;
-    }
-    return { bullCount, bearCount };
+      let bullCount = 0;
+      let bearCount = 0;
+      for (const c of parsed.classifications) {
+        if (c === 'bullish') bullCount++;
+        else if (c === 'bearish') bearCount++;
+      }
+      return { bullCount, bearCount };
+    });
+    return cached;
   } catch (err) {
     console.warn(`[NewsSentimentScorer] AI headline classification failed for ${symbol}, falling back to keyword scan:`, err instanceof Error ? err.message : err);
     return null;

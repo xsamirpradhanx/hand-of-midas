@@ -1,5 +1,6 @@
 import { getRiskFreeRate, blackScholes } from '../greeks.js';
 import { getTimeToExpiryYears } from '../tradingCalendar.js';
+import { resolveContractIv } from '../optionsAnalyticsService.js';
 import type { PredictiveFactor, FactorInput, FactorResult } from './types.js';
 
 export class NetDeltaFlowFactor implements PredictiveFactor {
@@ -17,16 +18,25 @@ export class NetDeltaFlowFactor implements PredictiveFactor {
       let netDelta = 0;
       let totalDelta = 0;
 
+      // The decision date, not real "now" — getTimeToExpiryYears measures
+      // against real "now" unless told otherwise, and every historical
+      // expiry predates that during a backtest/audit (see tradingCalendar.ts).
+      const asOf = input.bars.length ? new Date(input.bars[input.bars.length - 1]!.datetime) : undefined;
+
       for (const contract of optionsChain.contracts) {
         const expiry = contract.details?.expiration_date;
         const strike = contract.details?.strike_price || 0;
         const type = contract.details?.contract_type as 'call' | 'put';
         const volume = contract.day?.volume || 0;
-        const iv = contract.implied_volatility || 0.3; // Fallback if missing
+        // Real IV when the feed reports one, else solved from the EOD close —
+        // a flat 30% guess for every strike/expiry made this factor measure
+        // volume-weighted moneyness, not real dealer delta flow, on any chain
+        // (like our ThetaData-backfilled data) that doesn't report IV.
+        const iv = resolveContractIv(contract, currentPrice, asOf);
 
-        if (volume > 0 && strike > 0 && expiry) {
-          const t = Math.max(getTimeToExpiryYears(expiry), 1 / 365);
-          
+        if (volume > 0 && strike > 0 && expiry && iv > 0) {
+          const t = Math.max(getTimeToExpiryYears(expiry, asOf), 1 / 365);
+
           // Use Black-Scholes to estimate Delta
           const greeks = blackScholes(currentPrice, strike, t, getRiskFreeRate(), iv, type);
           const delta = greeks.delta || 0;

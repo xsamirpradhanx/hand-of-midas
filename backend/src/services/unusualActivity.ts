@@ -310,13 +310,13 @@ export async function getUnusualActivity(filters: {
       const vol = c.day.volume || 0;
       const oi = c.day.open_interest || 0;
 
-      const bid = c.last_quote.bid || 0;
-      const ask = c.last_quote.ask || 0;
+      const bid = c.last_quote?.bid || 0;
+      const ask = c.last_quote?.ask || 0;
       let referencePrice = 0;
       if (bid > 0 && ask > 0) {
         referencePrice = (bid + ask) / 2;
       } else {
-        referencePrice = c.last_quote.last > 0 ? c.last_quote.last : (bid || ask);
+        referencePrice = (c.last_quote?.last ?? 0) > 0 ? c.last_quote!.last : (bid || ask);
       }
 
       const whaleScore = computeWhaleScore({

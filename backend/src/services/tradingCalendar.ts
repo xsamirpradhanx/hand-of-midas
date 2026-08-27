@@ -49,11 +49,21 @@ export function isTradingDay(date: Date): boolean {
 }
 
 /**
- * Returns the number of TRADING DAYS between today and the expiration date.
- * Expirations are at market close (16:00 ET).
+ * Returns the number of TRADING DAYS between `asOf` (real "now" by default)
+ * and the expiration date. Expirations are at market close (16:00 ET).
+ *
+ * `asOf` matters for anything replaying history: without it, this measured
+ * against the real wall-clock date regardless of which historical bar was
+ * actually being decided on. Every expiration in a backtest predates the
+ * real "now" it ran under, so `expirationDateStr < todayStr` was true for
+ * nearly every historical contract and DTE silently floored to 0 — which
+ * then floors every solved IV/greeks calculation built on it to a ~1-day
+ * time-to-expiry regardless of the option's true remaining life at that
+ * historical decision. Live callers are unaffected: they already pass no
+ * `asOf`, which still defaults to real "now".
  */
-export function getDTE(expirationDateStr: string): number {
-  const nowET = getETDate();
+export function getDTE(expirationDateStr: string, asOf?: Date): number {
+  const nowET = getETDate(asOf);
   const todayStr = formatToDateStr(nowET);
   
   if (expirationDateStr < todayStr) {
@@ -142,17 +152,18 @@ export function nextMarketOpen(): Date {
 }
 
 /**
- * Returns the number of calendar days between today and expiration.
+ * Returns the number of calendar days between `asOf` (real "now" by default)
+ * and expiration. See `getDTE` for why `asOf` exists — same defect, same fix.
  */
-export function getCalendarDTE(expirationDateStr: string): number {
-  const nowET = getETDate();
+export function getCalendarDTE(expirationDateStr: string, asOf?: Date): number {
+  const nowET = getETDate(asOf);
   nowET.setHours(0, 0, 0, 0);
-  
+
   const expiryET = new Date(expirationDateStr + 'T00:00:00');
-  
+
   const diffTime = expiryET.getTime() - nowET.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-  
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
   return diffDays > 0 ? diffDays : 0;
 }
 
@@ -160,6 +171,6 @@ export function getCalendarDTE(expirationDateStr: string): number {
  * Model time in years for option valuation.  Black-Scholes convention is
  * calendar time / 365; trading DTE must not be divided by 365.
  */
-export function getTimeToExpiryYears(expirationDateStr: string): number {
-  return Math.max(0, getCalendarDTE(expirationDateStr) / 365);
+export function getTimeToExpiryYears(expirationDateStr: string, asOf?: Date): number {
+  return Math.max(0, getCalendarDTE(expirationDateStr, asOf) / 365);
 }

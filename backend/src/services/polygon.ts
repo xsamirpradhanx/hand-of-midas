@@ -22,23 +22,44 @@ export interface PolygonOptionsContract {
     strike_price: number;
     expiration_date: string;
     contract_type: 'call' | 'put';
-    shares_per_contract: number;
+    shares_per_contract?: number;
   };
   day: {
     volume: number;
-    open_interest: number;
+    /**
+     * Absent (not zero) when the data source doesn't report open interest at
+     * all — e.g. the ThetaData-backfilled S3 chains, which run on a tier
+     * without OI access. A reported 0 (Polygon live) means genuinely no open
+     * interest; an absent field means "unknown", and callers that treat the
+     * two the same reintroduce the fabricated-zero bug this distinction
+     * exists to avoid.
+     */
+    open_interest?: number;
+    /** EOD close price. Present on the S3-backfilled chains; not part of Polygon's snapshot shape. */
+    close?: number;
+    /**
+     * Number of separate trades behind `volume` (ThetaData's `count`).
+     * `volume / trade_count` is average contracts per trade — a block-size read
+     * that stands in for the open interest a FREE-tier feed cannot supply.
+     * Absent, never zero-filled, when the feed doesn't report it.
+     */
+    trade_count?: number;
   };
-  greeks: {
+  /** Absent, not zero-filled, when the feed doesn't provide greeks (see `day.open_interest`). */
+  greeks?: {
     delta: number;
     gamma: number;
     theta: number;
     vega: number;
   };
-  implied_volatility: number;
-  last_quote: {
+  implied_volatility?: number;
+  last_quote?: {
     bid: number;
     ask: number;
     last: number;
+    /** Quoted size at the close. Absent when the feed doesn't report it. */
+    bid_size?: number;
+    ask_size?: number;
   };
 }
 

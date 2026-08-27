@@ -18,6 +18,8 @@
     "backtest": "tsx src/scripts/runBacktest.ts",
     "options-backtest": "tsx src/services/backtest/options/optionsReplayEngine.ts",
     "backfill-options": "python3 src/scripts/backfillHistoricalOptions.py",
+    "check-options-coverage": "tsx src/scripts/checkOptionsCoverage.ts",
+    "repair-options-metadata": "tsx src/scripts/repairOptionsChainMetadata.ts",
     "export-bars": "tsx src/scripts/exportBars.ts",
     "audit-bars": "tsx src/scripts/auditBars.ts",
     "indicator-lab": "tsx src/scripts/indicatorLab.ts",
